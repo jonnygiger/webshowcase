@@ -173,3 +173,11 @@ To enhance interactivity, users can now add comments to blog posts.
     *   Handling nested resource creation (comments under posts).
     *   Further application of user authentication for content submission.
     *   Dynamic rendering of user-contributed content.
+
+### Real-Time Comment Notifications
+
+To further enhance interactivity, the blog now features real-time comment notifications.
+
+*   **Instant Updates**: When a user submits a comment on a blog post, other users currently viewing the same post will see the new comment appear instantly on their page without needing to manually refresh.
+*   **Technology**: This is implemented using Flask-SocketIO, enabling bidirectional real-time communication between the server and clients (browsers).
+*   **Enhanced Engagement**: This feature makes discussions more dynamic and engaging, as users can see new contributions as they happen.

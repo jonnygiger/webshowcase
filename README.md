@@ -54,6 +54,15 @@ This application now features a user authentication system.
     *   **Password**: `password123`
 *   **Navigation**: The navigation bar will dynamically show "Login" or "Logout" links based on the current user's session status. When logged in, it will also display the username.
 
+### User Registration
+
+*   **Route**: `/register`
+*   **Functionality**:
+    *   Users can create a new account by providing a unique username and a password.
+    *   The system checks if a username already exists to prevent duplicates.
+    *   Upon successful registration, users are redirected to the login page (`/login`) to sign in with their new credentials.
+    *   The "Register" link is available in the navigation bar only for users who are not logged in.
+
 ### To-Do List
 
 This application includes a simple To-Do list feature that demonstrates Flask's session handling and form processing capabilities.

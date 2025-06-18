@@ -199,5 +199,22 @@ def delete_post(post_id):
     flash('Post deleted successfully!', 'success')
     return redirect(url_for('blog'))
 
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        if username in users:
+            flash('Username already exists. Please choose a different one.', 'danger')
+            return render_template('register.html')
+        else:
+            users[username] = generate_password_hash(password)
+            flash('Registration successful! Please log in.', 'success')
+            return redirect(url_for('login'))
+    return render_template('register.html')
+
+
 if __name__ == '__main__':
     app.run(debug=True)

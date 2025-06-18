@@ -13,13 +13,17 @@
                 <li><a href="{{ url_for('hello_world') }}">Home</a></li>
                 <li><a href="{{ url_for('child') }}">Child Page</a></li>
                 <li><a href="{{ url_for('todo') }}">To-Do List</a></li>
+                <li><a href="{{ url_for('gallery') }}">Gallery</a></li>
+                <li><a href="{{ url_for('upload_image') }}">Upload Image</a></li>
             </ul>
         </nav>
     </header>
 
     <main>
-        {% block content %}
-        {% endblock %}
+        <div class="container">
+            {% block content %}
+            {% endblock %}
+        </div>
     </main>
 
     <footer>

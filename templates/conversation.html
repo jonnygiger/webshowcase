@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Conversation with {{ conversation_partner }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Conversation with {{ conversation_partner }}</h2>
+    <hr>
+
+    <div class="messages-container mb-4" style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 5px;">
+        {% if messages_list %}
+            {% for message in messages_list %}
+                <div class="message mb-2 p-2 rounded {% if message.sender_username == session['username'] %}bg-light text-end{% else %}bg-secondary text-white{% endif %}">
+                    <p class="mb-0"><strong>{{ message.sender_username }}</strong>: {{ message.content }}</p>
+                    <small class="text-muted">{{ message.timestamp }} {% if message.sender_username == session['username'] and message.is_read %} (Read){% endif %}</small>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No messages yet. Start the conversation!</p>
+        {% endif %}
+    </div>
+
+    <h4>Reply to {{ conversation_partner }}</h4>
+    <form method="POST" action="{{ url_for('send_message', receiver_username=conversation_partner) }}">
+        <div class="mb-3">
+            <label for="content" class="form-label">Your Message:</label>
+            <textarea class="form-control" id="content" name="content" rows="3" required></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Send Reply</button>
+    </form>
+</div>
+{% endblock %}

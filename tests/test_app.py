@@ -36,7 +36,7 @@ def socketio_instance(app_instance):
 # Import other things from app or flask here
 from flask import url_for
 import re # For parsing post IDs
-from app import app as flask_app_for_helpers # For helper functions
+from app import app as flask_app_for_helpers, private_messages # For helper functions and new tests
 from werkzeug.security import generate_password_hash # Needed for manage_app_state and new tests
 
 # Helper functions for tests (can be used by new tests too if needed)
@@ -82,7 +82,7 @@ def manage_app_state(app_instance):
 
     cleanup_uploads(upload_folder)
 
-    from app import blog_posts, users, comments, post_likes, app as current_app_instance
+    from app import blog_posts, users, comments, post_likes, private_messages as app_private_messages, app as current_app_instance
 
     users.clear()
     users["demo"] = {
@@ -101,6 +101,8 @@ def manage_app_state(app_instance):
     comments.clear()
     current_app_instance.comment_id_counter = 0
     post_likes.clear()
+    app_private_messages.clear()
+    current_app_instance.private_message_id_counter = 0
 
     yield
 
@@ -110,6 +112,8 @@ def manage_app_state(app_instance):
     comments.clear()
     current_app_instance.comment_id_counter = 0
     post_likes.clear()
+    app_private_messages.clear()
+    current_app_instance.private_message_id_counter = 0
 
 
 # --- Existing tests ... (keeping them as is) ---
@@ -488,6 +492,237 @@ class TestLikeUnlikeFeatures:
         assert b"1 like(s)" in response.data # Should show the like from "demo"
         # "testuser" has not liked this post, so should see "Like" button
         assert b'<button type="submit" class="btn btn-primary btn-sm">Like</button>' in response.data
+
+
+class TestPrivateMessaging:
+    # Helper to register users if they don't exist, using the global `users` dict from app
+    # Note: `manage_app_state` fixture clears users dict before each test,
+    # and adds "demo" and "testuser".
+    def _ensure_user_exists(self, client, username, password):
+        from app import users as app_users
+        if username not in app_users:
+            _register_user(client, username, password)
+            # Verify registration by checking the users dict directly for simplicity in tests
+            assert username in app_users, f"Failed to register user {username} for tests"
+
+    def test_send_message_requires_login(self, client, app_instance):
+        response = client.get(url_for('send_message', receiver_username='testuser'), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+
+        # Check flash message on redirected page
+        response_redirected = client.get(response.location, follow_redirects=True) # follow to get flash
+        assert b"You need to be logged in to access this page." in response_redirected.data
+
+
+    def test_send_message_to_nonexistent_user(self, client, app_instance):
+        self._ensure_user_exists(client, "testsender", "password")
+        _login_user(client, "testsender", "password")
+
+        response = client.post(url_for('send_message', receiver_username='nonexistentuser'),
+                               data={'content': 'Hello there'},
+                               follow_redirects=True)
+        assert b"User not found." in response.data
+        from app import private_messages as app_private_messages
+        assert len(app_private_messages) == 0
+
+    def test_send_message_empty_content(self, client, app_instance):
+        self._ensure_user_exists(client, "msg_sender1", "password")
+        self._ensure_user_exists(client, "msg_receiver1", "password")
+        _login_user(client, "msg_sender1", "password")
+
+        response = client.post(url_for('send_message', receiver_username='msg_receiver1'),
+                               data={'content': ''},
+                               follow_redirects=True) # Send message page re-renders
+        assert response.status_code == 200 # Should re-render the send_message.html
+        assert b"Message content cannot be empty." in response.data
+        from app import private_messages as app_private_messages
+        assert len(app_private_messages) == 0
+
+    def test_send_message_success(self, client, app_instance):
+        self._ensure_user_exists(client, "sender_s", "password")
+        self._ensure_user_exists(client, "receiver_s", "password")
+        _login_user(client, "sender_s", "password")
+
+        response = client.post(url_for('send_message', receiver_username='receiver_s'),
+                               data={'content': 'Hello receiver_s'},
+                               follow_redirects=False) # Check redirect location
+        assert response.status_code == 302
+        assert response.location == url_for('view_conversation', username='receiver_s')
+
+        # Follow redirect to check flash message
+        response_redirected = client.get(response.location, follow_redirects=True)
+        assert b"Message sent successfully!" in response_redirected.data
+
+        from app import private_messages as app_private_messages
+        assert len(app_private_messages) == 1
+        msg = app_private_messages[0]
+        assert msg['sender_username'] == 'sender_s'
+        assert msg['receiver_username'] == 'receiver_s'
+        assert msg['content'] == 'Hello receiver_s'
+        assert msg['is_read'] is False
+
+    def test_view_conversation_requires_login(self, client, app_instance):
+        response = client.get(url_for('view_conversation', username='testuser'), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+
+        response_redirected = client.get(response.location, follow_redirects=True)
+        assert b"You need to be logged in to access this page." in response_redirected.data
+
+
+    def test_view_conversation_nonexistent_user(self, client, app_instance):
+        self._ensure_user_exists(client, "convo_user1", "password")
+        _login_user(client, "convo_user1", "password")
+
+        response = client.get(url_for('view_conversation', username='nonexistentuser_convo'), follow_redirects=True)
+        assert b"User not found." in response.data
+        # It should redirect to hello_world as per current app.py logic
+        assert b"Welcome to the Flask App" in response.data # Assuming this is on hello_world
+
+    def test_view_conversation_and_mark_read(self, client, app_instance):
+        from app import private_messages as app_private_messages, users as app_users, app as current_app
+
+        # Ensure users exist
+        self._ensure_user_exists(client, "msg_sender_mr", "password")
+        self._ensure_user_exists(client, "msg_receiver_mr", "password")
+
+        # Add a message programmatically
+        current_app.private_message_id_counter += 1
+        test_message = {
+            "message_id": current_app.private_message_id_counter,
+            "sender_username": "msg_sender_mr",
+            "receiver_username": "msg_receiver_mr",
+            "content": "Mark me as read!",
+            "timestamp": "2023-01-01 12:00:00", # Use a fixed past timestamp
+            "is_read": False
+        }
+        app_private_messages.append(test_message)
+
+        _login_user(client, "msg_receiver_mr", "password")
+        response = client.get(url_for('view_conversation', username='msg_sender_mr'))
+
+        assert response.status_code == 200
+        assert b"Mark me as read!" in response.data
+
+        # Verify the message in the list is marked as read
+        found_message = next((m for m in app_private_messages if m['message_id'] == test_message['message_id']), None)
+        assert found_message is not None
+        assert found_message['is_read'] is True
+
+    def test_inbox_requires_login(self, client, app_instance):
+        response = client.get(url_for('inbox'), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+
+        response_redirected = client.get(response.location, follow_redirects=True)
+        assert b"You need to be logged in to access this page." in response_redirected.data
+
+    def test_inbox_view_empty(self, client, app_instance):
+        self._ensure_user_exists(client, "inbox_user_empty", "password")
+        _login_user(client, "inbox_user_empty", "password")
+
+        response = client.get(url_for('inbox'))
+        assert response.status_code == 200
+        assert b"You have no messages." in response.data
+
+    def test_inbox_view_with_messages(self, client, app_instance):
+        from app import private_messages as app_private_messages, app as current_app, users as app_users
+
+        self._ensure_user_exists(client, "inbox_user1", "password")
+        self._ensure_user_exists(client, "inbox_user2", "password")
+        self._ensure_user_exists(client, "inbox_user3", "password")
+
+        # Message 1: inbox_user2 to inbox_user1
+        current_app.private_message_id_counter += 1
+        msg1_content = "Hello from user2 to user1"
+        app_private_messages.append({
+            "message_id": current_app.private_message_id_counter, "sender_username": "inbox_user2",
+            "receiver_username": "inbox_user1", "content": msg1_content,
+            "timestamp": "2023-01-02 10:00:00", "is_read": False
+        })
+
+        # Message 2: inbox_user1 to inbox_user3
+        current_app.private_message_id_counter += 1
+        msg2_content = "Hi user3 from user1"
+        app_private_messages.append({
+            "message_id": current_app.private_message_id_counter, "sender_username": "inbox_user1",
+            "receiver_username": "inbox_user3", "content": msg2_content,
+            "timestamp": "2023-01-02 11:00:00", "is_read": False
+        })
+
+        _login_user(client, "inbox_user1", "password")
+        response = client.get(url_for('inbox'))
+        assert response.status_code == 200
+
+        assert b"Conversation with: inbox_user2" in response.data
+        assert bytes(msg1_content[:50], 'utf-8') in response.data # Check for snippet
+        assert b"1 Unread" in response.data # User1 received from User2, unread
+
+        assert b"Conversation with: inbox_user3" in response.data
+        assert bytes(msg2_content[:50], 'utf-8') in response.data # Check for snippet
+        # This message was sent by user1, so no unread count for user1 from this convo
+        assert b"0 Unread" not in response.data # Or check it's not marked as unread for this item
+        # More robust: check that the specific "1 Unread" is associated with inbox_user2's conversation block
+
+        # Check order - msg2 was later, so inbox_user3 should appear first
+        content_str = response.data.decode('utf-8')
+        pos_user3 = content_str.find("Conversation with: inbox_user3")
+        pos_user2 = content_str.find("Conversation with: inbox_user2")
+        assert pos_user3 < pos_user2, "Conversations in inbox are not sorted by most recent first"
+
+
+    def test_send_message_button_on_profile(self, client, app_instance):
+        self._ensure_user_exists(client, "profile_viewer", "password")
+        self._ensure_user_exists(client, "profile_owner", "password")
+
+        _login_user(client, "profile_viewer", "password")
+
+        # Viewing other user's profile
+        response_other = client.get(url_for('user_profile', username='profile_owner'))
+        assert response_other.status_code == 200
+        expected_link_other = url_for('send_message', receiver_username='profile_owner')
+        assert bytes(f'href="{expected_link_other}"', 'utf-8') in response_other.data
+        assert b"Send Message to profile_owner" in response_other.data
+
+        # Viewing own profile
+        response_self = client.get(url_for('user_profile', username='profile_viewer'))
+        assert response_self.status_code == 200
+        expected_link_self = url_for('send_message', receiver_username='profile_viewer')
+        assert bytes(f'href="{expected_link_self}"', 'utf-8') not in response_self.data
+        assert b"Send Message to profile_viewer" not in response_self.data
+
+    def test_reply_from_conversation_view(self, client, app_instance):
+        from app import private_messages as app_private_messages, app as current_app
+        self._ensure_user_exists(client, "userA_reply", "password")
+        self._ensure_user_exists(client, "userB_reply", "password")
+
+        # UserA logs in, views conversation with UserB (empty at first)
+        _login_user(client, "userA_reply", "password")
+        response_convo_view = client.get(url_for('view_conversation', username='userB_reply'))
+        assert response_convo_view.status_code == 200
+        assert b"Conversation with userB_reply" in response_convo_view.data # Check it's the right page
+        assert b"No messages yet." in response_convo_view.data
+
+
+        # UserA sends a reply/first message from conversation view
+        reply_content = "This is a reply from UserA to UserB"
+        response_post_reply = client.post(url_for('send_message', receiver_username='userB_reply'),
+                                          data={'content': reply_content},
+                                          follow_redirects=False) # POST to send_message
+
+        assert response_post_reply.status_code == 302 # Should redirect back to conversation
+        assert response_post_reply.location == url_for('view_conversation', username='userB_reply')
+
+        response_after_reply = client.get(response_post_reply.location) # Follow redirect
+        assert bytes(reply_content, 'utf-8') in response_after_reply.data
+        assert b"Message sent successfully!" in response_after_reply.data # Flash message
+
+        assert len(app_private_messages) == 1
+        msg = app_private_messages[0]
+        assert msg['sender_username'] == 'userA_reply'
+        assert msg['receiver_username'] == 'userB_reply'
+        assert msg['content'] == reply_content
 
 
 class TestAppSocketIO(unittest.TestCase):

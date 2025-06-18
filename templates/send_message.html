@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Send Message to {{ receiver_username }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Send Message to {{ receiver_username }}</h2>
+    <hr>
+    <form method="POST" action="{{ url_for('send_message', receiver_username=receiver_username) }}">
+        <div class="mb-3">
+            <label for="content" class="form-label">Your Message:</label>
+            <textarea class="form-control" id="content" name="content" rows="5" required></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Send Message</button>
+    </form>
+</div>
+{% endblock %}

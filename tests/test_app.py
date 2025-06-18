@@ -13,10 +13,12 @@ def app_instance():
 
     # Attempt to remove app from sys.modules to force a fresh import
     if 'app' in sys.modules:
-        del sys.modules['app']
+        del sys.modules['app'] # Restoring this
 
     from app import app as flask_app
     flask_app.config['TESTING'] = True
+    # It's also good practice to set a fixed secret key for tests if not already consistently set
+    # flask_app.config['SECRET_KEY'] = 'my_test_secret_key'
     return flask_app
 
 # Import other things from app or flask here if they are needed globally or in other fixtures
@@ -77,7 +79,11 @@ def manage_app_state(app_instance): # Renamed for broader scope, app_instance wi
 
     # Clear and reset users state
     users.clear()
-    users["demo"] = generate_password_hash("password123") # Reset demo user
+    users["demo"] = {
+        "password": generate_password_hash("password123"),
+        "uploaded_images": [],
+        "blog_post_ids": []
+    } # Reset demo user with new structure
 
     blog_posts.clear()
     current_app_instance.blog_post_id_counter = 0 # Use current_app_instance if app_instance is just test_client
@@ -346,18 +352,22 @@ def test_login_failed_wrong_username(client):
     with client.session_transaction() as sess:
         assert 'logged_in' not in sess
 
-def test_access_protected_route_todo_unauthenticated(client):
+def test_access_protected_route_todo_unauthenticated(client, app_instance):
     """Test accessing /todo when not logged in."""
-    response = client.get('/todo', follow_redirects=False)
+    with client:
+        client.get('/logout', follow_redirects=True) # Use app's logout mechanism
+        response = client.get('/todo', follow_redirects=False)
     assert response.status_code == 302
     assert response.location == '/login'
 
     response_redirected = client.get(response.location) # Manually follow
     assert b"You need to be logged in to access this page." in response_redirected.data
 
-def test_access_protected_route_upload_unauthenticated(client):
+def test_access_protected_route_upload_unauthenticated(client, app_instance):
     """Test accessing /gallery/upload when not logged in."""
-    response = client.get('/gallery/upload', follow_redirects=False)
+    with client:
+        client.get('/logout', follow_redirects=True) # Use app's logout mechanism
+        response = client.get('/gallery/upload', follow_redirects=False)
     assert response.status_code == 302
     assert response.location == '/login'  # Assuming '/login' is correct
 
@@ -596,3 +606,96 @@ def test_edit_delete_post_by_unauthenticated(client, app_instance):
 #   assert b"You are not authorized to edit this post." in edit_attempt_resp.data
 #   delete_attempt_resp = client.post(f'/blog/delete/{post_id_by_demo}', follow_redirects=True)
 #   assert b"You are not authorized to delete this post." in delete_attempt_resp.data
+
+
+# --- User Profile Page Tests ---
+
+def test_user_profile_with_posts_and_images(client, app_instance):
+    """Test the user profile page for a user with blog posts and uploaded images."""
+    test_username = "profileuser1"
+    test_password = "password123"
+    blog_title = "My First Post on Profile"
+    blog_content = "Hello world from profile test."
+    image_filename = "profile_test_image.png"
+
+    # Register user
+    client.post('/register', data={'username': test_username, 'password': test_password}, follow_redirects=True)
+
+    # Login user
+    client.post('/login', data={'username': test_username, 'password': test_password}, follow_redirects=True)
+
+    # Create a blog post
+    client.post('/blog/create', data={'title': blog_title, 'content': blog_content}, follow_redirects=True)
+
+    # Simulate image upload
+    # Ensure users dict is the one from the app instance for direct manipulation
+    from app import users as app_users
+    if test_username in app_users:
+        app_users[test_username]['uploaded_images'].append(image_filename)
+    else:
+        # This case should ideally not happen if registration worked and users dict is shared
+        pytest.fail(f"User {test_username} not found in app_users after registration.")
+
+    upload_folder = app_instance.config['UPLOAD_FOLDER']
+    # The manage_app_state fixture should ensure upload_folder exists
+    # if not os.path.exists(upload_folder):
+    #     os.makedirs(upload_folder)
+    with open(os.path.join(upload_folder, image_filename), 'w') as f:
+        f.write("dummy image data for profile test")
+
+    # Access user profile page
+    response = client.get(f'/user/{test_username}')
+    assert response.status_code == 200
+
+    response_data_str = response.data.decode('utf-8')
+
+    # Assert blog post is present
+    assert blog_title in response_data_str
+    # Assert image is present
+    # Need to construct the expected src attribute carefully
+    expected_img_src = f'src="/uploads/{image_filename}"'
+    assert expected_img_src in response_data_str
+    assert f"alt=\"User Image {image_filename}\"" in response_data_str
+
+    # Assert username is displayed (e.g., in title or heading)
+    assert f"{test_username}'s Profile" in response_data_str
+
+    # Cleanup of the dummy file is handled by manage_app_state fixture's teardown
+
+def test_user_profile_no_posts_no_images(client, app_instance):
+    """Test the user profile page for a user with no posts and no images."""
+    test_username = "profileuser2"
+    test_password = "password456"
+
+    # Register user
+    client.post('/register', data={'username': test_username, 'password': test_password}, follow_redirects=True)
+
+    # Login user
+    # Not strictly necessary to login to view a profile, but good for consistency if profile was private
+    client.post('/login', data={'username': test_username, 'password': test_password}, follow_redirects=True)
+
+    # Access user profile page
+    response = client.get(f'/user/{test_username}')
+    assert response.status_code == 200
+    response_data_str = response.data.decode('utf-8')
+
+    assert "This user has not created any posts yet." in response_data_str
+    assert "This user has not uploaded any images yet." in response_data_str
+    assert f"{test_username}'s Profile" in response_data_str
+
+def test_user_profile_non_existent_user(client, app_instance):
+    """Test accessing the profile page of a user that does not exist."""
+    non_existent_username = "ghostuser"
+    response = client.get(f'/user/{non_existent_username}')
+
+    # Current app behavior: if user not in `users` dict, it will still render the page
+    # but `user_posts` will be empty, and `user_images` will be empty (due to .get(..., []))
+    # This means it will look like a user with no posts and no images.
+    assert response.status_code == 200
+    response_data_str = response.data.decode('utf-8')
+
+    assert f"{non_existent_username}'s Profile" in response_data_str # Username is taken from URL
+    assert "This user has not created any posts yet." in response_data_str
+    assert "This user has not uploaded any images yet." in response_data_str
+    # A more robust app might return a 404 or a specific "user not found" message.
+    # For now, this test documents the current behavior.

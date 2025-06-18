@@ -3,9 +3,36 @@
 {% block title %}User Profile - {{ username }}{% endblock %}
 
 {% block content %}
-    <h2 class="page-title">Hello, {{ username }}!</h2>
+    <h2 class="page-title">{{ username }}'s Profile</h2>
+
     <div class="content-box">
-        <p>This is your user profile page.</p>
-        <p>The styling here comes from <code>static/style.css</code> as well.</p>
+        <h3>User's Blog Posts</h3>
+        {% if posts %}
+            <ul>
+                {% for post in posts %}
+                    <li>
+                        <a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a>
+                        <span class="text-muted"> - {{ post.timestamp }}</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>This user has not created any posts yet.</p>
+        {% endif %}
+    </div>
+
+    <div class="content-box">
+        <h3>User's Uploaded Images</h3>
+        {% if user_images %}
+            <div class="gallery-grid">
+                {% for image_filename in user_images %}
+                    <div class="gallery-item">
+                        <img src="{{ url_for('uploaded_file', filename=image_filename) }}" alt="User Image {{ image_filename }}" style="max-width: 200px; max-height: 200px; margin: 5px;">
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>This user has not uploaded any images yet.</p>
+        {% endif %}
     </div>
 {% endblock %}

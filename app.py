@@ -12,7 +12,11 @@ app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
 
 # User storage
 users = {
-    "demo": generate_password_hash("password123")
+    "demo": {
+        "password": generate_password_hash("password123"),
+        "uploaded_images": [],
+        "blog_post_ids": []
+    }
 }
 blog_posts = []
 #blog_post_id_counter = 0 # Will be app attribute
@@ -24,12 +28,15 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 
 def allowed_file(filename):
     return '.' in filename and \
+           filename.rsplit('.', 1)[0] != "" and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 # Decorator for requiring login
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Debug print inside the decorator to see session state
+        print(f"login_required: session content before check: {dict(session)}")
         if 'logged_in' not in session:
             flash('You need to be logged in to access this page.', 'danger')
             return redirect(url_for('login'))
@@ -46,10 +53,20 @@ def child():
 
 @app.route('/user/<username>')
 def user_profile(username):
-    return render_template('user.html', username=username)
+    # Filter blog posts for the given username
+    user_posts = [post for post in blog_posts if post['author_username'] == username]
 
-@login_required
+    # Retrieve user's uploaded images
+    user_images = []
+    if username in users:
+        user_images = users[username].get('uploaded_images', [])
+        # Optionally, you could also filter posts using users[username]['blog_post_ids']
+        # but the current author_username filter is likely sufficient and simpler.
+
+    return render_template('user.html', username=username, posts=user_posts, user_images=user_images)
+
 @app.route('/todo', methods=['GET', 'POST'])
+@login_required
 def todo():
     if 'todos' not in session:
         session['todos'] = []
@@ -62,14 +79,14 @@ def todo():
 
     return render_template('todo.html', todos=session.get('todos', []))
 
-@login_required
 @app.route('/todo/clear')
+@login_required
 def clear_todos():
     session.pop('todos', None)
     return redirect(url_for('todo'))
 
-@login_required
 @app.route('/gallery/upload', methods=['GET', 'POST'])
+@login_required
 def upload_image():
     if request.method == 'POST':
         if 'file' not in request.files:
@@ -82,6 +99,9 @@ def upload_image():
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            # Associate image with user
+            if 'username' in session and session['username'] in users:
+                users[session['username']]['uploaded_images'].append(filename)
             flash('Image successfully uploaded!', 'success')
             return redirect(url_for('gallery')) # Redirect to gallery page
         else:
@@ -108,7 +128,8 @@ def login():
         username = request.form['username']
         password_candidate = request.form['password']
 
-        if username in users and check_password_hash(users.get(username), password_candidate):
+        user_data = users.get(username)
+        if user_data and check_password_hash(user_data['password'], password_candidate):
             session['logged_in'] = True
             session['username'] = username
             flash('You are now logged in!', 'success')
@@ -126,7 +147,7 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/blog/create', methods=['GET', 'POST'])
-@login_required
+@login_required # This order was already correct
 def create_post():
     #global blog_post_id_counter # No longer global like this
     if request.method == 'POST':
@@ -141,6 +162,9 @@ def create_post():
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         blog_posts.append(new_post)
+        # Associate post ID with user
+        if 'username' in session and session['username'] in users:
+            users[session['username']]['blog_post_ids'].append(new_post['id'])
         flash('Blog post created successfully!', 'success')
         return redirect(url_for('blog')) # This route will be created later
     return render_template('create_post.html')
@@ -161,7 +185,7 @@ def view_post(post_id):
         return redirect(url_for('blog'))
 
 @app.route('/blog/edit/<int:post_id>', methods=['GET', 'POST'])
-@login_required
+@login_required # This order was already correct
 def edit_post(post_id):
     post = next((p for p in blog_posts if p['id'] == post_id), None)
 
@@ -183,7 +207,7 @@ def edit_post(post_id):
     return render_template('edit_post.html', post=post)
 
 @app.route('/blog/delete/<int:post_id>', methods=['POST'])
-@login_required
+@login_required # This order was already correct
 def delete_post(post_id):
     post_to_delete = next((p for p in blog_posts if p['id'] == post_id), None)
 
@@ -210,7 +234,11 @@ def register():
             flash('Username already exists. Please choose a different one.', 'danger')
             return render_template('register.html')
         else:
-            users[username] = generate_password_hash(password)
+            users[username] = {
+                "password": generate_password_hash(password),
+                "uploaded_images": [],
+                "blog_post_ids": []
+            }
             flash('Registration successful! Please log in.', 'success')
             return redirect(url_for('login'))
     return render_template('register.html')

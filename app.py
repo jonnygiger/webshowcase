@@ -4,8 +4,10 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from datetime import datetime
+from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
+socketio = SocketIO(app)
 app.config['SECRET_KEY'] = 'supersecretkey'
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
@@ -251,6 +253,7 @@ def add_comment(post_id):
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     comments.append(new_comment)
+    socketio.emit('new_comment_event', new_comment, room=f'post_{post_id}')
     flash('Comment added successfully!', 'success')
     return redirect(url_for('view_post', post_id=post_id))
 
@@ -274,6 +277,10 @@ def register():
             return redirect(url_for('login'))
     return render_template('register.html')
 
+@socketio.on('join_room')
+def handle_join_room_event(data):
+    app.logger.info(f"User {session.get('username', 'Anonymous')} joined room: {data['room']}")
+    join_room(data['room'])
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    socketio.run(app, debug=True)

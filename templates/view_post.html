@@ -43,16 +43,18 @@
 
     {# Display Comments #}
     <h3>Comments</h3>
-    {% if comments and comments|length > 0 %}
-        {% for comment in comments %}
-            <div class="comment" style="margin-bottom: 15px; padding: 10px; border: 1px solid #eee;">
-                <p><strong>{{ comment.author_username }}</strong> <small class="text-muted">({{ comment.timestamp }})</small></p>
-                <p style="white-space: pre-wrap;">{{ comment.content }}</p>
-            </div>
-        {% endfor %}
-    {% else %}
-        <p>No comments yet. Be the first to comment!</p>
-    {% endif %}
+    <div id="comments-section">
+        {% if comments and comments|length > 0 %}
+            {% for comment in comments %}
+                <div class="comment" style="margin-bottom: 15px; padding: 10px; border: 1px solid #eee;">
+                    <p><strong>{{ comment.author_username }}</strong> <small class="text-muted">({{ comment.timestamp }})</small></p>
+                    <p style="white-space: pre-wrap;">{{ comment.content }}</p>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p id="no-comments-message">No comments yet. Be the first to comment!</p>
+        {% endif %}
+    </div>
 
     <hr style="margin-top: 20px;"> {# Add some space before the general back button #}
     <a href="{{ url_for('blog') }}" class="btn btn-info">Back to Blog</a>
@@ -61,4 +63,87 @@
     <p>Post not found.</p>
     <a href="{{ url_for('blog') }}" class="btn btn-secondary">Back to Blog</a>
   {% endif %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }} {# Include scripts from base template if any #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+<script type="text/javascript">
+  document.addEventListener('DOMContentLoaded', (event) => {
+    // Connect to SocketIO server
+    var socket = io();
+
+    // Get post_id from the page
+    var postId = {{ post.id }};
+    var room = 'post_' + postId;
+
+    // Emit an event to join the room for this specific post
+    socket.emit('join_room', {room: room});
+
+    // Listen for the 'new_comment_event'
+    socket.on('new_comment_event', function(comment) {
+      if (comment.post_id === postId) {
+        var commentsSection = document.getElementById('comments-section');
+        if (!commentsSection) {
+            // This part of the script might not be strictly necessary if the div is always present
+            // but good for robustness.
+            commentsSection = document.createElement('div');
+            commentsSection.id = 'comments-section';
+            var postContent = document.querySelector('.post-content'); // Adjust if your post content has a different class or ID
+            if (postContent) {
+                postContent.parentNode.insertBefore(commentsSection, postContent.nextSibling);
+            } else {
+                // Fallback: find comment form and insert before it, or append to body
+                var commentForm = document.querySelector('form[action*="add_comment"]');
+                if (commentForm) {
+                    commentForm.parentNode.insertBefore(commentsSection, commentForm);
+                } else {
+                    document.body.appendChild(commentsSection); // Least ideal fallback
+                }
+            }
+        }
+
+        // Create the new comment element
+        var commentDiv = document.createElement('div');
+        commentDiv.classList.add('comment'); // Add a class for styling if needed
+        commentDiv.style.marginBottom = '15px';
+        commentDiv.style.padding = '10px';
+        commentDiv.style.border = '1px solid #eee';
+
+
+        var commentAuthor = document.createElement('strong');
+        commentAuthor.textContent = comment.author_username;
+
+        var commentTimestamp = document.createElement('small'); // Changed to small to match existing
+        commentTimestamp.classList.add('text-muted');
+        // Format timestamp. Assuming comment.timestamp is a string like "YYYY-MM-DD HH:MM:SS" from server
+        // JS Date needs 'T' separator for ISO-like strings if not fully ISO, and 'Z' for UTC.
+        // Safest to parse manually or use a library if format is inconsistent.
+        // For simplicity, assuming it's compatible with `new Date()`.
+        var date = new Date(comment.timestamp.replace(' ', 'T') + 'Z'); // Adjust if timestamp is already UTC or in local time
+        commentTimestamp.textContent = ' (' + date.toLocaleString() + ')';
+
+
+        var commentContent = document.createElement('p');
+        commentContent.style.whiteSpace = 'pre-wrap'; // Match existing style
+        commentContent.textContent = comment.content;
+
+        commentDiv.appendChild(commentAuthor);
+        commentDiv.appendChild(commentTimestamp); // Timestamp next to author
+        commentDiv.appendChild(document.createElement('br')); // Line break before content if desired, or structure differently
+        commentDiv.appendChild(commentContent);
+        // No <hr> inside each comment, but after it if that's the style, or handled by loop structure
+
+        // Append the new comment to the section
+        commentsSection.appendChild(commentDiv);
+
+        // Optional: If there's a "No comments yet" message, remove it
+        var noCommentsMessage = document.getElementById('no-comments-message');
+        if (noCommentsMessage) {
+          noCommentsMessage.remove();
+        }
+      }
+    });
+  });
+</script>
 {% endblock %}

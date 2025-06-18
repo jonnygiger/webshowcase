@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}View Poll{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h3>{{ poll.question }}</h3>
+    <p class="text-muted">Created by: {{ poll.author_username }} on {{ poll.created_at }}</p>
+    <hr>
+
+    {% if not session.logged_in %}
+        {# User not logged in - Show results #}
+        <h4>Results:</h4>
+        <ul class="list-group">
+            {% for option in poll.options %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                {{ option.text }}
+                <span class="badge bg-primary rounded-pill">{{ option.vote_count }} vote(s)</span>
+            </li>
+            {% if total_votes > 0 %}
+            <div class="progress" style="height: 20px;">
+                <div class="progress-bar" role="progressbar" style="width: {{ (option.vote_count / total_votes * 100) if total_votes > 0 else 0 }}%;" aria-valuenow="{{ (option.vote_count / total_votes * 100) if total_votes > 0 else 0 }}" aria-valuemin="0" aria-valuemax="100">
+                    {{ "%.1f"|format((option.vote_count / total_votes * 100) if total_votes > 0 else 0) }}%
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </ul>
+        <p class="mt-3">Please <a href="{{ url_for('login', next=request.url) }}">log in</a> to vote.</p>
+
+    {% elif user_has_voted %}
+        {# User logged in and has voted - Show results and highlight their vote #}
+        <h4>Results (You voted for: "{{ poll.options|selectattr('id', 'equalto', user_vote)|first|attr('text') }}"):</h4>
+        <ul class="list-group">
+            {% for option in poll.options %}
+            <li class="list-group-item d-flex justify-content-between align-items-center {% if option.id == user_vote %}active{% endif %}">
+                {{ option.text }}
+                <span class="badge {% if option.id == user_vote %}bg-light text-dark{% else %}bg-primary{% endif %} rounded-pill">{{ option.vote_count }} vote(s)</span>
+            </li>
+            {% if total_votes > 0 %}
+            <div class="progress" style="height: 20px;">
+                <div class="progress-bar {% if option.id == user_vote %}bg-success{% endif %}" role="progressbar" style="width: {{ (option.vote_count / total_votes * 100) if total_votes > 0 else 0 }}%;" aria-valuenow="{{ (option.vote_count / total_votes * 100) if total_votes > 0 else 0 }}" aria-valuemin="0" aria-valuemax="100">
+                    {{ "%.1f"|format((option.vote_count / total_votes * 100) if total_votes > 0 else 0) }}%
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </ul>
+        <p class="mt-3">You have already cast your vote for this poll.</p>
+
+    {% else %}
+        {# User logged in and has not voted - Show voting form #}
+        <h4>Cast Your Vote:</h4>
+        <form method="POST" action="{{ url_for('vote_on_poll', poll_id=poll.id) }}">
+            {% for option in poll.options %}
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="option_id" id="option{{ option.id }}" value="{{ option.id }}" required>
+                <label class="form-check-label" for="option{{ option.id }}">
+                    {{ option.text }}
+                </label>
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-primary mt-3">Vote</button>
+        </form>
+    {% endif %}
+
+    <hr>
+    <div class="d-flex justify-content-between align-items-center">
+        <a href="{{ url_for('polls_list') }}" class="btn btn-secondary mt-3">Back to Polls List</a>
+
+        {% if session.logged_in and session.username == poll.author_username %}
+        <form method="POST" action="{{ url_for('delete_poll', poll_id=poll.id) }}" class="mt-3">
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this poll?');">Delete Poll</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

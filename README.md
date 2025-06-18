@@ -40,6 +40,20 @@ This is a basic Flask application.
 
 ## Features
 
+### User Authentication
+
+This application now features a user authentication system.
+
+*   **Login/Logout**: Users can log in with their credentials to access protected parts of the site. A logout option is available to end the session.
+*   **Protected Routes**: The following routes require users to be logged in:
+    *   To-Do List (`/todo` and `/todo/clear`)
+    *   Image Upload (`/gallery/upload`)
+    If an unauthenticated user attempts to access these pages, they will be redirected to the login page.
+*   **Demo User**: For demonstration purposes, a default user is available:
+    *   **Username**: `demo`
+    *   **Password**: `password123`
+*   **Navigation**: The navigation bar will dynamically show "Login" or "Logout" links based on the current user's session status. When logged in, it will also display the username.
+
 ### To-Do List
 
 This application includes a simple To-Do list feature that demonstrates Flask's session handling and form processing capabilities.

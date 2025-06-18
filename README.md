@@ -133,3 +133,26 @@ This application now includes a fully functional blog where users can share thei
     *   `/blog/delete/<int:post_id>`: (POST)
         *   Requires login and that the logged-in user is the author of the post.
         *   Deletes the specified blog post after a confirmation.
+
+### User Profile Page
+
+This feature provides a dedicated page for each user, showcasing their activity and contributions to the application.
+
+*   **Purpose**: To display user-specific information, including their blog posts and uploaded images, creating a personalized space for each user.
+*   **Route**: `/user/<username>` (e.g., `/user/demo`)
+*   **Information Displayed**:
+    *   **Username**: The name of the user whose profile is being viewed.
+    *   **User's Blog Posts**:
+        *   A list of blog posts authored by the user.
+        *   Each post title links to the full post view (`/blog/post/<id>`).
+        *   The timestamp of when the post was created is also displayed.
+        *   If the user has not created any posts, a message like "This user has not created any posts yet." is shown.
+    *   **User's Uploaded Images**:
+        *   A gallery of images uploaded by the user.
+        *   Images are displayed in a grid format.
+        *   If the user has not uploaded any images, a message like "This user has not uploaded any images yet." is shown.
+*   **Flask Functionalities Demonstrated**:
+    *   **Dynamic Content Generation**: The content of the profile page is dynamically generated based on the `username` parameter in the URL and the associated user data.
+    *   **Data Aggregation**: Information (blog posts, uploaded images) is filtered and aggregated specifically for the viewed user.
+    *   **User-Specific Views**: Enhances the application by providing views tailored to individual users, improving personalization.
+    *   **Data Structures for User Association**: User data (like associated image filenames and blog post IDs) is managed within the `users` dictionary in `app.py`.

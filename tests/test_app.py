@@ -3,23 +3,27 @@ import os
 import pytest
 import io # Add this import
 
-# Add the parent directory to the Python path to allow importing 'app'
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from app import app as flask_app, allowed_file # Import allowed_file
+import io # Add this import
+# Deliberately deferring app import
 
 @pytest.fixture
 def app_instance():
-    """
-    Provides the Flask app instance.
-    This fixture is used by the `client` fixture.
-    """
+    # Add the parent directory to the Python path to allow importing 'app'
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+    # Attempt to remove app from sys.modules to force a fresh import
+    if 'app' in sys.modules:
+        del sys.modules['app']
+
+    from app import app as flask_app
     flask_app.config['TESTING'] = True
-    # Ensure UPLOAD_FOLDER is set for tests, if not already correctly derived in app.py
-    # If app.py uses app.root_path, it should be fine.
-    # Forcing a specific test upload folder can also be done here if needed:
-    # test_upload_folder = os.path.join(flask_app.root_path, 'test_uploads')
-    # flask_app.config['UPLOAD_FOLDER'] = test_upload_folder
     return flask_app
+
+# Import other things from app or flask here if they are needed globally or in other fixtures
+# For example, if allowed_file was needed by another fixture not using app_instance directly.
+# from app import allowed_file
+from flask import url_for
+
 
 @pytest.fixture
 def client(app_instance):
@@ -27,6 +31,8 @@ def client(app_instance):
     Provides a test client for the Flask application.
     Ensures that the app context is active for operations that require it.
     """
+    # Now allowed_file needs to be imported where used or made available if it's used in tests directly
+    # For now, assuming it's used within routes that are part of app_instance
     with app_instance.app_context():
         yield app_instance.test_client()
 
@@ -48,9 +54,9 @@ def cleanup_uploads(upload_folder_path):
             print(f'Failed to delete {file_path}. Reason: {e}')
 
 @pytest.fixture(autouse=True) # auto-use to apply to all tests in this module
-def manage_uploads(app_instance):
+def manage_uploads(app_instance): # app_instance will trigger the import
     # Setup: ensure upload folder is clean before each test
-    upload_folder = app_instance.config['UPLOAD_FOLDER']
+    upload_folder = app_instance.config['UPLOAD_FOLDER'] # app_instance is now the flask_app
     if not os.path.exists(upload_folder):
         os.makedirs(upload_folder)
     # Create .gitkeep if it doesn't exist, to mimic real folder structure
@@ -68,19 +74,22 @@ def manage_uploads(app_instance):
     cleanup_uploads(upload_folder)
 
 
-def test_allowed_file_utility(app_instance):
+def test_allowed_file_utility(app_instance): # app_instance will trigger the import
     # Test the allowed_file utility function directly
+    # To use allowed_file directly, it needs to be imported.
+    # Let's import it locally for this test or make it available from app_instance if that's how it's structured.
+    from app import allowed_file as af_test
     with app_instance.app_context(): # Need app context for app.config
-        assert allowed_file("test.jpg") == True
-        assert allowed_file("test.png") == True
-        assert allowed_file("test.jpeg") == True
-        assert allowed_file("test.gif") == True
-        assert allowed_file("test.JPG") == True
-        assert allowed_file("test.PnG") == True
-        assert allowed_file("test.txt") == False
-        assert allowed_file("testjpg") == False # No dot
-        assert allowed_file(".jpg") == False # No filename part
-        assert allowed_file("test.") == False # No extension part
+        assert af_test("test.jpg") == True
+        assert af_test("test.png") == True
+        assert af_test("test.jpeg") == True
+        assert af_test("test.gif") == True
+        assert af_test("test.JPG") == True
+        assert af_test("test.PnG") == True
+        assert af_test("test.txt") == False
+        assert af_test("testjpg") == False # No dot
+        assert af_test(".jpg") == False # No filename part
+        assert af_test("test.") == False # No extension part
 
 
 def test_gallery_page_empty(client):
@@ -255,3 +264,104 @@ def test_add_empty_task_string(client):
     assert b"<li></li>" in response_get.data
 
     client.get('/todo/clear') # Cleanup
+
+
+# --- Authentication Tests ---
+
+def test_login_logout_successful(client):
+    """Test successful login and then logout."""
+    # Login
+    response_login = client.post('/login', data={
+        'username': 'demo',
+        'password': 'password123'
+    }, follow_redirects=False) # Don't follow redirect to check session and flash
+
+    assert response_login.status_code == 302 # Should redirect after login
+    # Default redirect is to hello_world which is '/'
+    assert response_login.location == '/'
+
+
+    with client.session_transaction() as sess:
+        assert sess['logged_in'] is True
+        assert sess['username'] == 'demo'
+
+    # Check flash message on the redirected page
+    response_redirected = client.get(response_login.location) # Manually follow redirect
+    assert b"You are now logged in!" in response_redirected.data
+
+    # Logout
+    response_logout = client.get('/logout', follow_redirects=False)
+    assert response_logout.status_code == 302
+    assert response_logout.location == '/login' # Redirects to login page
+
+    with client.session_transaction() as sess:
+        assert 'logged_in' not in sess
+        assert 'username' not in sess
+
+    # Check flash message on the redirected page
+    response_redirected_logout = client.get(response_logout.location)
+    assert b"You are now logged out." in response_redirected_logout.data
+
+def test_login_failed_wrong_password(client):
+    """Test login attempt with incorrect password."""
+    response = client.post('/login', data={
+        'username': 'demo',
+        'password': 'wrongpassword'
+    }, follow_redirects=True) # Follow redirect to see rendered page with message
+
+    assert response.status_code == 200 # Should re-render login page
+    assert b"Invalid login." in response.data
+    assert b"Login</title>" in response.data # Check we are on login page
+    with client.session_transaction() as sess:
+        assert 'logged_in' not in sess
+
+def test_login_failed_wrong_username(client):
+    """Test login attempt with a non-existent username."""
+    response = client.post('/login', data={
+        'username': 'nouser',
+        'password': 'password123'
+    }, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Invalid login." in response.data
+    assert b"Login</title>" in response.data
+    with client.session_transaction() as sess:
+        assert 'logged_in' not in sess
+
+def test_access_protected_route_todo_unauthenticated(client):
+    """Test accessing /todo when not logged in."""
+    response = client.get('/todo', follow_redirects=False)
+    assert response.status_code == 302
+    assert response.location == '/login'
+
+    response_redirected = client.get(response.location) # Manually follow
+    assert b"You need to be logged in to access this page." in response_redirected.data
+
+def test_access_protected_route_upload_unauthenticated(client):
+    """Test accessing /gallery/upload when not logged in."""
+    response = client.get('/gallery/upload', follow_redirects=False)
+    assert response.status_code == 302
+    assert response.location == '/login'
+
+    response_redirected = client.get(response.location)
+    assert b"You need to be logged in to access this page." in response_redirected.data
+
+def test_access_protected_route_todo_authenticated(client):
+    """Test accessing /todo after successful login."""
+    # First, log in
+    client.post('/login', data={'username': 'demo', 'password': 'password123'}, follow_redirects=True)
+
+    # Then, access the protected route
+    response = client.get('/todo')
+    assert response.status_code == 200
+    assert b"My To-Do List" in response.data # Check for content from todo.html
+    assert b"You need to be logged in" not in response.data # No error message
+
+def test_access_protected_route_upload_authenticated(client):
+    """Test accessing /gallery/upload after successful login."""
+    client.post('/login', data={'username': 'demo', 'password': 'password123'}, follow_redirects=True)
+
+    response = client.get('/gallery/upload')
+    assert response.status_code == 200
+    assert b"Upload a New Image" in response.data # Check for content from upload_image.html
+    assert b"You need to be logged in" not in response.data

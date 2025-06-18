@@ -7,6 +7,15 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flashes">
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
     <header>
         <nav>
             <ul>
@@ -15,6 +24,12 @@
                 <li><a href="{{ url_for('todo') }}">To-Do List</a></li>
                 <li><a href="{{ url_for('gallery') }}">Gallery</a></li>
                 <li><a href="{{ url_for('upload_image') }}">Upload Image</a></li>
+                {% if session['logged_in'] %}
+                  <li><span>Logged in as {{ session['username'] }}</span></li>
+                  <li><a href="{{ url_for('logout') }}">Logout</a></li>
+                {% else %}
+                  <li><a href="{{ url_for('login') }}">Login</a></li>
+                {% endif %}
             </ul>
         </nav>
     </header>

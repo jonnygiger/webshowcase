@@ -15,6 +15,21 @@
     <p><small>By {{ post.author_username }} on {{ post.timestamp }}</small></p>
     <p>{{ post.content | safe }}</p> {# Assuming content is safe or will be sanitized later #}
 
+    <div style="margin-top: 15px; margin-bottom: 15px;">
+        <p>{{ post.likes }} like(s)</p>
+        {% if session.logged_in %}
+            {% if user_has_liked %}
+                <form action="{{ url_for('unlike_post', post_id=post.id) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-secondary btn-sm">Unlike</button>
+                </form>
+            {% else %}
+                <form action="{{ url_for('like_post', post_id=post.id) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-primary btn-sm">Like</button>
+                </form>
+            {% endif %}
+        {% endif %}
+    </div>
+
     {% if session.logged_in and session.username == post.author_username %}
     <hr>
     <a href="{{ url_for('edit_post', post_id=post.id) }}" class="btn btn-secondary" style="margin-top: 10px; margin-right: 5px;">Edit Post</a>

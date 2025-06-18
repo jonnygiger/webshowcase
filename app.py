@@ -29,6 +29,12 @@ post_likes = {} # To track likes: {post_id: {user_id1, user_id2, ...}}
 private_messages = []
 app.private_message_id_counter = 0
 
+# Polls data structures
+polls = []  # List of poll dictionaries
+poll_votes = {}  # {poll_id: {option_id: {user1, user2}}}
+app.poll_id_counter = 0
+app.poll_option_id_counter = 0
+
 # Ensure the upload folder exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -442,3 +448,162 @@ def handle_join_room_event(data):
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
+
+
+@app.route('/polls/create', methods=['GET', 'POST'])
+@login_required
+def create_poll():
+    if request.method == 'POST':
+        question = request.form.get('question')
+        options_texts = request.form.getlist('options[]')
+
+        # Validate question
+        if not question or not question.strip():
+            flash('Poll question cannot be empty.', 'danger')
+            return render_template('create_poll.html')
+
+        # Filter out empty option strings and validate
+        valid_options_texts = [opt.strip() for opt in options_texts if opt and opt.strip()]
+        if len(valid_options_texts) < 2:
+            flash('Please provide at least two valid options for the poll.', 'danger')
+            return render_template('create_poll.html')
+
+        app.poll_id_counter += 1
+        new_poll_id = app.poll_id_counter
+
+        new_poll = {
+            "id": new_poll_id,
+            "question": question.strip(),
+            "author_username": session['username'],
+            "options": [],
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        for option_text in valid_options_texts:
+            app.poll_option_id_counter += 1
+            new_poll['options'].append({
+                "id": app.poll_option_id_counter,
+                "text": option_text,
+                "votes": 0 # Initialize votes count for the option
+            })
+
+        polls.append(new_poll)
+        poll_votes[new_poll_id] = {} # Initialize vote storage for this poll
+
+        flash('Poll created successfully!', 'success')
+        # Redirect to view_poll or polls_list later. For now, placeholder:
+        return redirect(url_for('hello_world')) # Placeholder redirect
+
+    # GET request
+    return render_template('create_poll.html')
+
+
+@app.route('/polls')
+def polls_list():
+    # Sort polls by creation date, newest first (optional, but good practice)
+    sorted_polls = sorted(polls, key=lambda x: x['created_at'], reverse=True)
+    return render_template('polls.html', polls=sorted_polls)
+
+
+@app.route('/poll/<int:poll_id>')
+def view_poll(poll_id):
+    poll = next((p for p in polls if p['id'] == poll_id), None)
+    if not poll:
+        flash('Poll not found!', 'danger')
+        return redirect(url_for('polls_list'))
+
+    user_has_voted = False
+    user_vote = None # Option ID the user voted for
+    total_votes = 0
+
+    if 'username' in session:
+        current_user = session['username']
+        if poll_id in poll_votes:
+            for option_id_key, voters_set in poll_votes[poll_id].items():
+                if current_user in voters_set:
+                    user_has_voted = True
+                    user_vote = option_id_key # Store the option_id the user voted for
+                    break
+
+    # Calculate vote counts for each option and total votes
+    # This needs to be done regardless of whether the current user has voted or is logged in
+    for option in poll['options']:
+        # poll_votes keys for options are integers
+        current_option_votes = len(poll_votes.get(poll_id, {}).get(option['id'], set()))
+        option['vote_count'] = current_option_votes
+        total_votes += current_option_votes
+
+    # user_vote (option_id) should be an int if found
+    if user_vote is not None: # It might have been read as a string key from poll_votes if keys were mixed
+         user_vote = int(user_vote)
+
+
+    return render_template('view_poll.html', poll=poll, user_has_voted=user_has_voted, user_vote=user_vote, total_votes=total_votes)
+
+
+@app.route('/poll/<int:poll_id>/vote', methods=['POST'])
+@login_required
+def vote_on_poll(poll_id):
+    poll = next((p for p in polls if p['id'] == poll_id), None)
+    if not poll:
+        flash('Poll not found!', 'danger')
+        return redirect(url_for('polls_list'))
+
+    option_id_str = request.form.get('option_id')
+    if not option_id_str:
+        flash('No option selected.', 'danger')
+        return redirect(url_for('view_poll', poll_id=poll_id))
+
+    try:
+        selected_option_id = int(option_id_str)
+    except ValueError:
+        flash('Invalid option ID.', 'danger')
+        return redirect(url_for('view_poll', poll_id=poll_id))
+
+    # Check if selected_option_id is valid for this poll
+    if not any(opt['id'] == selected_option_id for opt in poll['options']):
+        flash('Invalid option selected for this poll.', 'danger')
+        return redirect(url_for('view_poll', poll_id=poll_id))
+
+    current_user = session['username']
+
+    # Ensure poll_id entry exists in poll_votes
+    if poll_id not in poll_votes:
+        poll_votes[poll_id] = {}
+
+    # Check if user has already voted in this poll
+    for existing_voters_set in poll_votes[poll_id].values():
+        if current_user in existing_voters_set:
+            flash('You have already voted on this poll.', 'warning')
+            return redirect(url_for('view_poll', poll_id=poll_id))
+
+    # Record the vote
+    poll_votes[poll_id].setdefault(selected_option_id, set()).add(current_user)
+    flash('Vote cast successfully!', 'success')
+    return redirect(url_for('view_poll', poll_id=poll_id))
+
+
+@app.route('/poll/<int:poll_id>/delete', methods=['POST'])
+@login_required
+def delete_poll(poll_id):
+    poll_to_delete = None
+    for i, poll_item in enumerate(polls):
+        if poll_item['id'] == poll_id:
+            poll_to_delete = poll_item
+            poll_index = i
+            break
+
+    if not poll_to_delete:
+        flash('Poll not found!', 'danger')
+        return redirect(url_for('polls_list'))
+
+    if poll_to_delete['author_username'] != session['username']:
+        flash('You are not authorized to delete this poll.', 'danger')
+        return redirect(url_for('view_poll', poll_id=poll_id))
+
+    # Delete the poll
+    polls.pop(poll_index)
+    poll_votes.pop(poll_id, None) # Remove vote data for the poll
+
+    flash('Poll deleted successfully!', 'success')
+    return redirect(url_for('polls_list'))

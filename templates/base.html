@@ -25,6 +25,7 @@
                 <li><a href="{{ url_for('gallery') }}">Gallery</a></li>
                 <li><a href="{{ url_for('upload_image') }}">Upload Image</a></li>
                 <li><a href="{{ url_for('blog') }}">Blog</a></li>
+                <li><a href="{{ url_for('polls_list') }}">Polls</a></li>
                 {% if session['logged_in'] %}
                   <li><a href="{{ url_for('inbox') }}">Inbox</a></li>
                   <li><a href="{{ url_for('create_post') }}">Create Post</a></li>

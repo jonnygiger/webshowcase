@@ -104,6 +104,13 @@ def manage_app_state(app_instance):
     app_private_messages.clear()
     current_app_instance.private_message_id_counter = 0
 
+    # Clear poll data
+    from app import polls, poll_votes # Import poll specific data
+    polls.clear()
+    poll_votes.clear()
+    current_app_instance.poll_id_counter = 0
+    current_app_instance.poll_option_id_counter = 0
+
     yield
 
     cleanup_uploads(upload_folder)
@@ -114,6 +121,12 @@ def manage_app_state(app_instance):
     post_likes.clear()
     app_private_messages.clear()
     current_app_instance.private_message_id_counter = 0
+
+    # Clear poll data after tests
+    polls.clear()
+    poll_votes.clear()
+    current_app_instance.poll_id_counter = 0
+    current_app_instance.poll_option_id_counter = 0
 
 
 # --- Existing tests ... (keeping them as is) ---
@@ -723,6 +736,307 @@ class TestPrivateMessaging:
         assert msg['sender_username'] == 'userA_reply'
         assert msg['receiver_username'] == 'userB_reply'
         assert msg['content'] == reply_content
+
+
+# --- Polls Tests ---
+class TestPolls:
+    def _create_sample_poll(self, client, question="Test Poll Question?", options=None):
+        """ Helper to create a poll, assumes client is logged in. """
+        if options is None:
+            options = ["Option A", "Option B", "Option C"]
+
+        # Use the app's global polls list and counters for direct manipulation if needed,
+        # but prefer using the endpoint for more integrated testing.
+        from app import app as current_app, polls as app_polls, poll_votes as app_poll_votes
+
+        # Get current counter values to predict next ID
+        next_poll_id = current_app.poll_id_counter + 1
+
+        response = client.post(url_for('create_poll'), data={
+            'question': question,
+            'options[]': options
+        }, follow_redirects=False) # Follow redirect to view_poll
+
+        # The create_poll redirects to view_poll(poll_id=new_poll_id)
+        # We need to parse this new_poll_id if we want to return it.
+        # For now, this helper just creates the poll. The calling test can inspect app.polls.
+        return response, next_poll_id
+
+
+    def test_create_poll_get_not_logged_in(self, client):
+        response = client.get(url_for('create_poll'), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+
+    def test_create_poll_get_logged_in(self, client):
+        _login_user(client, "testuser", "password")
+        response = client.get(url_for('create_poll'))
+        assert response.status_code == 200
+        assert b"Create a New Poll" in response.data
+        assert b'name="question"' in response.data
+        assert b'name="options[]"' in response.data
+
+    def test_create_poll_post_logged_in_valid(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        question = "Is this a valid poll?"
+        options = ["Yes, it is!", "No, not really."]
+
+        response, new_poll_id = self._create_sample_poll(client, question, options)
+
+        assert response.status_code == 302 # Redirects to view_poll
+        assert response.location == url_for('view_poll', poll_id=new_poll_id)
+
+        # Verify flash message on the redirected page
+        response_redirected = client.get(response.location)
+        assert b"Poll created successfully!" in response_redirected.data
+
+        from app import polls as app_polls, poll_votes as app_poll_votes
+        assert len(app_polls) == 1
+        created_poll = app_polls[0]
+        assert created_poll['id'] == new_poll_id
+        assert created_poll['question'] == question
+        assert created_poll['author_username'] == "testuser"
+        assert len(created_poll['options']) == 2
+        assert created_poll['options'][0]['text'] == options[0]
+        assert created_poll['options'][1]['text'] == options[1]
+        assert created_poll['options'][0]['votes'] == 0
+
+        assert new_poll_id in app_poll_votes
+        assert app_poll_votes[new_poll_id] == {}
+
+    def test_create_poll_post_logged_in_invalid_no_question(self, client):
+        _login_user(client, "testuser", "password")
+        response = client.post(url_for('create_poll'), data={
+            'question': '', 'options[]': ['Opt1', 'Opt2']
+        }, follow_redirects=True)
+        assert response.status_code == 200 # Stays on create_poll page
+        assert b"Poll question cannot be empty." in response.data
+
+    def test_create_poll_post_logged_in_invalid_insufficient_options(self, client):
+        _login_user(client, "testuser", "password")
+        response = client.post(url_for('create_poll'), data={
+            'question': 'A Question', 'options[]': ['OnlyOneOption']
+        }, follow_redirects=True)
+        assert response.status_code == 200 # Stays on create_poll page
+        assert b"Please provide at least two valid options" in response.data
+
+    def test_create_poll_post_not_logged_in(self, client):
+        response = client.post(url_for('create_poll'), data={
+            'question': 'Q', 'options[]': ['O1', 'O2']
+        }, follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+
+    def test_polls_list_empty(self, client):
+        response = client.get(url_for('polls_list'))
+        assert response.status_code == 200
+        assert b"No polls available yet." in response.data
+        assert b"Create New Poll" in response.data # Link to create should be there
+
+    def test_polls_list_with_polls(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        _, poll1_id = self._create_sample_poll(client, "Poll 1 Question", ["P1O1", "P1O2"])
+        # To ensure different creation times for sorting, could add a small delay or manually adjust created_at
+        # For simplicity, assume they are created sequentially and sorting will work if tested.
+        _login_user(client, "demo", "password123") # Different author
+        _, poll2_id = self._create_sample_poll(client, "Poll 2 Question by Demo", ["P2O1", "P2O2"])
+
+        response = client.get(url_for('polls_list'))
+        assert response.status_code == 200
+        assert b"Poll 1 Question" in response.data
+        assert b"testuser" in response.data # Author of Poll 1
+        assert b"Poll 2 Question by Demo" in response.data
+        assert b"demo" in response.data # Author of Poll 2
+        # Check if links to view polls are present
+        assert bytes(url_for('view_poll', poll_id=poll1_id), 'utf-8') in response.data
+        assert bytes(url_for('view_poll', poll_id=poll2_id), 'utf-8') in response.data
+
+
+    def test_view_poll_exists_not_logged_in_shows_results(self, client, app_instance):
+        _login_user(client, "testuser", "password") # testuser creates poll
+        _, poll_id = self._create_sample_poll(client, "View Poll Test Question", ["VOpt1", "VOpt2"])
+
+        client.get('/logout', follow_redirects=True) # Log out before viewing
+
+        response = client.get(url_for('view_poll', poll_id=poll_id))
+        assert response.status_code == 200
+        assert b"View Poll Test Question" in response.data
+        assert b"VOpt1" in response.data
+        assert b"VOpt2" in response.data
+        assert b"0 vote(s)" in response.data # Results are shown
+        assert b"Please log in to vote." in response.data # Prompt to log in
+        assert b'name="option_id"' not in response.data # Voting form NOT shown
+
+    def test_view_poll_not_exists(self, client):
+        response = client.get(url_for('view_poll', poll_id=9999), follow_redirects=True)
+        assert response.status_code == 200 # Redirects to polls_list
+        assert b"Poll not found!" in response.data
+        assert b"Available Polls" in response.data # Check we are on polls_list
+
+    def test_view_poll_shows_voting_form_if_logged_in_not_voted(self, client, app_instance):
+        _login_user(client, "testuser", "password") # testuser creates poll
+        _, poll_id = self._create_sample_poll(client, "Voting Form Test", ["FormOpt1", "FormOpt2"])
+
+        # testuser (who is logged in) views the poll they haven't voted on
+        response = client.get(url_for('view_poll', poll_id=poll_id))
+        assert response.status_code == 200
+        assert b"Voting Form Test" in response.data
+        assert b"Cast Your Vote:" in response.data
+        assert b'name="option_id"' in response.data # Voting form IS shown
+        assert b'value="FormOpt1"' not in response.data # Check for actual option id from created poll
+
+        from app import polls as app_polls
+        created_poll = app_polls[0]
+        option1_id = created_poll['options'][0]['id']
+        assert bytes(f'value="{option1_id}"', 'utf-8') in response.data
+
+
+    def test_vote_on_poll_logged_in_first_vote(self, client, app_instance):
+        _login_user(client, "voter1", "password") # Register and login voter1
+        _register_user(client, "voter1", "password") # Ensure user exists
+        _login_user(client, "voter1", "password")
+
+        _login_user(client, "poll_creator", "password") # poll_creator creates poll
+        _register_user(client, "poll_creator", "password")
+        _login_user(client, "poll_creator", "password")
+        _, poll_id = self._create_sample_poll(client, "Poll for Voting", ["VoteOptA", "VoteOptB"])
+
+        from app import polls as app_polls, poll_votes as app_poll_votes
+        created_poll = app_polls[0] # Assuming it's the first/only one
+        option_to_vote_id = created_poll['options'][0]['id']
+
+        _login_user(client, "voter1", "password") # voter1 logs back in to vote
+        response = client.post(url_for('vote_on_poll', poll_id=poll_id), data={
+            'option_id': str(option_to_vote_id)
+        }, follow_redirects=False) # Redirects to view_poll
+
+        assert response.status_code == 302
+        assert response.location == url_for('view_poll', poll_id=poll_id)
+
+        response_redirected = client.get(response.location)
+        assert b"Vote cast successfully!" in response_redirected.data
+        assert b"You voted for: VoteOptA" in response_redirected.data # Results are shown after voting
+
+        assert "voter1" in app_poll_votes[poll_id][option_to_vote_id]
+        # Check vote count on option in results
+        assert b"1 vote(s)" in response_redirected.data # Check specific option count if possible or total
+
+
+    def test_vote_on_poll_logged_in_already_voted(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        _, poll_id = self._create_sample_poll(client, "Already Voted Poll", ["AV_Opt1", "AV_Opt2"])
+
+        from app import polls as app_polls
+        option_id = app_polls[0]['options'][0]['id']
+
+        # First vote
+        client.post(url_for('vote_on_poll', poll_id=poll_id), data={'option_id': str(option_id)}, follow_redirects=True)
+
+        # Attempt second vote
+        response = client.post(url_for('vote_on_poll', poll_id=poll_id), data={'option_id': str(option_id)}, follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('view_poll', poll_id=poll_id)
+        response_redirected = client.get(response.location)
+        assert b"You have already voted on this poll." in response_redirected.data
+
+
+    def test_vote_on_poll_not_logged_in(self, client, app_instance):
+        _login_user(client, "testuser", "password") # testuser creates poll
+        _, poll_id = self._create_sample_poll(client, "Vote Not Logged In Poll", ["VNL_Opt1"])
+        option_id = app_instance.polls[0]['options'][0]['id']
+        client.get('/logout', follow_redirects=True) # Log out
+
+        response = client.post(url_for('vote_on_poll', poll_id=poll_id), data={'option_id': str(option_id)}, follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+
+    def test_delete_poll_author_logged_in(self, client, app_instance):
+        _login_user(client, "author_user", "password")
+        _register_user(client, "author_user", "password") # Ensure user exists
+        _login_user(client, "author_user", "password")
+
+        _, poll_id = self._create_sample_poll(client, "Poll to Delete", ["DelOpt1"])
+
+        from app import polls as app_polls, poll_votes as app_poll_votes
+        assert len(app_polls) == 1
+        assert poll_id in app_poll_votes
+
+        response = client.post(url_for('delete_poll', poll_id=poll_id), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('polls_list')
+
+        response_redirected = client.get(response.location)
+        assert b"Poll deleted successfully!" in response_redirected.data
+
+        assert len(app_polls) == 0
+        assert poll_id not in app_poll_votes
+
+    def test_delete_poll_not_author_logged_in(self, client, app_instance):
+        _login_user(client, "original_author", "password") # original_author creates poll
+        _register_user(client, "original_author", "password")
+        _login_user(client, "original_author", "password")
+        _, poll_id = self._create_sample_poll(client, "Protected Poll", ["POpt1"])
+
+        _login_user(client, "another_user", "password") # another_user logs in
+        _register_user(client, "another_user", "password")
+        _login_user(client, "another_user", "password")
+
+        response = client.post(url_for('delete_poll', poll_id=poll_id), follow_redirects=False)
+        assert response.status_code == 302 # Redirects to view_poll
+        assert response.location == url_for('view_poll', poll_id=poll_id)
+
+        response_redirected = client.get(response.location)
+        assert b"You are not authorized to delete this poll." in response_redirected.data
+
+        from app import polls as app_polls
+        assert len(app_polls) == 1 # Poll should still exist
+
+    def test_delete_poll_not_logged_in(self, client, app_instance):
+        _login_user(client, "testuser", "password") # testuser creates poll
+        _, poll_id = self._create_sample_poll(client, "Delete Not Logged In Poll", ["DNL_Opt1"])
+        client.get('/logout', follow_redirects=True) # Log out
+
+        response = client.post(url_for('delete_poll', poll_id=poll_id), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+
+    def test_view_poll_shows_delete_button_for_author(self, client, app_instance):
+        _login_user(client, "author_del_view", "password")
+        _register_user(client, "author_del_view", "password")
+        _login_user(client, "author_del_view", "password")
+        _, poll_id = self._create_sample_poll(client, "Author View Delete Button Test")
+
+        response = client.get(url_for('view_poll', poll_id=poll_id))
+        assert response.status_code == 200
+        assert b'action="/poll/' + str(poll_id).encode('utf-8') + b'/delete"' in response.data
+        assert b"Delete Poll</button>" in response.data
+
+    def test_view_poll_hides_delete_button_for_non_author(self, client, app_instance):
+        _login_user(client, "author_user_a", "password") # Author creates poll
+        _register_user(client, "author_user_a", "password")
+        _login_user(client, "author_user_a", "password")
+        _, poll_id = self._create_sample_poll(client, "Non-Author View Test")
+
+        _login_user(client, "non_author_user_b", "password") # Non-author views
+        _register_user(client, "non_author_user_b", "password")
+        _login_user(client, "non_author_user_b", "password")
+
+        response = client.get(url_for('view_poll', poll_id=poll_id))
+        assert response.status_code == 200
+        assert b'action="/poll/' + str(poll_id).encode('utf-8') + b'/delete"' not in response.data
+        assert b"Delete Poll</button>" not in response.data
+
+    def test_view_poll_hides_delete_button_for_not_logged_in(self, client, app_instance):
+        _login_user(client, "author_temp", "password") # Author creates poll
+        _register_user(client, "author_temp", "password")
+        _login_user(client, "author_temp", "password")
+        _, poll_id = self._create_sample_poll(client, "Not Logged In View Test")
+        client.get('/logout', follow_redirects=True) # Log out
+
+        response = client.get(url_for('view_poll', poll_id=poll_id))
+        assert response.status_code == 200
+        assert b'action="/poll/' + str(poll_id).encode('utf-8') + b'/delete"' not in response.data
+        assert b"Delete Poll</button>" not in response.data
 
 
 class TestAppSocketIO(unittest.TestCase):

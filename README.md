@@ -236,3 +236,42 @@ This application now supports private messaging between registered users, allowi
         *   `POST`: Processes the submitted message content and sends it to `<receiver_username>`. Redirects to the conversation view with that user upon successful sending.
     *   `/user/<username>`:
         *   User profile pages now feature a "Send Message" button if the viewer is logged in and is not viewing their own profile. This button links directly to the `/messages/send/<username>` route for the profile owner.
+
+### Polls Feature
+
+This application now includes a "Polls" feature, allowing users to create and participate in polls.
+
+*   **Purpose**: Allows users to create polls with multiple options, vote on polls created by others, and view the results.
+*   **Flask Functionalities Demonstrated**:
+    *   CRUD operations for polls (Create, Read, Delete - Update is not implemented for simplicity).
+    *   Advanced form handling for creating polls with a variable number of options (though currently fixed in template, backend supports dynamic).
+    *   User interaction and session management to track votes and ensure vote integrity (one vote per user per poll).
+    *   Data aggregation and presentation for displaying poll results, including vote counts and percentages.
+    *   Authorization to ensure only poll authors can delete their polls.
+
+*   **Routes & Usage**:
+    *   `/polls`: (GET)
+        *   Lists all available polls, showing the question, author, and creation date.
+        *   Each poll links to its detailed view.
+    *   `/polls/create`: (GET/POST)
+        *   Requires login.
+        *   `GET`: Displays a form for creating a new poll, including fields for the poll question and multiple options.
+        *   `POST`: Submits the new poll data. Validates input (question and at least two options required).
+    *   `/poll/<int:poll_id>`: (GET)
+        *   Displays the poll question, its options, and current results (vote counts and percentages).
+        *   If the user is logged in and has not yet voted on this poll, a voting form with radio buttons for options is presented.
+        *   If the user is the author of the poll, a "Delete Poll" button is visible.
+    *   `/poll/<int:poll_id>/vote`: (POST)
+        *   Requires login.
+        *   Processes the vote submitted by a user for a specific option in the poll.
+        *   Redirects back to the poll view page, which will then show the updated results or a confirmation.
+    *   `/poll/<int:poll_id>/delete`: (POST)
+        *   Requires login and that the logged-in user is the author of the poll.
+        *   Deletes the specified poll and all its associated vote data.
+        *   Redirects to the main polls list.
+
+*   **Key Characteristics**:
+    *   Users must be logged in to create polls and to vote.
+    *   A user can only vote once on any given poll. Attempts to vote multiple times are prevented.
+    *   Poll authors have the ability to delete their own polls. Non-authors cannot delete polls.
+    *   Poll results are displayed to all users, showing the number of votes for each option and the corresponding percentage of total votes.

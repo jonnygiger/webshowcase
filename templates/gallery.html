@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Image Gallery{% endblock %}
+
+{% block content %}
+    <h1>Image Gallery</h1>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <ul class="flashes">
+            {% for category, message in messages %}
+                <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
+
+    {% if images %}
+        <div class="gallery-grid">
+            {% for image_filename in images %}
+                <div class="gallery-item">
+                    <img src="{{ url_for('uploaded_file', filename=image_filename) }}" alt="{{ image_filename }}">
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No images uploaded yet. <a href="{{ url_for('upload_image') }}">Upload one!</a></p>
+    {% endif %}
+    <p><a href="{{ url_for('upload_image') }}">Upload Another Image</a></p>
+{% endblock %}

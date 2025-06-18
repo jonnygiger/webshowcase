@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ post.title }}{% endblock %}
+
+{% block content %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% if post %}
+    <h2>{{ post.title }}</h2>
+    <p><small>By {{ post.author_username }} on {{ post.timestamp }}</small></p>
+    <p>{{ post.content | safe }}</p> {# Assuming content is safe or will be sanitized later #}
+
+    {% if session.logged_in and session.username == post.author_username %}
+    <hr>
+    <a href="{{ url_for('edit_post', post_id=post.id) }}" class="btn btn-secondary" style="margin-top: 10px; margin-right: 5px;">Edit Post</a>
+    <form method="POST" action="{{ url_for('delete_post', post_id=post.id) }}" style="display: inline-block; margin-top: 10px;" onsubmit="return confirm('Are you sure you want to delete this post?');">
+        <button type="submit" class="btn btn-danger">Delete Post</button>
+    </form>
+    {% endif %}
+    <hr style="margin-top: 20px;"> {# Add some space before the general back button #}
+    <a href="{{ url_for('blog') }}" class="btn btn-info">Back to Blog</a>
+  {% else %}
+    {# This case should ideally be handled by the route redirecting, but as a fallback: #}
+    <p>Post not found.</p>
+    <a href="{{ url_for('blog') }}" class="btn btn-secondary">Back to Blog</a>
+  {% endif %}
+{% endblock %}

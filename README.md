@@ -93,3 +93,34 @@ The application now includes a dynamic image gallery to showcase more Flask func
 
 *   **Storage:**
     *   Uploaded images are stored in the `uploads/` directory in the project root. This directory is included in `.gitignore`.
+
+### Blog Feature
+
+This application now includes a fully functional blog where users can share their thoughts. This feature demonstrates common patterns in web applications like CRUD operations and content management.
+
+*   **Purpose**: Allows authenticated users to create, edit, and delete their own blog posts. All visitors can read blog posts.
+*   **Flask Functionalities Demonstrated**:
+    *   **CRUD Operations**: Full Create, Read, Update, and Delete lifecycle for blog posts.
+    *   **Dynamic Routing**: Using route parameters like `/blog/post/<int:post_id>` to display specific content.
+    *   **User Authentication & Authorization**:
+        *   Creating, editing, and deleting posts require users to be logged in.
+        *   Users can only edit or delete posts they have authored.
+    *   **Templating**: Several new templates (`blog.html`, `create_post.html`, `view_post.html`, `edit_post.html`) extend `base.html` to provide views for blog functionalities.
+    *   **Form Handling**: Processing form submissions for creating and editing posts.
+    *   **Session Management**: Tracking the logged-in user to associate posts with authors and for authorization checks.
+    *   **In-Memory Data Storage**: Blog posts are stored in a Python list of dictionaries within the application for simplicity.
+
+*   **Routes & Usage**:
+    *   `/blog`: (GET) Displays a list of all blog posts, with the newest posts appearing first.
+    *   `/blog/create`: (GET/POST)
+        *   Requires login.
+        *   `GET`: Shows a form to write a new blog post.
+        *   `POST`: Submits the new blog post.
+    *   `/blog/post/<int:post_id>`: (GET) Displays the full content of a specific blog post.
+    *   `/blog/edit/<int:post_id>`: (GET/POST)
+        *   Requires login and that the logged-in user is the author of the post.
+        *   `GET`: Shows a form pre-filled with the post's title and content for editing.
+        *   `POST`: Updates the specified blog post.
+    *   `/blog/delete/<int:post_id>`: (POST)
+        *   Requires login and that the logged-in user is the author of the post.
+        *   Deletes the specified blog post after a confirmation.

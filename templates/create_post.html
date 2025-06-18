@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Create New Post{% endblock %}
+{% block content %}
+  <h2>Create New Post</h2>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+  <form method="POST">
+    <div class="form-group">
+      <label for="title">Title</label>
+      <input type="text" class="form-control" id="title" name="title" required>
+    </div>
+    <div class="form-group">
+      <label for="content">Content</label>
+      <textarea class="form-control" id="content" name="content" rows="5" required></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Create Post</button>
+  </form>
+{% endblock %}

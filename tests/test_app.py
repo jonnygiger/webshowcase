@@ -23,6 +23,7 @@ def app_instance():
 # For example, if allowed_file was needed by another fixture not using app_instance directly.
 # from app import allowed_file
 from flask import url_for
+    import re # For parsing post IDs
 
 
 @pytest.fixture
@@ -54,9 +55,9 @@ def cleanup_uploads(upload_folder_path):
             print(f'Failed to delete {file_path}. Reason: {e}')
 
 @pytest.fixture(autouse=True) # auto-use to apply to all tests in this module
-def manage_uploads(app_instance): # app_instance will trigger the import
-    # Setup: ensure upload folder is clean before each test
-    upload_folder = app_instance.config['UPLOAD_FOLDER'] # app_instance is now the flask_app
+def manage_app_state(app_instance): # Renamed for broader scope, app_instance will trigger the import
+    # --- Manage Uploads ---
+    upload_folder = app_instance.config['UPLOAD_FOLDER']
     if not os.path.exists(upload_folder):
         os.makedirs(upload_folder)
     # Create .gitkeep if it doesn't exist, to mimic real folder structure
@@ -68,13 +69,24 @@ def manage_uploads(app_instance): # app_instance will trigger the import
 
     cleanup_uploads(upload_folder) # Clean before test, preserving .gitkeep
 
+    # --- Manage Blog State ---
+    # This requires app_instance to be the actual Flask app object from app.py
+    # and blog_posts to be imported from app.py
+    from app import blog_posts
+    blog_posts.clear()
+    app_instance.blog_post_id_counter = 0
+
+
     yield # This is where the test runs
 
     # Teardown: clean up upload folder after each test
     cleanup_uploads(upload_folder)
+    # Teardown: Clear blog state again (optional, good practice)
+    blog_posts.clear()
+    app_instance.blog_post_id_counter = 0
 
 
-def test_allowed_file_utility(app_instance): # app_instance will trigger the import
+def test_allowed_file_utility(app_instance):
     # Test the allowed_file utility function directly
     # To use allowed_file directly, it needs to be imported.
     # Let's import it locally for this test or make it available from app_instance if that's how it's structured.
@@ -341,27 +353,149 @@ def test_access_protected_route_upload_unauthenticated(client):
     """Test accessing /gallery/upload when not logged in."""
     response = client.get('/gallery/upload', follow_redirects=False)
     assert response.status_code == 302
-    assert response.location == '/login'
+    assert response.location == '/login'  # Assuming '/login' is correct
 
-    response_redirected = client.get(response.location)
+    response_redirected = client.get(response.location) # Manually follow
     assert b"You need to be logged in to access this page." in response_redirected.data
 
 def test_access_protected_route_todo_authenticated(client):
     """Test accessing /todo after successful login."""
-    # First, log in
     client.post('/login', data={'username': 'demo', 'password': 'password123'}, follow_redirects=True)
-
-    # Then, access the protected route
     response = client.get('/todo')
     assert response.status_code == 200
-    assert b"My To-Do List" in response.data # Check for content from todo.html
-    assert b"You need to be logged in" not in response.data # No error message
+    assert b"My To-Do List" in response.data
+    assert b"You need to be logged in" not in response.data
 
 def test_access_protected_route_upload_authenticated(client):
     """Test accessing /gallery/upload after successful login."""
     client.post('/login', data={'username': 'demo', 'password': 'password123'}, follow_redirects=True)
-
     response = client.get('/gallery/upload')
     assert response.status_code == 200
-    assert b"Upload a New Image" in response.data # Check for content from upload_image.html
+    assert b"Upload a New Image" in response.data
     assert b"You need to be logged in" not in response.data
+
+# --- Blog Tests ---
+
+def test_blog_page_loads_empty(client):
+    response = client.get('/blog')
+    assert response.status_code == 200
+    assert b"Blog Posts" in response.data
+    assert b"No blog posts yet." in response.data
+
+def test_create_post_requires_login(client):
+    response_get = client.get('/blog/create', follow_redirects=False)
+    assert response_get.status_code == 302
+    assert '/login' in response_get.location # Check if redirecting to login
+
+    response_post = client.post('/blog/create', data={'title': 'T', 'content': 'C'}, follow_redirects=False)
+    assert response_post.status_code == 302
+    assert '/login' in response_post.location
+
+def test_create_view_edit_delete_post_as_author(client, app_instance):
+    # Login
+    login_resp = client.post('/login', data={'username': 'demo', 'password': 'password123'}, follow_redirects=False)
+    assert login_resp.status_code == 302
+    assert login_resp.location == '/' # Default redirect for login
+
+    # Create Post
+    get_create_resp = client.get('/blog/create')
+    assert get_create_resp.status_code == 200
+    assert b"Create New Post" in get_create_resp.data
+
+    create_post_data = {'title': 'Original Test Title', 'content': 'Original Test Content'}
+    post_create_resp = client.post('/blog/create', data=create_post_data, follow_redirects=True)
+    assert post_create_resp.status_code == 200 # Follows redirect to /blog
+    assert b"Blog post created successfully!" in post_create_resp.data
+    assert bytes(create_post_data['title'], 'utf-8') in post_create_resp.data
+
+    # Extract post_id (assuming it's the only post, ID will be 1 due to counter reset)
+    # More robust: parse from the page
+    match = re.search(r'/blog/post/(\d+)', post_create_resp.data.decode())
+    assert match, "Could not find post link in blog page to extract ID"
+    post_id = int(match.group(1))
+
+    # View Post
+    view_resp = client.get(f'/blog/post/{post_id}')
+    assert view_resp.status_code == 200
+    assert bytes(create_post_data['title'], 'utf-8') in view_resp.data
+    assert bytes(create_post_data['content'], 'utf-8') in view_resp.data
+
+    # Edit Post
+    get_edit_resp = client.get(f'/blog/edit/{post_id}')
+    assert get_edit_resp.status_code == 200
+    assert b"Edit Post" in get_edit_resp.data
+    assert bytes(create_post_data['title'], 'utf-8') in get_edit_resp.data # Check if form is pre-filled
+
+    edit_post_data = {'title': 'Updated Test Title', 'content': 'Updated Test Content'}
+    post_edit_resp = client.post(f'/blog/edit/{post_id}', data=edit_post_data, follow_redirects=True)
+    assert post_edit_resp.status_code == 200 # Follows redirect to view_post
+    assert b"Post updated successfully!" in post_edit_resp.data
+    assert bytes(edit_post_data['title'], 'utf-8') in post_edit_resp.data # On view_post page
+
+    # Verify on view page directly
+    verify_view_resp = client.get(f'/blog/post/{post_id}')
+    assert bytes(edit_post_data['title'], 'utf-8') in verify_view_resp.data
+    assert bytes(edit_post_data['content'], 'utf-8') in verify_view_resp.data
+    assert b"Original Test Title" not in verify_view_resp.data # Old title should be gone
+
+    # Delete Post
+    delete_resp = client.post(f'/blog/delete/{post_id}', follow_redirects=True)
+    assert delete_resp.status_code == 200 # Follows redirect to /blog
+    assert b"Post deleted successfully!" in delete_resp.data
+    assert bytes(edit_post_data['title'], 'utf-8') not in delete_resp.data # Title should not be on blog page
+
+    # Verify post is gone from blog page
+    blog_page_resp = client.get('/blog')
+    assert bytes(edit_post_data['title'], 'utf-8') not in blog_page_resp.data
+    assert b"No blog posts yet." in blog_page_resp.data # Assuming it was the only one
+
+def test_edit_delete_post_by_unauthenticated(client, app_instance):
+    # Login as 'demo' and create a post
+    client.post('/login', data={'username': 'demo', 'password': 'password123'}, follow_redirects=True)
+    create_resp = client.post('/blog/create', data={'title': 'Auth Test Title', 'content': 'Content by demo'}, follow_redirects=True)
+
+    match = re.search(r'/blog/post/(\d+)', create_resp.data.decode())
+    assert match, "Could not find post link in blog page to extract ID for auth test"
+    post_id_by_demo = int(match.group(1))
+
+    # Logout 'demo'
+    client.get('/logout', follow_redirects=True)
+
+    # Attempt Edit (Unauthenticated)
+    edit_get_resp = client.get(f'/blog/edit/{post_id_by_demo}', follow_redirects=False)
+    assert edit_get_resp.status_code == 302
+    assert '/login' in edit_get_resp.location
+
+    edit_post_resp = client.post(f'/blog/edit/{post_id_by_demo}', data={'title': 'Attempt', 'content': 'Fail'}, follow_redirects=False)
+    assert edit_post_resp.status_code == 302
+    assert '/login' in edit_post_resp.location
+
+    # Attempt Delete (Unauthenticated)
+    delete_resp = client.post(f'/blog/delete/{post_id_by_demo}', follow_redirects=False)
+    assert delete_resp.status_code == 302
+    assert '/login' in delete_resp.location
+
+    # Ensure post was not modified/deleted by unauthenticated user
+    client.post('/login', data={'username': 'demo', 'password': 'password123'}, follow_redirects=True) # Log back in as demo
+    verify_post_resp = client.get(f'/blog/post/{post_id_by_demo}')
+    assert b"Auth Test Title" in verify_post_resp.data # Original title should still be there
+    assert b"Attempt" not in verify_post_resp.data
+
+
+# Note: Testing edit/delete by *another authenticated user* would require:
+# 1. A way to register/add another user for testing.
+# 2. Logging in as that other user.
+# 3. Attempting to edit/delete the post made by 'demo'.
+# 4. Checking for "You are not authorized" flash messages.
+# This is more involved due to user management. The current tests cover unauthenticated access.
+# The `users` dict in app.py is simple; for a real app, a database and user registration would exist.
+# For now, this provides good coverage for basic auth checks on blog posts.
+# To test "not authorized" for another user:
+# - In app.py, add another user to the `users` dict:
+#   users["anotheruser"] = generate_password_hash("anotherpassword")
+# - Then in a test:
+#   client.post('/login', data={'username': 'anotheruser', 'password': 'anotherpassword'}, follow_redirects=True)
+#   edit_attempt_resp = client.get(f'/blog/edit/{post_id_by_demo}', follow_redirects=True)
+#   assert b"You are not authorized to edit this post." in edit_attempt_resp.data
+#   delete_attempt_resp = client.post(f'/blog/delete/{post_id_by_demo}', follow_redirects=True)
+#   assert b"You are not authorized to delete this post." in delete_attempt_resp.data

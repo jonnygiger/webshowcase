@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, session, redirect, url_for, f
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
+from datetime import datetime
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'supersecretkey'
@@ -13,6 +14,9 @@ app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
 users = {
     "demo": generate_password_hash("password123")
 }
+blog_posts = []
+#blog_post_id_counter = 0 # Will be app attribute
+app.blog_post_id_counter = 0 # Initialize as app attribute
 
 # Ensure the upload folder exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
@@ -120,6 +124,80 @@ def logout():
     session.pop('username', None)
     flash('You are now logged out.', 'success')
     return redirect(url_for('login'))
+
+@app.route('/blog/create', methods=['GET', 'POST'])
+@login_required
+def create_post():
+    #global blog_post_id_counter # No longer global like this
+    if request.method == 'POST':
+        title = request.form['title']
+        content = request.form['content']
+        app.blog_post_id_counter += 1
+        new_post = {
+            "id": app.blog_post_id_counter,
+            "title": title,
+            "content": content,
+            "author_username": session['username'],
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        blog_posts.append(new_post)
+        flash('Blog post created successfully!', 'success')
+        return redirect(url_for('blog')) # This route will be created later
+    return render_template('create_post.html')
+
+@app.route('/blog')
+def blog():
+    # Sort posts by timestamp, newest first (optional, but good practice)
+    sorted_posts = sorted(blog_posts, key=lambda x: x['timestamp'], reverse=True)
+    return render_template('blog.html', posts=sorted_posts)
+
+@app.route('/blog/post/<int:post_id>')
+def view_post(post_id):
+    post = next((post for post in blog_posts if post['id'] == post_id), None)
+    if post:
+        return render_template('view_post.html', post=post)
+    else:
+        flash('Post not found!', 'danger')
+        return redirect(url_for('blog'))
+
+@app.route('/blog/edit/<int:post_id>', methods=['GET', 'POST'])
+@login_required
+def edit_post(post_id):
+    post = next((p for p in blog_posts if p['id'] == post_id), None)
+
+    if post is None:
+        flash('Post not found!', 'danger')
+        return redirect(url_for('blog'))
+
+    if post['author_username'] != session['username']:
+        flash('You are not authorized to edit this post.', 'danger')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    if request.method == 'POST':
+        post['title'] = request.form['title']
+        post['content'] = request.form['content']
+        post['last_edited'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        flash('Post updated successfully!', 'success')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    return render_template('edit_post.html', post=post)
+
+@app.route('/blog/delete/<int:post_id>', methods=['POST'])
+@login_required
+def delete_post(post_id):
+    post_to_delete = next((p for p in blog_posts if p['id'] == post_id), None)
+
+    if post_to_delete is None:
+        flash('Post not found or already deleted!', 'danger')
+        return redirect(url_for('blog'))
+
+    if post_to_delete['author_username'] != session['username']:
+        flash('You are not authorized to delete this post.', 'danger')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    blog_posts[:] = [p for p in blog_posts if p['id'] != post_id]
+    flash('Post deleted successfully!', 'success')
+    return redirect(url_for('blog'))
 
 if __name__ == '__main__':
     app.run(debug=True)

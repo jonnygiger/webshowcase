@@ -201,3 +201,38 @@ Users can now interact with blog posts by liking or unliking them, providing a s
     *   Updating data models (incrementing/decrementing like counts, tracking user likes).
     *   Conditional rendering in Jinja templates to display different buttons ("Like" or "Unlike") based on application state.
     *   Handling POST requests for actions that modify data.
+
+## Private Messaging
+
+This application now supports private messaging between registered users, allowing for direct, one-on-one communication.
+
+*   **Purpose**: Enables users to send and receive private messages, fostering a more interactive and personal experience on the platform.
+*   **Authentication**: This feature is exclusively available to logged-in users. Users must be authenticated to send messages, view their inbox, and participate in conversations.
+
+*   **Flask Functionalities Demonstrated**:
+    *   **User-to-User Interaction**: Manages direct communication and data relationships between different users.
+    *   **Dynamic Content Generation**: The inbox and conversation views are dynamically generated based on the logged-in user's messages.
+    *   **Form Handling**: Uses forms for composing and sending messages.
+    *   **Session Management**: Leverages user sessions to identify the sender and receiver, and to authorize access to messages.
+    *   **Data Persistence**: Messages are stored in-memory (similar to blog posts and comments) and include sender, receiver, content, timestamp, and a read status.
+    *   **Conditional Logic**: Used extensively in templates and views to display appropriate information (e.g., unread message counts, user-specific conversation views).
+
+*   **Routes & Usage**:
+    *   `/messages/inbox`: (GET)
+        *   Requires login.
+        *   Displays the logged-in user's message inbox.
+        *   Lists all conversations the user is part of, ordered by the most recent message.
+        *   For each conversation, it shows the other user, a snippet of the last message, the timestamp of the last message, and a count of unread messages in that conversation.
+        *   Each conversation entry links to the full conversation view.
+    *   `/messages/conversation/<username>`: (GET)
+        *   Requires login.
+        *   Displays the full message history between the logged-in user and the specified `<username>`.
+        *   Messages are displayed in chronological order.
+        *   When a user opens a conversation, any unread messages they received in that conversation are automatically marked as "read".
+        *   Includes a reply form at the bottom to quickly send another message to the conversation partner.
+    *   `/messages/send/<receiver_username>`: (GET/POST)
+        *   Requires login.
+        *   `GET`: Displays a form to compose a new message to `<receiver_username>`. This is typically accessed via the "Send Message" button on a user's profile or the reply form in a conversation.
+        *   `POST`: Processes the submitted message content and sends it to `<receiver_username>`. Redirects to the conversation view with that user upon successful sending.
+    *   `/user/<username>`:
+        *   User profile pages now feature a "Send Message" button if the viewer is logged in and is not viewing their own profile. This button links directly to the `/messages/send/<username>` route for the profile owner.

@@ -26,6 +26,8 @@ app.blog_post_id_counter = 0 # Initialize as app attribute
 comments = []
 app.comment_id_counter = 0
 post_likes = {} # To track likes: {post_id: {user_id1, user_id2, ...}}
+private_messages = []
+app.private_message_id_counter = 0
 
 # Ensure the upload folder exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
@@ -323,6 +325,115 @@ def register():
             flash('Registration successful! Please log in.', 'success')
             return redirect(url_for('login'))
     return render_template('register.html')
+
+
+@app.route('/messages/send/<receiver_username>', methods=['GET', 'POST'])
+@login_required
+def send_message(receiver_username):
+    if receiver_username not in users:
+        flash('User not found.', 'danger')
+        return redirect(url_for('hello_world'))  # Or perhaps an inbox page later
+
+    if request.method == 'POST':
+        content = request.form.get('content')
+
+        if not content or not content.strip():
+            flash('Message content cannot be empty.', 'warning')
+            return render_template('send_message.html', receiver_username=receiver_username)
+
+        app.private_message_id_counter += 1
+        new_message = {
+            "message_id": app.private_message_id_counter,
+            "sender_username": session['username'],
+            "receiver_username": receiver_username,
+            "content": content,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "is_read": False
+        }
+        private_messages.append(new_message)
+        flash('Message sent successfully!', 'success')
+        # Assuming 'view_conversation' will be created, which shows messages with a user
+        return redirect(url_for('view_conversation', username=receiver_username))
+
+    # GET request
+    return render_template('send_message.html', receiver_username=receiver_username)
+
+
+@app.route('/messages/conversation/<username>')
+@login_required
+def view_conversation(username):
+    if username not in users:
+        flash('User not found.', 'danger')
+        return redirect(url_for('hello_world')) # Or an inbox page if it exists
+
+    current_user_username = session['username']
+
+    relevant_messages = []
+    for msg in private_messages:
+        is_sender = msg['sender_username'] == current_user_username and msg['receiver_username'] == username
+        is_receiver = msg['sender_username'] == username and msg['receiver_username'] == current_user_username
+
+        if is_sender or is_receiver:
+            relevant_messages.append(msg)
+            if is_receiver and not msg['is_read']:
+                msg['is_read'] = True # Mark as read
+
+    # Sort messages by timestamp (oldest first)
+    relevant_messages.sort(key=lambda msg: datetime.strptime(msg['timestamp'], "%Y-%m-%d %H:%M:%S"))
+
+    return render_template('conversation.html', conversation_partner=username, messages_list=relevant_messages)
+
+
+@app.route('/messages/inbox')
+@login_required
+def inbox():
+    current_user = session['username']
+    conversations = {}
+
+    for msg in private_messages:
+        other_party = None
+        if msg['sender_username'] == current_user:
+            other_party = msg['receiver_username']
+        elif msg['receiver_username'] == current_user:
+            other_party = msg['sender_username']
+
+        if other_party:
+            if other_party not in conversations:
+                conversations[other_party] = {
+                    'last_message_timestamp': datetime.min, # Use datetime.min for easier comparison
+                    'unread_count': 0,
+                    'last_message_snippet': "No messages yet.",
+                    'last_message_actual_timestamp': None # Store the string form for display
+                }
+
+            msg_timestamp = datetime.strptime(msg['timestamp'], "%Y-%m-%d %H:%M:%S")
+
+            if msg_timestamp > conversations[other_party]['last_message_timestamp']:
+                conversations[other_party]['last_message_timestamp'] = msg_timestamp
+                conversations[other_party]['last_message_actual_timestamp'] = msg['timestamp']
+                snippet = msg['content'][:50]
+                if len(msg['content']) > 50:
+                    snippet += "..."
+                conversations[other_party]['last_message_snippet'] = snippet
+
+            if msg['receiver_username'] == current_user and not msg['is_read']:
+                conversations[other_party]['unread_count'] += 1
+
+    inbox_items = [{'username': key, **value} for key, value in conversations.items()]
+
+    # Sort by the datetime object, then convert timestamp to string for template if needed or use actual_timestamp
+    inbox_items.sort(key=lambda x: x['last_message_timestamp'], reverse=True)
+
+    # Replace datetime object with string version for template if preferred
+    for item in inbox_items:
+        if item['last_message_actual_timestamp']: # if there were messages
+             item['last_message_display_timestamp'] = item['last_message_actual_timestamp']
+        else: # No messages with this user
+            item['last_message_display_timestamp'] = "N/A"
+        del item['last_message_timestamp'] # remove datetime object before passing to template
+
+
+    return render_template('inbox.html', inbox_items=inbox_items)
 
 @socketio.on('join_room')
 def handle_join_room_event(data):

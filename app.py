@@ -21,6 +21,8 @@ users = {
 blog_posts = []
 #blog_post_id_counter = 0 # Will be app attribute
 app.blog_post_id_counter = 0 # Initialize as app attribute
+comments = []
+app.comment_id_counter = 0
 
 # Ensure the upload folder exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
@@ -179,7 +181,10 @@ def blog():
 def view_post(post_id):
     post = next((post for post in blog_posts if post['id'] == post_id), None)
     if post:
-        return render_template('view_post.html', post=post)
+        post_comments = [comment for comment in comments if comment['post_id'] == post_id]
+        # Sort comments by timestamp, oldest first
+        post_comments = sorted(post_comments, key=lambda x: x['timestamp'])
+        return render_template('view_post.html', post=post, comments=post_comments)
     else:
         flash('Post not found!', 'danger')
         return redirect(url_for('blog'))
@@ -222,6 +227,32 @@ def delete_post(post_id):
     blog_posts[:] = [p for p in blog_posts if p['id'] != post_id]
     flash('Post deleted successfully!', 'success')
     return redirect(url_for('blog'))
+
+@app.route('/blog/post/<int:post_id>/comment', methods=['POST'])
+@login_required
+def add_comment(post_id):
+    # Check if the post_id exists in blog_posts
+    post_exists = any(post['id'] == post_id for post in blog_posts)
+    if not post_exists:
+        flash('Post not found!', 'danger')
+        return redirect(url_for('blog'))
+
+    comment_content = request.form.get('comment_content')
+    if not comment_content or not comment_content.strip():
+        flash('Comment content cannot be empty!', 'warning')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    app.comment_id_counter += 1
+    new_comment = {
+        "id": app.comment_id_counter,
+        "post_id": post_id,
+        "author_username": session['username'],
+        "content": comment_content,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    comments.append(new_comment)
+    flash('Comment added successfully!', 'success')
+    return redirect(url_for('view_post', post_id=post_id))
 
 
 @app.route('/register', methods=['GET', 'POST'])

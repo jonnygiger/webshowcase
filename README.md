@@ -156,3 +156,20 @@ This feature provides a dedicated page for each user, showcasing their activity 
     *   **Data Aggregation**: Information (blog posts, uploaded images) is filtered and aggregated specifically for the viewed user.
     *   **User-Specific Views**: Enhances the application by providing views tailored to individual users, improving personalization.
     *   **Data Structures for User Association**: User data (like associated image filenames and blog post IDs) is managed within the `users` dictionary in `app.py`.
+
+### Blog Post Comments
+
+To enhance interactivity, users can now add comments to blog posts.
+
+*   **Purpose**: Allows users to share their thoughts and engage in discussions on specific blog posts.
+*   **Functionality**:
+    *   **Adding Comments**: Authenticated (logged-in) users can submit comments via a form on each blog post's page (`/blog/post/<int:post_id>`). Comment content cannot be empty.
+    *   **Viewing Comments**: All visitors can see comments displayed below the blog post content. Each comment shows the author's username, the timestamp of submission, and the content itself.
+    *   **Authentication**: Only logged-in users can add comments. Non-logged-in users will see a prompt to log in.
+*   **Route Involved**:
+    *   `/blog/post/<int:post_id>/comment` (POST): Endpoint for processing and saving new comments.
+*   **Flask Functionalities Demonstrated**:
+    *   Managing one-to-many relationships (a post can have multiple comments).
+    *   Handling nested resource creation (comments under posts).
+    *   Further application of user authentication for content submission.
+    *   Dynamic rendering of user-contributed content.

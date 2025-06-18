@@ -22,6 +22,38 @@
         <button type="submit" class="btn btn-danger">Delete Post</button>
     </form>
     {% endif %}
+
+    <hr style="margin-top: 30px; margin-bottom: 30px;">
+
+    {# Comment Submission Form #}
+    {% if session['logged_in'] %}
+        <h3>Add a Comment</h3>
+        <form method="POST" action="{{ url_for('add_comment', post_id=post.id) }}">
+            <div class="form-group" style="margin-bottom: 10px;">
+                <label for="comment_content">Your Comment:</label>
+                <textarea class="form-control" name="comment_content" id="comment_content" rows="3" required></textarea>
+            </div>
+            <div style="margin-bottom: 20px;">
+                <button type="submit" class="btn btn-primary">Add Comment</button>
+            </div>
+        </form>
+    {% else %}
+        <p><a href="{{ url_for('login') }}">Log in</a> to add a comment.</p>
+    {% endif %}
+
+    {# Display Comments #}
+    <h3>Comments</h3>
+    {% if comments and comments|length > 0 %}
+        {% for comment in comments %}
+            <div class="comment" style="margin-bottom: 15px; padding: 10px; border: 1px solid #eee;">
+                <p><strong>{{ comment.author_username }}</strong> <small class="text-muted">({{ comment.timestamp }})</small></p>
+                <p style="white-space: pre-wrap;">{{ comment.content }}</p>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No comments yet. Be the first to comment!</p>
+    {% endif %}
+
     <hr style="margin-top: 20px;"> {# Add some space before the general back button #}
     <a href="{{ url_for('blog') }}" class="btn btn-info">Back to Blog</a>
   {% else %}

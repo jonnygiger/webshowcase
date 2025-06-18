@@ -26,6 +26,20 @@ def app_instance():
 # from app import allowed_file
 from flask import url_for
 import re # For parsing post IDs
+from app import app as flask_app_for_helpers # For helper functions
+
+# Helper functions for tests
+def _register_user(client, username, password):
+    return client.post(url_for('register'), data={'username': username, 'password': password}, follow_redirects=True)
+
+def _login_user(client, username, password):
+    return client.post(url_for('login'), data={'username': username, 'password': password}, follow_redirects=True)
+
+def _create_post(client, title="Test Post Title", content="Test Post Content"):
+    # Assumes client is already logged in
+    # The manage_app_state fixture resets the counter, so it should be predictable
+    client.post(url_for('create_post'), data={'title': title, 'content': content}, follow_redirects=True)
+    return flask_app_for_helpers.blog_post_id_counter
 
 
 @pytest.fixture
@@ -74,7 +88,7 @@ def manage_app_state(app_instance): # Renamed for broader scope, app_instance wi
     # --- Manage Blog State ---
     # This requires app_instance to be the actual Flask app object from app.py
     # and blog_posts to be imported from app.py
-    from app import blog_posts, users, app as current_app_instance
+    from app import blog_posts, users, comments, app as current_app_instance
     from werkzeug.security import generate_password_hash
 
     # Clear and reset users state
@@ -86,7 +100,9 @@ def manage_app_state(app_instance): # Renamed for broader scope, app_instance wi
     } # Reset demo user with new structure
 
     blog_posts.clear()
-    current_app_instance.blog_post_id_counter = 0 # Use current_app_instance if app_instance is just test_client
+    current_app_instance.blog_post_id_counter = 0
+    comments.clear() # Reset comments
+    current_app_instance.comment_id_counter = 0 # Reset comment counter
 
 
     yield # This is where the test runs
@@ -95,7 +111,9 @@ def manage_app_state(app_instance): # Renamed for broader scope, app_instance wi
     cleanup_uploads(upload_folder)
     # Teardown: Clear blog state again (optional, good practice)
     blog_posts.clear()
-    app_instance.blog_post_id_counter = 0
+    current_app_instance.blog_post_id_counter = 0
+    comments.clear()
+    current_app_instance.comment_id_counter = 0
 
 
 def test_allowed_file_utility(app_instance):
@@ -699,3 +717,126 @@ def test_user_profile_non_existent_user(client, app_instance):
     assert "This user has not uploaded any images yet." in response_data_str
     # A more robust app might return a 404 or a specific "user not found" message.
     # For now, this test documents the current behavior.
+
+
+# --- Comment Functionality Tests ---
+
+def test_add_comment_to_post_logged_in(client, app_instance):
+    _register_user(client, "commentuser", "password123")
+    _login_user(client, "commentuser", "password123")
+
+    post_id = _create_post(client, title="Post for Commenting", content="Content here")
+    assert post_id > 0, "Post creation failed or returned invalid ID"
+
+    comment_text = "This is a test comment."
+    response = client.post(url_for('add_comment', post_id=post_id),
+                           data={'comment_content': comment_text},
+                           follow_redirects=False) # Check redirect first
+
+    assert response.status_code == 302
+    assert response.location == url_for('view_post', post_id=post_id)
+
+    # Follow redirect to check flash and content
+    redirect_response = client.get(response.location)
+    assert redirect_response.status_code == 200
+    assert bytes(comment_text, 'utf-8') in redirect_response.data
+    assert b"Comment added successfully!" in redirect_response.data
+
+    # Verify comment is stored (optional, good for deeper check)
+    from app import comments as app_comments
+    assert len(app_comments) == 1
+    assert app_comments[0]['content'] == comment_text
+    assert app_comments[0]['post_id'] == post_id
+    assert app_comments[0]['author_username'] == "commentuser"
+
+def test_add_comment_not_logged_in(client, app_instance):
+    # No login
+    _register_user(client, "anotheruser", "password123") # Create a user to create a post
+    _login_user(client, "anotheruser", "password123")
+    post_id = _create_post(client, title="Post by another", content="Content")
+    client.get(url_for('logout'), follow_redirects=True) # Log out before attempting to comment
+
+    response = client.post(url_for('add_comment', post_id=post_id),
+                           data={'comment_content': "Should not work"},
+                           follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.location == url_for('login')
+
+    # Check flash message on the login page
+    login_page_response = client.get(response.location)
+    assert b"You need to be logged in to access this page." in login_page_response.data
+
+    # Verify no comment was added
+    from app import comments as app_comments
+    assert len(app_comments) == 0
+
+def test_view_post_shows_comments(client, app_instance):
+    _register_user(client, "commentviewer", "password123")
+    _login_user(client, "commentviewer", "password123")
+
+    post_id = _create_post(client, title="Post with Comments", content="Some content")
+
+    comment1_text = "First comment here."
+    comment2_text = "Second comment follows."
+
+    # Add comments
+    client.post(url_for('add_comment', post_id=post_id), data={'comment_content': comment1_text}, follow_redirects=True)
+    client.post(url_for('add_comment', post_id=post_id), data={'comment_content': comment2_text}, follow_redirects=True)
+
+    # View the post
+    response = client.get(url_for('view_post', post_id=post_id))
+    assert response.status_code == 200
+
+    response_data_str = response.data.decode('utf-8')
+    assert comment1_text in response_data_str
+    assert comment2_text in response_data_str
+    assert "commentviewer" in response_data_str # Author username should be there for both
+
+    # Check for timestamps (presence of pattern, not exact time)
+    # Example: (2023-10-27 10:00:00)
+    assert re.search(r'\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\)', response_data_str)
+
+def test_add_comment_to_non_existent_post(client, app_instance):
+    _register_user(client, "commentposter", "password123")
+    _login_user(client, "commentposter", "password123")
+
+    non_existent_post_id = 99999
+    response = client.post(url_for('add_comment', post_id=non_existent_post_id),
+                           data={'comment_content': "Test"},
+                           follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.location == url_for('blog') # Redirects to main blog page
+
+    redirect_response = client.get(response.location)
+    assert b"Post not found!" in redirect_response.data
+
+    from app import comments as app_comments
+    assert len(app_comments) == 0
+
+def test_add_empty_comment(client, app_instance):
+    _register_user(client, "emptycommenter", "password123")
+    _login_user(client, "emptycommenter", "password123")
+
+    post_id = _create_post(client, title="Post for Empty Comment", content="Content")
+
+    response = client.post(url_for('add_comment', post_id=post_id),
+                           data={'comment_content': '   '}, # Empty or whitespace only
+                           follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.location == url_for('view_post', post_id=post_id) # Redirects back to post
+
+    redirect_response = client.get(response.location)
+    assert b"Comment content cannot be empty!" in redirect_response.data
+
+    # Verify comment was not added
+    from app import comments as app_comments
+    assert len(app_comments) == 0
+
+    # Also check the view_post page to ensure the comment list is empty or doesn't contain the empty one
+    view_post_resp = client.get(url_for('view_post', post_id=post_id))
+    assert b'   ' not in view_post_resp.data # The specific empty content should not be rendered
+    # Depending on template, might say "No comments yet" or similar if it was the only attempt
+    # This implicitly tests that the empty comment was not added and displayed.

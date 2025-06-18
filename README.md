@@ -181,3 +181,23 @@ To further enhance interactivity, the blog now features real-time comment notifi
 *   **Instant Updates**: When a user submits a comment on a blog post, other users currently viewing the same post will see the new comment appear instantly on their page without needing to manually refresh.
 *   **Technology**: This is implemented using Flask-SocketIO, enabling bidirectional real-time communication between the server and clients (browsers).
 *   **Enhanced Engagement**: This feature makes discussions more dynamic and engaging, as users can see new contributions as they happen.
+
+### Post Liking
+
+Users can now interact with blog posts by liking or unliking them, providing a simple way to show appreciation or engagement.
+
+*   **Functionality**:
+    *   Authenticated (logged-in) users can "like" a blog post. If they have already liked a post, they can "unlike" it.
+    *   Users can only like a specific post once. Attempting to like an already liked post will not change the like count. Similarly, unliking is only possible if the post was previously liked by the user.
+    *   The total number of likes for each post is displayed on the main blog listing page (`/blog`) and on the individual post view page (`/blog/post/<int:post_id>`).
+*   **User Interface**:
+    *   On the individual post page, logged-in users will see a "Like" button. If they have already liked the post, this button will change to "Unlike".
+    *   Users who are not logged in can see the like counts but will not see the Like/Unlike buttons.
+*   **Routes for Like/Unlike Actions**:
+    *   `/blog/post/<int:post_id>/like` (POST): Allows a logged-in user to like a specific post.
+    *   `/blog/post/<int:post_id>/unlike` (POST): Allows a logged-in user to unlike a post they had previously liked.
+*   **Flask Functionalities Demonstrated**:
+    *   Further practice with user session management and authentication checks.
+    *   Updating data models (incrementing/decrementing like counts, tracking user likes).
+    *   Conditional rendering in Jinja templates to display different buttons ("Like" or "Unlike") based on application state.
+    *   Handling POST requests for actions that modify data.

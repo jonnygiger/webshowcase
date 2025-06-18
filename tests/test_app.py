@@ -82,7 +82,7 @@ def manage_app_state(app_instance):
 
     cleanup_uploads(upload_folder)
 
-    from app import blog_posts, users, comments, app as current_app_instance
+    from app import blog_posts, users, comments, post_likes, app as current_app_instance
 
     users.clear()
     users["demo"] = {
@@ -100,6 +100,7 @@ def manage_app_state(app_instance):
     current_app_instance.blog_post_id_counter = 0
     comments.clear()
     current_app_instance.comment_id_counter = 0
+    post_likes.clear()
 
     yield
 
@@ -108,6 +109,7 @@ def manage_app_state(app_instance):
     current_app_instance.blog_post_id_counter = 0
     comments.clear()
     current_app_instance.comment_id_counter = 0
+    post_likes.clear()
 
 
 # --- Existing tests ... (keeping them as is) ---
@@ -302,6 +304,192 @@ from flask_socketio import SocketIOTestClient
 # The app_instance fixture provides the app, socketio_instance provides socketio
 # Pytest can run unittest.TestCase classes.
 
+# --- Tests for Post Liking/Unliking ---
+class TestLikeUnlikeFeatures:
+    # Helper to get a specific post from app.blog_posts
+    def _get_post_by_id(self, post_id):
+        from app import blog_posts
+        return next((p for p in blog_posts if p['id'] == post_id), None)
+
+    # 1. Authentication Tests
+    def test_like_post_unauthenticated(self, client):
+        _login_user(client, "demo", "password123")
+        post_id = _create_post(client, "Like Test", "Content")
+        _login_user(client, "demo", "password123") # Logout by logging in another user or implement logout
+        client.get('/logout', follow_redirects=True) # Proper logout
+
+        response = client.post(url_for('like_post', post_id=post_id), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+
+        # Check flash message on the redirected page
+        response_redirected = client.get(response.location)
+        assert b"You need to be logged in to access this page." in response_redirected.data
+
+
+    def test_unlike_post_unauthenticated(self, client):
+        _login_user(client, "demo", "password123")
+        post_id = _create_post(client, "Unlike Test", "Content")
+        client.get('/logout', follow_redirects=True)
+
+        response = client.post(url_for('unlike_post', post_id=post_id), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+
+        response_redirected = client.get(response.location)
+        assert b"You need to be logged in to access this page." in response_redirected.data
+
+    # 2. Liking a Post Tests
+    def test_like_post_success(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        post_id = _create_post(client, "Test Like Success", "Content")
+
+        from app import post_likes # Import here to get current state
+        post_before = self._get_post_by_id(post_id)
+        assert post_before['likes'] == 0
+        assert post_id not in post_likes or "testuser" not in post_likes[post_id]
+
+        response = client.post(url_for('like_post', post_id=post_id), follow_redirects=True)
+        assert response.status_code == 200 # Assuming redirect to view_post
+        assert b"Post liked!" in response.data
+
+        post_after = self._get_post_by_id(post_id)
+        assert post_after['likes'] == 1
+        assert "testuser" in post_likes[post_id]
+
+    def test_like_non_existent_post(self, client):
+        _login_user(client, "testuser", "password")
+        response = client.post(url_for('like_post', post_id=999), follow_redirects=True)
+        assert b"Post not found!" in response.data
+        # Should redirect to blog page as per current app logic
+        assert b"Blog Posts" in response.data # Check if we landed on blog page
+
+    def test_like_post_already_liked(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        post_id = _create_post(client, "Test Already Liked", "Content")
+
+        from app import post_likes # Import here
+
+        # First like
+        client.post(url_for('like_post', post_id=post_id), follow_redirects=True)
+        post_after_first_like = self._get_post_by_id(post_id)
+        assert post_after_first_like['likes'] == 1
+        assert "testuser" in post_likes[post_id]
+
+        # Second like attempt
+        response = client.post(url_for('like_post', post_id=post_id), follow_redirects=True)
+        assert b"You have already liked this post." in response.data
+
+        post_after_second_like_attempt = self._get_post_by_id(post_id)
+        assert post_after_second_like_attempt['likes'] == 1 # Count should not change
+        assert len(post_likes[post_id]) == 1 # Still only one user in the set
+
+    # 3. Unliking a Post Tests
+    def test_unlike_post_success(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        post_id = _create_post(client, "Test Unlike Success", "Content")
+        from app import post_likes
+
+        # Like the post first
+        client.post(url_for('like_post', post_id=post_id), follow_redirects=True)
+        post_after_like = self._get_post_by_id(post_id)
+        assert post_after_like['likes'] == 1
+        assert "testuser" in post_likes.get(post_id, set())
+
+        # Unlike the post
+        response = client.post(url_for('unlike_post', post_id=post_id), follow_redirects=True)
+        assert response.status_code == 200
+        assert b"Post unliked!" in response.data
+
+        post_after_unlike = self._get_post_by_id(post_id)
+        assert post_after_unlike['likes'] == 0
+        assert post_id not in post_likes or "testuser" not in post_likes.get(post_id, set())
+
+    def test_unlike_post_not_liked(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        post_id = _create_post(client, "Test Unlike Not Liked", "Content")
+        from app import post_likes
+
+        post_before = self._get_post_by_id(post_id)
+        assert post_before['likes'] == 0
+
+        response = client.post(url_for('unlike_post', post_id=post_id), follow_redirects=True)
+        assert b"You have not liked this post yet." in response.data
+
+        post_after = self._get_post_by_id(post_id)
+        assert post_after['likes'] == 0 # Count should not change
+        assert post_id not in post_likes # User should not be in likes set
+
+    def test_unlike_non_existent_post(self, client):
+        _login_user(client, "testuser", "password")
+        response = client.post(url_for('unlike_post', post_id=999), follow_redirects=True)
+        assert b"Post not found!" in response.data
+        assert b"Blog Posts" in response.data
+
+    # 4. View Post Page Tests
+    def test_view_post_shows_likes_and_correct_button(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        post_id = _create_post(client, "View Post Test", "Content")
+
+        # Scenario 1: User has not liked the post
+        response_not_liked = client.get(url_for('view_post', post_id=post_id))
+        assert b"0 like(s)" in response_not_liked.data
+        assert b'<button type="submit" class="btn btn-primary btn-sm">Like</button>' in response_not_liked.data
+        assert b"Unlike</button>" not in response_not_liked.data # Ensure Unlike button is not present
+
+        # User likes the post
+        client.post(url_for('like_post', post_id=post_id), follow_redirects=True)
+
+        # Scenario 2: User has liked the post
+        response_liked = client.get(url_for('view_post', post_id=post_id))
+        assert b"1 like(s)" in response_liked.data
+        assert b'<button type="submit" class="btn btn-secondary btn-sm">Unlike</button>' in response_liked.data
+        assert b">Like</button>" not in response_liked.data # Ensure Like button is not present
+
+        # User unlikes the post
+        client.post(url_for('unlike_post', post_id=post_id), follow_redirects=True)
+
+        # Scenario 3: User has unliked the post (back to original state)
+        response_unliked = client.get(url_for('view_post', post_id=post_id))
+        assert b"0 like(s)" in response_unliked.data
+        assert b'<button type="submit" class="btn btn-primary btn-sm">Like</button>' in response_unliked.data
+
+    def test_view_post_not_logged_in_shows_likes_no_buttons(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        post_id = _create_post(client, "View Post Not Logged In", "Content")
+        # Another user (or same user) likes the post to have some likes
+        client.post(url_for('like_post', post_id=post_id), follow_redirects=True)
+        _login_user(client, "demo", "password123") # login as another user
+        client.post(url_for('like_post', post_id=post_id), follow_redirects=True) # demo also likes it
+
+        post = self._get_post_by_id(post_id)
+        assert post['likes'] == 2 # Verify likes setup
+
+        client.get('/logout', follow_redirects=True) # Log out
+
+        response = client.get(url_for('view_post', post_id=post_id))
+        assert b"2 like(s)" in response.data
+        assert b">Like</button>" not in response.data # No Like button
+        assert b"Unlike</button>" not in response.data # No Unlike button
+
+    def test_view_post_shows_other_user_likes(self, client, app_instance):
+        # User "testuser" creates a post
+        _login_user(client, "testuser", "password")
+        post_id = _create_post(client, "Post by testuser", "Content")
+
+        # User "demo" logs in and likes the post
+        _login_user(client, "demo", "password123")
+        client.post(url_for('like_post', post_id=post_id), follow_redirects=True)
+
+        # User "testuser" logs back in and views the post
+        _login_user(client, "testuser", "password")
+        response = client.get(url_for('view_post', post_id=post_id))
+
+        assert b"1 like(s)" in response.data # Should show the like from "demo"
+        # "testuser" has not liked this post, so should see "Like" button
+        assert b'<button type="submit" class="btn btn-primary btn-sm">Like</button>' in response.data
+
+
 class TestAppSocketIO(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -339,6 +527,10 @@ class TestAppSocketIO(unittest.TestCase):
         self.app.blog_post_id_counter = 0
         self.app_comments.clear()
         self.app.comment_id_counter = 0
+        # Also clear post_likes for TestAppSocketIO, though not directly used by its current tests
+        from app import post_likes as app_post_likes # import if not already class member
+        app_post_likes.clear()
+
 
         # Create a demo user and a blog post for comment testing
         self.app.blog_post_id_counter += 1

@@ -25,6 +25,7 @@ blog_posts = []
 app.blog_post_id_counter = 0 # Initialize as app attribute
 comments = []
 app.comment_id_counter = 0
+post_likes = {} # To track likes: {post_id: {user_id1, user_id2, ...}}
 
 # Ensure the upload folder exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
@@ -163,7 +164,8 @@ def create_post():
             "title": title,
             "content": content,
             "author_username": session['username'],
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "likes": 0  # Initialize likes for new posts
         }
         blog_posts.append(new_post)
         # Associate post ID with user
@@ -186,7 +188,12 @@ def view_post(post_id):
         post_comments = [comment for comment in comments if comment['post_id'] == post_id]
         # Sort comments by timestamp, oldest first
         post_comments = sorted(post_comments, key=lambda x: x['timestamp'])
-        return render_template('view_post.html', post=post, comments=post_comments)
+
+        user_has_liked = False
+        if 'username' in session and post['id'] in post_likes and session['username'] in post_likes[post['id']]:
+            user_has_liked = True
+
+        return render_template('view_post.html', post=post, comments=post_comments, user_has_liked=user_has_liked)
     else:
         flash('Post not found!', 'danger')
         return redirect(url_for('blog'))
@@ -257,6 +264,46 @@ def add_comment(post_id):
     flash('Comment added successfully!', 'success')
     return redirect(url_for('view_post', post_id=post_id))
 
+
+@app.route('/blog/post/<int:post_id>/like', methods=['POST'])
+@login_required
+def like_post(post_id):
+    post = next((p for p in blog_posts if p['id'] == post_id), None)
+    if not post:
+        flash('Post not found!', 'danger')
+        return redirect(url_for('blog'))
+
+    username = session['username']
+
+    if post_id not in post_likes or username not in post_likes[post_id]:
+        post['likes'] += 1
+        post_likes.setdefault(post_id, set()).add(username)
+        flash('Post liked!', 'success')
+    else:
+        flash('You have already liked this post.', 'info')
+
+    return redirect(url_for('view_post', post_id=post_id))
+
+@app.route('/blog/post/<int:post_id>/unlike', methods=['POST'])
+@login_required
+def unlike_post(post_id):
+    post = next((p for p in blog_posts if p['id'] == post_id), None)
+    if not post:
+        flash('Post not found!', 'danger')
+        return redirect(url_for('blog'))
+
+    username = session['username']
+
+    if post_id in post_likes and username in post_likes[post_id]:
+        post['likes'] -= 1
+        post_likes[post_id].remove(username)
+        if not post_likes[post_id]: # Optional: remove post_id from dict if no likes remain
+            del post_likes[post_id]
+        flash('Post unliked!', 'success')
+    else:
+        flash('You have not liked this post yet.', 'info')
+
+    return redirect(url_for('view_post', post_id=post_id))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():

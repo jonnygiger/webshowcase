@@ -37,3 +37,18 @@ This is a basic Flask application.
    python app.py
    ```
 2. Open your web browser and go to `http://1.0.0.1:5000/` to see the app in action.
+
+## Features
+
+### To-Do List
+
+This application includes a simple To-Do list feature that demonstrates Flask's session handling and form processing capabilities.
+
+*   **Route:** `/todo`
+*   **Functionality:**
+    *   View your current list of tasks.
+    *   Add new tasks to the list using the provided form.
+    *   Tasks are stored in your browser session.
+*   **Clear Tasks:**
+    *   **Route:** `/todo/clear`
+    *   **Functionality:** Clears all tasks from your current session.

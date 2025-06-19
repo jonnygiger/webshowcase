@@ -28,6 +28,16 @@ class Group(db.Model):
     def __repr__(self):
         return f"<Group '{self.name}'>"
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'creator_id': self.creator_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'creator_username': self.creator.username if self.creator else None
+        }
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -216,6 +226,16 @@ class Poll(db.Model):
     def __repr__(self):
         return f'<Poll {self.question}>'
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'question': self.question,
+            'user_id': self.user_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'author_username': self.author.username if self.author else None,
+            'options': [option.to_dict() for option in self.options]
+        }
+
 class PollOption(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     text = db.Column(db.String(255), nullable=False)
@@ -225,6 +245,13 @@ class PollOption(db.Model):
 
     def __repr__(self):
         return f'<PollOption {self.text} for Poll {self.poll_id}>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'text': self.text,
+            'vote_count': len(self.votes)
+        }
 
 class PollVote(db.Model):
     id = db.Column(db.Integer, primary_key=True)

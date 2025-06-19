@@ -117,3 +117,48 @@ class EventResource(Resource):
 # Note: PUT and DELETE for individual events can be added if needed,
 # similar to PostResource, including authorization checks.
 # For now, focusing on GET for single event and POST for list.
+
+from flask import jsonify # Added jsonify
+from recommendations import (
+    suggest_posts_to_read,
+    suggest_groups_to_join,
+    suggest_events_to_attend,
+    suggest_users_to_follow,
+    suggest_polls_to_vote
+)
+from models import Group, Poll # User, Post, Event are already imported
+
+class RecommendationResource(Resource):
+    def get(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('user_id', type=int, required=True, help='User ID is required and must be an integer.')
+        args = parser.parse_args()
+
+        user_id = args['user_id']
+
+        user = User.query.get(user_id)
+        if not user:
+            return {'message': 'User not found'}, 404
+
+        # Get suggestions
+        posts = suggest_posts_to_read(user_id, limit=5)
+        groups = suggest_groups_to_join(user_id, limit=3)
+        events = suggest_events_to_attend(user_id, limit=3)
+        users_to_follow = suggest_users_to_follow(user_id, limit=3)
+        polls = suggest_polls_to_vote(user_id, limit=3)
+
+        # Serialize results
+        suggested_posts = [post.to_dict() for post in posts]
+        suggested_groups = [group.to_dict() for group in groups]
+        suggested_events = [event.to_dict() for event in events]
+        suggested_users = [u.to_dict() for u in users_to_follow]
+        suggested_polls = [poll.to_dict() for poll in polls]
+
+        return {
+            'user_id': user_id,
+            'suggested_posts': suggested_posts,
+            'suggested_groups': suggested_groups,
+            'suggested_events': suggested_events,
+            'suggested_users_to_follow': suggested_users,
+            'suggested_polls_to_vote': suggested_polls
+        }, 200

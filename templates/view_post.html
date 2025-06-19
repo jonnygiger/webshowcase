@@ -203,8 +203,20 @@
         {% if comments and comments|length > 0 %}
             {% for comment in comments %}
                 <div class="comment" style="margin-bottom: 15px; padding: 10px; border: 1px solid #eee;">
-                    <p><strong><a href="{{ url_for('user_profile', username=comment.author_username) }}">{{ comment.author_username }}</a></strong> <small class="text-muted">({{ comment.timestamp }})</small></p>
+                    <p><strong><a href="{{ url_for('user_profile', username=comment.author_username) }}">{{ comment.author_username }}</a></strong> <small class="text-muted">({{ comment.timestamp }})</small></p> {# Assuming comment.author_username and comment.timestamp are directly available as per original file #}
                     <p style="white-space: pre-wrap;">{{ comment.content }}</p>
+                    {# Flag Comment Form - Placed inside the comment div #}
+                    {% if current_user and current_user.is_authenticated and comment.user_id != current_user.id %}
+                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #eee;">
+                        <form action="{{ url_for('flag_comment', comment_id=comment.id) }}" method="POST">
+                            <div class="form-group form-group-sm" style="margin-bottom: 5px;">
+                                <label for="comment_flag_reason_{{ comment.id }}" class="form-label-sm visually-hidden">Reason for flagging comment {{comment.id}} (Optional):</label> {# Use visually-hidden for screen readers if label text is redundant #}
+                                <textarea name="reason" id="comment_flag_reason_{{ comment.id }}" class="form-control form-control-sm" rows="1" placeholder="Reason for flagging (optional)"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-outline-warning btn-sm" style="font-size: 0.8em; padding: 0.2rem 0.4rem;">Flag Comment</button>
+                        </form>
+                    </div>
+                    {% endif %}
                 </div>
             {% endfor %}
         {% else %}
@@ -213,6 +225,21 @@
     </div>
 
     <hr style="margin-top: 20px;"> {# Add some space before the general back button #}
+
+    {# Flag Post Form - Placed before the "Back to Blog" button for visibility #}
+    {% if current_user and current_user.is_authenticated and post.user_id != current_user.id %}
+    <div style="margin-top: 15px; margin-bottom: 15px; padding: 10px; border: 1px solid #ffc107; background-color: #fff9e6; border-radius: 5px;">
+        <h5>Report Post</h5>
+        <form action="{{ url_for('flag_post', post_id=post.id) }}" method="POST">
+            <div class="form-group">
+                <label for="post_flag_reason" class="form-label-sm">Reason (Optional):</label>
+                <textarea name="reason" id="post_flag_reason" class="form-control form-control-sm" rows="2" placeholder="Briefly explain why you are flagging this post."></textarea>
+            </div>
+            <button type="submit" class="btn btn-warning btn-sm">Submit Flag</button>
+        </form>
+    </div>
+    {% endif %}
+
     <a href="{{ url_for('blog') }}" class="btn btn-info">Back to Blog</a>
   {% else %}
     {# This case should ideally be handled by the route redirecting, but as a fallback: #}

@@ -19,7 +19,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity # Add UserActivity
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent # Add UserActivity, FlaggedContent
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
 from recommendations import suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join, suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags # Updated import
 
@@ -150,6 +150,28 @@ def login_required(f):
         if 'user_id' not in session: # Changed from 'logged_in' to 'user_id'
             flash('You need to be logged in to access this page.', 'danger')
             return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Decorator for requiring moderator role
+def moderator_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session: # Should be caught by @login_required first
+            flash('You need to be logged in to access this page.', 'danger')
+            return redirect(url_for('login'))
+
+        user = User.query.get(session['user_id'])
+        if not user:
+            flash('User not found. Please log in again.', 'danger')
+            session.pop('user_id', None) # Clear potentially invalid session
+            session.pop('username', None)
+            session.pop('logged_in', None)
+            return redirect(url_for('login'))
+
+        if user.role != 'moderator':
+            flash('You do not have permission to access this page. Moderator access required.', 'danger')
+            return redirect(url_for('hello_world')) # Redirect to home or another appropriate page
         return f(*args, **kwargs)
     return decorated_function
 
@@ -1852,3 +1874,190 @@ def recommendations_view():
                            suggested_events=suggested_events,
                            suggested_polls=suggested_polls,
                            suggested_hashtags=suggested_hashtags)
+
+
+@app.route('/post/<int:post_id>/flag', methods=['POST'])
+@login_required
+def flag_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    user_id = session.get('user_id')
+
+    if not user_id: # Should be caught by @login_required
+        flash('You must be logged in to flag content.', 'danger')
+        return redirect(url_for('login'))
+
+    if post.user_id == user_id:
+        flash('You cannot flag your own post.', 'warning')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    reason = request.form.get('reason')
+    existing_flag = FlaggedContent.query.filter_by(
+        content_type='post',
+        content_id=post_id,
+        flagged_by_user_id=user_id
+    ).first()
+
+    if existing_flag:
+        flash('You have already flagged this post.', 'info')
+    else:
+        new_flag = FlaggedContent(
+            content_type='post',
+            content_id=post_id,
+            flagged_by_user_id=user_id,
+            reason=reason
+        )
+        db.session.add(new_flag)
+        db.session.commit()
+        flash('Post has been flagged for review.', 'success')
+    return redirect(url_for('view_post', post_id=post_id))
+
+
+@app.route('/comment/<int:comment_id>/flag', methods=['POST'])
+@login_required
+def flag_comment(comment_id):
+    comment = Comment.query.get_or_404(comment_id)
+    user_id = session.get('user_id')
+
+    if not user_id: # Should be caught by @login_required
+        flash('You must be logged in to flag content.', 'danger')
+        return redirect(url_for('login'))
+
+    if comment.user_id == user_id:
+        flash('You cannot flag your own comment.', 'warning')
+        return redirect(url_for('view_post', post_id=comment.post_id))
+
+    reason = request.form.get('reason')
+    existing_flag = FlaggedContent.query.filter_by(
+        content_type='comment',
+        content_id=comment_id,
+        flagged_by_user_id=user_id
+    ).first()
+
+    if existing_flag:
+        flash('You have already flagged this comment.', 'info')
+    else:
+        new_flag = FlaggedContent(
+            content_type='comment',
+            content_id=comment_id,
+            flagged_by_user_id=user_id,
+            reason=reason
+        )
+        db.session.add(new_flag)
+        db.session.commit()
+        flash('Comment has been flagged for review.', 'success')
+    return redirect(url_for('view_post', post_id=comment.post_id))
+
+
+@app.route('/moderation')
+@login_required
+@moderator_required
+def moderation_dashboard():
+    pending_flags_query = FlaggedContent.query.filter_by(status='pending').order_by(FlaggedContent.timestamp.asc()).all()
+
+    processed_flags = []
+    for flag in pending_flags_query:
+        flag_data = {
+            'id': flag.id,
+            'content_type': flag.content_type,
+            'content_id': flag.content_id,
+            'reason': flag.reason,
+            'flagged_by_user': flag.flagged_by_user, # Pass the user object
+            'timestamp': flag.timestamp,
+            'comment_post_id': None # Initialize
+        }
+        if flag.content_type == 'comment':
+            comment = Comment.query.get(flag.content_id)
+            if comment:
+                flag_data['comment_post_id'] = comment.post_id
+        processed_flags.append(flag_data)
+
+    return render_template('moderation_dashboard.html', flagged_items=processed_flags)
+
+@app.route('/flagged_content/<int:flag_id>/approve', methods=['POST'])
+@login_required
+@moderator_required
+def approve_flagged_content(flag_id):
+    flag = FlaggedContent.query.get_or_404(flag_id)
+    if flag.status != 'pending':
+        flash('This flag has already been processed.', 'warning')
+        return redirect(url_for('moderation_dashboard'))
+
+    flag.status = 'approved'
+    flag.moderator_id = session['user_id']
+    flag.moderator_comment = request.form.get('moderator_comment')
+    flag.resolved_at = datetime.utcnow()
+    db.session.commit()
+    flash(f'Flag ID {flag.id} has been approved.', 'success')
+    return redirect(url_for('moderation_dashboard'))
+
+@app.route('/flagged_content/<int:flag_id>/reject', methods=['POST'])
+@login_required
+@moderator_required
+def reject_flagged_content(flag_id):
+    flag = FlaggedContent.query.get_or_404(flag_id)
+    if flag.status != 'pending':
+        flash('This flag has already been processed.', 'warning')
+        return redirect(url_for('moderation_dashboard'))
+
+    flag.status = 'rejected'
+    flag.moderator_id = session['user_id']
+    flag.moderator_comment = request.form.get('moderator_comment')
+    flag.resolved_at = datetime.utcnow()
+    db.session.commit()
+    flash(f'Flag ID {flag.id} has been rejected.', 'success')
+    return redirect(url_for('moderation_dashboard'))
+
+@app.route('/flagged_content/<int:flag_id>/remove_content_and_reject', methods=['POST'])
+@login_required
+@moderator_required
+def remove_content_and_reject_flag(flag_id):
+    flag = FlaggedContent.query.get_or_404(flag_id)
+    if flag.status != 'pending':
+        flash('This flag has already been processed.', 'warning')
+        return redirect(url_for('moderation_dashboard'))
+
+    content_removed = False
+    if flag.content_type == 'post':
+        post_to_delete = Post.query.get(flag.content_id)
+        if post_to_delete:
+            # Cascading deletes for comments, likes, reviews, etc., associated with the post
+            # are assumed to be handled by the database relationships (e.g., cascade="all, delete-orphan")
+            db.session.delete(post_to_delete)
+            content_removed = True
+            flash(f'Post ID {flag.content_id} has been deleted.', 'info')
+        else:
+            flash(f'Post ID {flag.content_id} not found for deletion.', 'error')
+    elif flag.content_type == 'comment':
+        comment_to_delete = Comment.query.get(flag.content_id)
+        if comment_to_delete:
+            db.session.delete(comment_to_delete)
+            content_removed = True
+            flash(f'Comment ID {flag.content_id} has been deleted.', 'info')
+        else:
+            flash(f'Comment ID {flag.content_id} not found for deletion.', 'error')
+    else:
+        flash(f'Unsupported content type "{flag.content_type}" for removal.', 'error')
+
+    if content_removed:
+        flag.status = 'content_removed_and_rejected'
+        flash_message = f'Content ({flag.content_type} ID {flag.content_id}) removed and flag rejected.'
+    else:
+        # If content was not removed (e.g. not found, or unsupported type), still reject the flag.
+        # Or, one might choose to leave the flag as pending if content removal failed unexpectedly.
+        # For this implementation, we will mark the flag as 'rejected' if content removal failed,
+        # as the primary action (removal) was not completed as intended.
+        # A more nuanced status like 'rejection_failed_content_not_found' could be used.
+        # However, the problem asks to update flag status to 'content_removed_and_rejected' *if content is successfully deleted*.
+        # If content is not successfully deleted, we should not update the flag status this way.
+        # Let's adjust: only update flag status if content_removed is true. Otherwise, it's just an error.
+        # The problem statement implies if content removal fails, it's an error and then redirect.
+        # It doesn't explicitly say what to do with the flag status in that case.
+        # Let's assume if content removal fails, the flag remains 'pending' and moderator can re-evaluate.
+        return redirect(url_for('moderation_dashboard')) # Redirect after flashing error if content not removed
+
+    flag.moderator_id = session['user_id']
+    flag.moderator_comment = request.form.get('moderator_comment')
+    flag.resolved_at = datetime.utcnow()
+    db.session.commit()
+    flash(flash_message, 'success')
+    return redirect(url_for('moderation_dashboard'))

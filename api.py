@@ -1,7 +1,16 @@
 from flask import request
 from flask_restful import Resource, reqparse
-from models import db, User, Post, Event # Assuming models.py contains these
+from models import db, User, Post, Event, Poll, PollOption # Assuming models.py contains these
 from flask_jwt_extended import jwt_required, get_jwt_identity # Will be used later
+from datetime import datetime
+
+from recommendations import (
+    suggest_posts_to_read,
+    suggest_events_to_attend,
+    suggest_polls_to_vote,
+    suggest_groups_to_join, # Keep existing imports from RecommendationResource
+    suggest_users_to_follow # Keep existing imports from RecommendationResource
+)
 
 # Placeholder for authentication logic for now
 # In a real scenario, you would use @jwt_required and get_jwt_identity
@@ -118,15 +127,72 @@ class EventResource(Resource):
 # similar to PostResource, including authorization checks.
 # For now, focusing on GET for single event and POST for list.
 
+class PersonalizedFeedResource(Resource):
+    @jwt_required()
+    def get(self):
+        current_user_id = get_jwt_identity()
+        feed_items = []
+
+        # Get recommended posts
+        recommended_posts_with_reasons = suggest_posts_to_read(current_user_id, limit=10)
+        for post_obj, reason in recommended_posts_with_reasons:
+            if post_obj:
+                feed_items.append({
+                    'type': 'post',
+                    'id': post_obj.id,
+                    'title': post_obj.title,
+                    'content': post_obj.content,
+                    'author_username': post_obj.author.username if post_obj.author else 'Unknown',
+                    'timestamp': post_obj.timestamp.isoformat() if post_obj.timestamp else None,
+                    'reason': reason
+                })
+
+        # Get recommended events
+        recommended_events = suggest_events_to_attend(current_user_id, limit=5)
+        for event_obj in recommended_events:
+            if event_obj:
+                feed_items.append({
+                    'type': 'event',
+                    'id': event_obj.id,
+                    'title': event_obj.title,
+                    'description': event_obj.description,
+                    'date': event_obj.date, # Assuming date is already a string
+                    'time': event_obj.time, # Assuming time is already a string
+                    'location': event_obj.location,
+                    'organizer_username': event_obj.organizer.username if event_obj.organizer else 'Unknown',
+                    # Use created_at for sorting, event.date is specific to the event's occurrence
+                    'timestamp': event_obj.created_at.isoformat() if event_obj.created_at else None
+                })
+
+        # Get recommended polls
+        recommended_polls = suggest_polls_to_vote(current_user_id, limit=5)
+        for poll_obj in recommended_polls:
+            if poll_obj:
+                options_data = []
+                for option in poll_obj.options: # Assuming poll_obj.options is a list of PollOption
+                    options_data.append({
+                        'id': option.id,
+                        'text': option.text,
+                        'vote_count': len(option.votes) # Assuming option.votes is a list/collection of votes
+                    })
+                feed_items.append({
+                    'type': 'poll',
+                    'id': poll_obj.id,
+                    'question': poll_obj.question,
+                    'creator_username': poll_obj.creator.username if poll_obj.creator else 'Unknown',
+                    'options': options_data,
+                    'timestamp': poll_obj.created_at.isoformat() if poll_obj.created_at else None
+                })
+
+        # Sort feed items by timestamp (most recent first)
+        # Ensure all items have a valid timestamp; handle None if necessary, though recommendations should have them
+        feed_items.sort(key=lambda x: x['timestamp'] if x['timestamp'] else datetime.min.isoformat(), reverse=True)
+
+        return {'feed_items': feed_items}, 200
+
 from flask import jsonify # Added jsonify
-from recommendations import (
-    suggest_posts_to_read,
-    suggest_groups_to_join,
-    suggest_events_to_attend,
-    suggest_users_to_follow,
-    suggest_polls_to_vote
-)
-from models import Group, Poll # User, Post, Event are already imported
+# Note: recommendation function imports are now at the top of the file
+from models import Group # User, Post, Event, Poll are already imported at the top
 
 class RecommendationResource(Resource):
     def get(self):

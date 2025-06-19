@@ -747,6 +747,84 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
             }
             ```
 
+*   **GET /api/personalized-feed**
+    *   **Description:** Provides a personalized feed of content (posts, events, polls) for the authenticated user, sorted by recency.
+    *   **Authentication:** Required. Expects a JWT Bearer token in the `Authorization` header.
+        *   Example: `Authorization: Bearer <your_jwt_access_token>`
+    *   **Success Response (200 OK):**
+        *   **Content-Type:** `application/json`
+        *   **Body:** A JSON array named `feed_items`. Each item in the array represents a piece of content and includes at least:
+            *   `type`: String - Identifies the type of content (e.g., "post", "event", "poll").
+            *   `timestamp`: String - ISO 8601 formatted timestamp. This is used to sort the feed, with the most recent items appearing first. For posts, this is the post's creation/update time. For events and polls, this is their creation time.
+            *   `id`: Integer - The unique ID of the content item.
+        *   **Post Item Structure (`type: "post"`)**:
+            *   `title`: String - The title of the post.
+            *   `content`: String - The main content of the post.
+            *   `author_username`: String - Username of the post's author.
+            *   `reason`: String - A brief explanation of why this post is recommended (e.g., "Liked by a friend", "Trending").
+            *   *(Other standard post fields may be present)*
+        *   **Event Item Structure (`type: "event"`)**:
+            *   `title`: String - The title of the event.
+            *   `description`: String - Description of the event.
+            *   `date`: String - The date of the event (e.g., "YYYY-MM-DD").
+            *   `time`: String - The time of the event (e.g., "HH:MM").
+            *   `location`: String - The location of the event.
+            *   `organizer_username`: String - Username of the event's organizer.
+            *   *(Other standard event fields may be present)*
+        *   **Poll Item Structure (`type: "poll"`)**:
+            *   `question`: String - The main question of the poll.
+            *   `creator_username`: String - Username of the poll's creator.
+            *   `options`: Array of objects - Each object represents a poll option and contains:
+                *   `id`: Integer - ID of the option.
+                *   `text`: String - Text of the option.
+                *   `vote_count`: Integer - Number of votes this option has received.
+            *   *(Other standard poll fields may be present)*
+        *   **Example `feed_items` Array:**
+            ```json
+            {
+                "feed_items": [
+                    {
+                        "type": "post",
+                        "id": 123,
+                        "timestamp": "2024-03-15T10:30:00Z",
+                        "title": "Exploring New APIs",
+                        "content": "A deep dive into new API development techniques...",
+                        "author_username": "jane_doe",
+                        "reason": "Liked by your friend John."
+                    },
+                    {
+                        "type": "event",
+                        "id": 78,
+                        "timestamp": "2024-03-14T15:00:00Z",
+                        "title": "Tech Meetup Vol. 5",
+                        "description": "Join us for the latest in tech.",
+                        "date": "2024-03-20",
+                        "time": "18:00",
+                        "location": "Community Hall",
+                        "organizer_username": "tech_guru"
+                    },
+                    {
+                        "type": "poll",
+                        "id": 45,
+                        "timestamp": "2024-03-13T09:00:00Z",
+                        "question": "What's your favorite programming language?",
+                        "creator_username": "code_master",
+                        "options": [
+                            {"id": 101, "text": "Python", "vote_count": 55},
+                            {"id": 102, "text": "JavaScript", "vote_count": 40}
+                        ]
+                    }
+                ]
+            }
+            ```
+    *   **Error Responses:**
+        *   **401 Unauthorized:** If the JWT token is missing, invalid, or expired.
+            ```json
+            {
+                "msg": "Missing Authorization Header" // Or other JWT-related error messages
+            }
+            ```
+
 ### Posts API
 
 *   **GET /api/posts**

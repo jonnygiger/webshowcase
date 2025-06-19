@@ -72,9 +72,9 @@ The application now includes a friendship system, allowing users to connect with
 The application now tracks and displays user activities, providing insight into recent actions within the platform.
 
 *   **Functionality**:
-    *   Tracks user actions such as creating new posts, adding comments to posts, and creating new events.
+    *   Tracks user actions such as creating new posts, adding comments to posts, creating new events, and liking posts.
     *   Each user has a dedicated activity feed page that shows their recent activities in chronological order (newest first).
-    *   Activities listed in the feed include a description of the action, a preview of the content (e.g., post title, comment snippet), and a direct link to the relevant content (e.g., the post or event page).
+    *   Activities listed in the feed include a description of the action, a preview of the content (e.g., post title, comment snippet, liked post preview), and a direct link to the relevant content (e.g., the post or event page).
 *   **Access**:
     *   A link to "View Activity Feed" is available on each user's profile page (`/user/<username>`), allowing logged-in users to view the activity of others.
 *   **Models**:
@@ -522,7 +522,7 @@ To keep users informed about recent activity on the platform, an in-app notifica
 To enhance user engagement and content discovery, this application now includes a recommendations feature. Users can discover:
 
 *   **Suggested Users to Follow**: Based on mutual connections (friends of friends) and other social interactions.
-*   **Suggested Posts to Read**: Highlighting posts liked by a user's friends or related to their interests.
+*   **Suggested Posts to Read**: Highlighting posts relevant to a user. The system now considers posts that the user's friends have recently liked *or commented on*, prioritizing content with the freshest interactions to provide timely and engaging suggestions.
 *   **Suggested Groups to Join**: Pointing out groups that friends are part of or that align with a user's activity.
 
 The recommendations feature has been enhanced to also suggest relevant events and polls:

@@ -818,8 +818,34 @@ def like_post(post_id):
     if not existing_like:
         new_like = Like(user_id=user_id, post_id=post.id)
         db.session.add(new_like)
-        db.session.commit()
-        flash('Post liked!', 'success')
+        # Try to commit the like first
+        try:
+            db.session.commit()
+            flash('Post liked!', 'success')
+
+            # After successfully liking, create UserActivity
+            try:
+                activity = UserActivity(
+                    user_id=user_id,
+                    activity_type="new_like",
+                    related_id=post.id,
+                    content_preview=post.content[:100] if post.content else "",
+                    link=url_for('view_post', post_id=post.id, _external=True)
+                )
+                db.session.add(activity)
+                db.session.commit()
+            except Exception as e:
+                app.logger.error(f"Error creating UserActivity for new_like: {e}")
+                # Rollback the UserActivity commit, but not the Like commit
+                db.session.rollback()
+                # Optionally, flash a less critical message or just log
+                # flash('Activity could not be logged, but your like was successful.', 'warning')
+
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Error liking post or creating UserActivity: {e}")
+            flash('An error occurred while liking the post.', 'danger')
+
     else:
         flash('You have already liked this post.', 'info')
 

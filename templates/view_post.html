@@ -15,6 +15,18 @@
     <p><small>By <a href="{{ url_for('user_profile', username=post.author_username) }}">{{ post.author_username }}</a> on {{ post.timestamp }}</small></p>
     <p>{{ post.content | safe }}</p> {# Assuming content is safe or will be sanitized later #}
 
+    {% if post.hashtags %}
+        <p style="margin-top: 10px;">
+            <strong>Hashtags:</strong>
+            {% for tag in post.hashtags.split(',') %}
+                {% set cleaned_tag = tag.strip() %}
+                {% if cleaned_tag %}
+                    <a href="{{ url_for('view_hashtag_posts', tag=cleaned_tag) }}">#{{ cleaned_tag }}</a>
+                {% endif %}
+            {% endfor %}
+        </p>
+    {% endif %}
+
     <div style="margin-top: 15px; margin-bottom: 15px;">
         <p>{{ post.likes }} like(s)</p>
     <p>{{ post.shares.count() if post.shares else 0 }} Share(s)</p> {# Display Share Count #}

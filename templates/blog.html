@@ -29,7 +29,18 @@
                 No reviews yet.
             {% endif %}
         </small></p>
-        <p>{{ post.content[:200] }}... <a href="{{ url_for('view_post', post_id=post.id) }}">Read More</a>
+        <p>{{ post.content[:200] }}...</p>
+        {% if post.hashtags %}
+            <p>
+                {% for tag in post.hashtags.split(',') %}
+                    {% set cleaned_tag = tag.strip() %}
+                    {% if cleaned_tag %}
+                        <a href="{{ url_for('view_hashtag_posts', tag=cleaned_tag) }}">#{{ cleaned_tag }}</a>
+                    {% endif %}
+                {% endfor %}
+            </p>
+        {% endif %}
+        <p><a href="{{ url_for('view_post', post_id=post.id) }}">Read More</a>
         {% if session.logged_in and session.username == post.author_username %}
           <a href="{{ url_for('edit_post', post_id=post.id) }}" class="btn btn-sm btn-outline-secondary" style="margin-left: 10px;">Edit</a>
         {% endif %}

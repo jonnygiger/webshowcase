@@ -1256,3 +1256,167 @@ def test_edit_profile_post_empty_email(client):
     assert b"Email cannot be empty." in response.data
     db_user = User.query.get(user.id)
     assert db_user.email == original_email # Email should not change
+
+
+# --- Hashtag Functionality Tests ---
+
+def test_create_post_with_hashtags(client):
+    """Test creating a new post with hashtags."""
+    login_test_user(client) # Logs in "testuser"
+
+    response = client.post('/blog/create', data=dict(
+        title="Post With Hashtags",
+        content="This is a test post that includes several hashtags.",
+        hashtags="flask,python,testing"
+    ), follow_redirects=True)
+
+    assert response.status_code == 200 # Should redirect to /blog
+    assert b"Blog post created successfully!" in response.data # Flash message
+
+    # Verify in DB
+    # with app.app_context(): # client fixture handles app_context for db operations
+    post = Post.query.filter_by(title="Post With Hashtags").first()
+    assert post is not None
+    assert post.hashtags == "flask,python,testing"
+
+def test_hashtags_display_on_blog_page(client):
+    """Test that hashtags are displayed correctly on the main blog page."""
+    login_test_user(client)
+    user = get_test_user_obj()
+
+    # Create a post with hashtags directly or via route
+    create_post_directly(user_id=user.id, title="Blog Page Hashtag Test", content="Content here", hashtags="pytest, webdev")
+
+    response = client.get('/blog')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert "pytest, webdev" in response_data # Check if the raw string is there (might be split in template)
+    assert '<a href="/hashtag/pytest">#pytest</a>' in response_data
+    assert '<a href="/hashtag/webdev">#webdev</a>' in response_data
+    assert "Blog Page Hashtag Test" in response_data # Ensure the post itself is listed
+
+def test_hashtags_display_on_single_post_view_page(client):
+    """Test that hashtags are displayed on the single post view page."""
+    login_test_user(client)
+    user = get_test_user_obj()
+
+    post = create_post_directly(user_id=user.id, title="Single Post Hashtag Test", content="...", hashtags="detail, view, test")
+
+    response = client.get(f'/blog/post/{post.id}')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert "Single Post Hashtag Test" in response_data
+    assert "<strong>Hashtags:</strong>" in response_data
+    assert '<a href="/hashtag/detail">#detail</a>' in response_data
+    assert '<a href="/hashtag/view">#view</a>' in response_data
+    assert '<a href="/hashtag/test">#test</a>' in response_data
+
+def test_hashtag_specific_view_page(client):
+    """Test the page displaying posts for a specific hashtag."""
+    login_test_user(client) # Logs in "testuser" who will create these posts
+    user = get_test_user_obj()
+
+    post1 = create_post_directly(user_id=user.id, title="Flask Fun", content="About Flask.", hashtags="flask,general,web")
+    post2 = create_post_directly(user_id=user.id, title="Python Power", content="Python is great.", hashtags="python,general")
+    post3 = create_post_directly(user_id=user.id, title="More Flask", content="Another Flask post.", hashtags="flask")
+    post4 = create_post_directly(user_id=user.id, title="Just Web", content="Web dev.", hashtags="web")
+
+
+    # Test for #flask
+    response_flask = client.get('/hashtag/flask')
+    assert response_flask.status_code == 200
+    response_data_flask = response_flask.data.decode()
+
+    assert "Posts tagged with <span class=\"badge badge-primary\">#flask</span>" in response_data_flask
+    assert "Flask Fun" in response_data_flask  # Post 1
+    assert "More Flask" in response_data_flask # Post 3
+    assert "Python Power" not in response_data_flask # Post 2 should not be here
+    assert "Just Web" not in response_data_flask # Post 4 should not be here (though it has 'web', not 'flask')
+
+
+    # Test for #general
+    response_general = client.get('/hashtag/general')
+    assert response_general.status_code == 200
+    response_data_general = response_general.data.decode()
+
+    assert "Posts tagged with <span class=\"badge badge-primary\">#general</span>" in response_data_general
+    assert "Flask Fun" in response_data_general # Post 1
+    assert "Python Power" in response_data_general # Post 2
+    assert "More Flask" not in response_data_general # Post 3 should not be here
+
+    # Test for #web
+    response_web = client.get('/hashtag/web')
+    assert response_web.status_code == 200
+    response_data_web = response_web.data.decode()
+    assert "Posts tagged with <span class=\"badge badge-primary\">#web</span>" in response_data_web
+    assert "Flask Fun" in response_data_web # Post 1
+    assert "Just Web" in response_data_web # Post 4
+    assert "Python Power" not in response_data_web
+
+    # Test for a tag with no posts
+    response_no_posts = client.get('/hashtag/nonexistenttag')
+    assert response_no_posts.status_code == 200
+    assert "No posts found tagged with #nonexistenttag." in response_no_posts.data.decode()
+
+
+def test_edit_post_hashtags(client):
+    """Test editing a post to add, change, or remove hashtags."""
+    login_test_user(client)
+    user = get_test_user_obj()
+
+    # 1. Create a post initially without hashtags
+    post_to_edit = create_post_directly(user_id=user.id, title="Post for Hashtag Editing", content="Initial content.", hashtags=None)
+    assert post_to_edit.hashtags is None
+
+    # 2. Edit to add hashtags
+    response_add_tags = client.post(f'/blog/edit/{post_to_edit.id}', data=dict(
+        title="Post for Hashtag Editing", # Title must be provided
+        content="Content after adding tags.",
+        hashtags="newtag,editedtag"
+    ), follow_redirects=True)
+    assert response_add_tags.status_code == 200 # Redirects to view_post
+    assert b"Post updated successfully!" in response_add_tags.data
+
+    edited_post_1 = Post.query.get(post_to_edit.id)
+    assert edited_post_1.hashtags == "newtag,editedtag"
+    assert edited_post_1.content == "Content after adding tags."
+
+    # 3. Edit to change hashtags
+    response_change_tags = client.post(f'/blog/edit/{post_to_edit.id}', data=dict(
+        title="Post for Hashtag Editing",
+        content="Content after changing tags.",
+        hashtags="onlyflask,changed"
+    ), follow_redirects=True)
+    assert response_change_tags.status_code == 200
+
+    edited_post_2 = Post.query.get(post_to_edit.id)
+    assert edited_post_2.hashtags == "onlyflask,changed"
+    assert edited_post_2.content == "Content after changing tags."
+
+    # 4. Edit to remove hashtags (by submitting an empty string)
+    response_remove_tags = client.post(f'/blog/edit/{post_to_edit.id}', data=dict(
+        title="Post for Hashtag Editing",
+        content="Content after removing tags.",
+        hashtags="" # Empty string for hashtags
+    ), follow_redirects=True)
+    assert response_remove_tags.status_code == 200
+
+    edited_post_3 = Post.query.get(post_to_edit.id)
+    assert edited_post_3.hashtags == "" # Or None, depending on how app.py handles empty string from form
+    # Current app.py: post.hashtags = request.form.get('hashtags', '')
+    # So it will be an empty string.
+    assert edited_post_3.content == "Content after removing tags."
+
+    # 5. Edit an existing post that has hashtags, and change them to something else
+    post_with_initial_tags = create_post_directly(user_id=user.id, title="Another Edit Test", content="Content", hashtags="initial,set")
+    response_edit_existing = client.post(f'/blog/edit/{post_with_initial_tags.id}', data=dict(
+        title="Another Edit Test",
+        content="Updated content.",
+        hashtags="final,version"
+    ), follow_redirects=True)
+    assert response_edit_existing.status_code == 200
+
+    edited_post_4 = Post.query.get(post_with_initial_tags.id)
+    assert edited_post_4.hashtags == "final,version"

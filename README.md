@@ -296,6 +296,11 @@ Users can now express a wider range of sentiments on blog posts using emoji reac
 *   **Route for Reactions**:
     *   `/post/<int:post_id>/react` (POST): Allows a logged-in user to add, change, or remove their reaction to a specific post.
 
+### Hashtags
+- Users can add comma-separated hashtags to their posts (e.g., `python, flask, webdev`).
+- Hashtags are displayed with each post and are clickable.
+- Clicking a hashtag navigates to a dedicated page showing all posts associated with that tag, making it easy to discover related content.
+
 ### Blog Post Rating and Review System
 
 Enhancing user interaction and feedback, users can now rate blog posts (1-5 stars) and write textual reviews.

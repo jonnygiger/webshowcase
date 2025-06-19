@@ -699,6 +699,54 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
         }
         ```
 
+### Content Recommendations API
+
+*   **GET /api/recommendations**
+    *   **Description:** Retrieves personalized content recommendations for a given user.
+    *   **Authentication:** Not required.
+    *   **Query Parameters:**
+        *   `user_id` (integer, required): The ID of the user for whom to fetch recommendations.
+    *   **Success Response (200 OK):**
+        *   **Content-Type:** `application/json`
+        *   **Body:** A JSON object containing the user's ID and various lists of suggested content.
+        *   **Example:**
+            ```json
+            {
+                "user_id": 1,
+                "suggested_posts": [
+                    {"id": 101, "title": "A Great Post", "author_username": "user2", "content": "...", "timestamp": "...", "user_id": 2, "hashtags": null, "is_featured": false, "featured_at": null}
+                ],
+                "suggested_groups": [
+                    {"id": 5, "name": "Cool Group", "description": "...", "creator_id": 3, "created_at": "...", "creator_username": "user3"}
+                ],
+                "suggested_events": [
+                    {"id": 12, "title": "Upcoming Event", "description": "...", "date": "...", "time": "...", "location": "...", "created_at": "...", "user_id": 2, "organizer_username": "user2"}
+                ],
+                "suggested_users_to_follow": [
+                    {"id": 4, "username": "user4", "email": "user4@example.com", "profile_picture": null, "bio": "...", "uploaded_images": null}
+                ],
+                "suggested_polls_to_vote": [
+                    {"id": 7, "question": "Favorite Color?", "user_id": 2, "created_at": "...", "author_username": "user2", "options": [{"id": 15, "text": "Blue", "vote_count": 0}, {"id": 16, "text": "Red", "vote_count": 0}]}
+                ]
+            }
+            ```
+    *   **Error Responses:**
+        *   **400 Bad Request:** If `user_id` is missing or invalid.
+            ```json
+            {
+                "message": {
+                    "user_id": "User ID is required and must be an integer."
+                }
+            }
+            ```
+            *(Note: The exact message for a missing parameter might be "Missing required parameter in the query string" or similar, depending on Flask-RESTful configuration.)*
+        *   **404 Not Found:** If the specified `user_id` does not exist.
+            ```json
+            {
+                "message": "User not found"
+            }
+            ```
+
 ### Posts API
 
 *   **GET /api/posts**

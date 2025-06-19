@@ -40,6 +40,7 @@ class User(db.Model):
     reviews = db.relationship('Review', backref='reviewer', lazy=True)
     sent_messages = db.relationship('Message', foreign_keys='Message.sender_id', backref='sender', lazy=True)
     received_messages = db.relationship('Message', foreign_keys='Message.receiver_id', backref='receiver', lazy=True)
+    bookmarks = db.relationship('Bookmark', backref='user', lazy=True, cascade="all, delete-orphan")
     polls = db.relationship('Poll', backref='author', lazy=True)
     poll_votes = db.relationship('PollVote', backref='voter', lazy=True)
     events = db.relationship('Event', backref='organizer', lazy=True)
@@ -76,6 +77,7 @@ class Post(db.Model):
     likes = db.relationship('Like', backref='post', lazy=True, cascade="all, delete-orphan")
     reviews = db.relationship('Review', backref='post', lazy=True, cascade="all, delete-orphan")
     reactions = db.relationship('Reaction', backref='post', lazy=True, cascade="all, delete-orphan")
+    bookmarked_by = db.relationship('Bookmark', backref='post', lazy=True, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f'<Post {self.title}>'
@@ -259,3 +261,14 @@ class TodoItem(db.Model):
 # The `generate_activity_summary` function will need to be updated to query the database.
 # Login_required decorator remains the same.
 # Route logic will change significantly to use DB queries.
+
+class Bookmark(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='_user_post_bookmark_uc'),)
+
+    def __repr__(self):
+        return f'<Bookmark User {self.user_id} Post {self.post_id}>'

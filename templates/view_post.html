@@ -30,6 +30,21 @@
         {% endif %}
     </div>
 
+    {# Bookmark Button #}
+    {% if current_user.is_authenticated %}
+    <div style="margin-top: 15px; margin-bottom: 15px;">
+        <form action="{{ url_for('bookmark_post', post_id=post.id) }}" method="POST" style="display: inline;">
+            <button type="submit" class="btn {% if user_has_bookmarked %}btn-primary{% else %}btn-outline-primary{% endif %} btn-sm">
+                {% if user_has_bookmarked %}
+                    Unbookmark
+                {% else %}
+                    Bookmark
+                {% endif %}
+            </button>
+        </form>
+    </div>
+    {% endif %}
+
     {# Reaction Buttons and Counts #}
     <div style="margin-top: 15px; margin-bottom: 15px;">
         {% if current_user.is_authenticated %}

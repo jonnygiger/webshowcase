@@ -34,7 +34,18 @@
                 {% for post in posts %}
                     <li>
                         <a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a>
-                        <span class="text-muted"> - {{ post.timestamp }}</span>
+                        <span class="text-muted"> - {{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+                        {% if current_user.is_authenticated %}
+                          <form action="{{ url_for('bookmark_post', post_id=post.id) }}" method="POST" style="display: inline; margin-left: 10px;">
+                              <button type="submit" class="btn btn-sm {% if post.id in bookmarked_post_ids %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                                  {% if post.id in bookmarked_post_ids %}
+                                      Unbookmark
+                                  {% else %}
+                                      Bookmark
+                                  {% endif %}
+                              </button>
+                          </form>
+                        {% endif %}
                     </li>
                 {% endfor %}
             </ul>

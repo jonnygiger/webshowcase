@@ -1,7 +1,7 @@
 import pytest
 import os
 import shutil
-from app import app, db, User, Post, Reaction, TodoItem # Added Post, Reaction
+from app import app, db, User, Post, Reaction, TodoItem, Bookmark # Added Post, Reaction, Bookmark
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 from io import BytesIO # For simulating file uploads
@@ -521,3 +521,124 @@ def test_reaction_no_emoji_provided(client):
     assert response.status_code == 200 # Redirects to view_post
     assert b"No emoji provided for reaction." in response.data # Flash message
     assert Reaction.query.filter_by(post_id=post.id).count() == 0
+
+
+# --- Bookmark Tests ---
+
+def test_bookmark_a_post_when_logged_in(client):
+    """Test bookmarking a post successfully when logged in."""
+    login_test_user(client)
+    user = get_test_user_obj()
+    # Create a post by another user to avoid any self-action restrictions if they were ever added
+    other_user = create_user_directly("otherposter", "password")
+    post = create_post_directly(user_id=other_user.id, title="Test Bookmarkable Post")
+
+    # Ensure the post is not bookmarked yet
+    assert Bookmark.query.filter_by(user_id=user.id, post_id=post.id).first() is None
+
+    response = client.post(f'/bookmark/{post.id}', follow_redirects=True)
+
+    assert response.status_code == 200 # Should redirect to view_post
+    assert f'/blog/post/{post.id}' in response.request.path # Check redirection URL
+    assert b"Post bookmarked!" in response.data # Check flash message
+
+    # Verify in DB
+    bookmark = Bookmark.query.filter_by(user_id=user.id, post_id=post.id).first()
+    assert bookmark is not None
+    assert bookmark.user_id == user.id
+    assert bookmark.post_id == post.id
+
+    # Also check the view_post page now shows "Unbookmark" for this user
+    # This requires user_has_bookmarked to be correctly passed and used in view_post.html
+    response_view_post = client.get(f'/blog/post/{post.id}')
+    assert b"Unbookmark" in response_view_post.data
+    # And not "Bookmark Post"
+    assert b">Bookmark<" not in response_view_post.data # Check for >Bookmark< to avoid matching "Bookmarked on:" etc.
+
+def test_unbookmark_a_post_when_logged_in(client):
+    """Test unbookmarking a previously bookmarked post."""
+    login_test_user(client)
+    user = get_test_user_obj()
+    other_user = create_user_directly("anotherposter", "password")
+    post = create_post_directly(user_id=other_user.id, title="Test Unbookmarkable Post")
+
+    # Initially bookmark the post
+    initial_bookmark = Bookmark(user_id=user.id, post_id=post.id)
+    db.session.add(initial_bookmark)
+    db.session.commit()
+    assert Bookmark.query.filter_by(user_id=user.id, post_id=post.id).first() is not None
+
+    # Send POST request to unbookmark
+    response = client.post(f'/bookmark/{post.id}', follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f'/blog/post/{post.id}' in response.request.path
+    assert b"Post unbookmarked." in response.data
+
+    # Verify in DB
+    assert Bookmark.query.filter_by(user_id=user.id, post_id=post.id).first() is None
+
+    # Also check the view_post page now shows "Bookmark" again
+    response_view_post = client.get(f'/blog/post/{post.id}')
+    assert b">Bookmark<" in response_view_post.data # Using >Bookmark< to be more specific
+    assert b"Unbookmark" not in response_view_post.data
+
+def test_view_bookmarked_posts_when_logged_in(client):
+    """Test viewing the /bookmarks page when logged in."""
+    login_test_user(client)
+    user = get_test_user_obj()
+
+    # Create some posts
+    post1 = create_post_directly(user_id=user.id, title="Bookmarked Post 1")
+    post2 = create_post_directly(user_id=user.id, title="Unbookmarked Post")
+    post3 = create_post_directly(user_id=user.id, title="Bookmarked Post 3")
+
+    # Bookmark post1 and post3 for 'testuser'
+    db.session.add(Bookmark(user_id=user.id, post_id=post1.id))
+    db.session.add(Bookmark(user_id=user.id, post_id=post3.id))
+    db.session.commit()
+
+    response = client.get('/bookmarks')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert "My Bookmarked Posts" in response_data
+    assert "Bookmarked Post 1" in response_data
+    assert "Bookmarked Post 3" in response_data
+    assert "Unbookmarked Post" not in response_data # Ensure unbookmarked posts are not listed
+    assert "You have no bookmarked posts yet." not in response_data # Since there are bookmarks
+
+def test_view_bookmarked_posts_empty(client):
+    """Test viewing the /bookmarks page when logged in and no posts are bookmarked."""
+    login_test_user(client)
+    # user = get_test_user_obj() # Not strictly needed as no bookmarks will be added for this user
+
+    response = client.get('/bookmarks')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert "My Bookmarked Posts" in response_data
+    assert "You have no bookmarked posts yet." in response_data
+
+def test_bookmark_post_not_logged_in(client):
+    """Test attempting to bookmark a post when not logged in."""
+    # Create a post first
+    test_user_for_post = create_user_directly("postowner_nouser", "password")
+    post = create_post_directly(user_id=test_user_for_post.id, title="Post for Unauth Bookmark")
+
+    response = client.post(f'/bookmark/{post.id}', follow_redirects=False) # Check for redirect
+
+    assert response.status_code == 302 # Should redirect
+    assert '/login' in response.location # To login page
+    assert b"You need to be logged in to access this page." in client.get(response.location).data # Check flash on login page
+
+    # Verify no bookmark was created
+    assert Bookmark.query.filter_by(post_id=post.id).count() == 0
+
+def test_view_bookmarks_not_logged_in(client):
+    """Test attempting to view /bookmarks page when not logged in."""
+    response = client.get('/bookmarks', follow_redirects=False) # Check for redirect
+
+    assert response.status_code == 302
+    assert '/login' in response.location
+    assert b"You need to be logged in to access this page." in client.get(response.location).data

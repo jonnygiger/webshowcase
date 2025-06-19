@@ -546,6 +546,49 @@ These new recommendations are available on the main `/recommendations` page.
 
 You can find dedicated recommendations on the `/recommendations` page (accessible when logged in). Additionally, a snippet of user suggestions is displayed on the main blog page to help you connect with others more easily.
 
+### Content Moderation
+
+The application includes a content moderation system to help maintain a safe and respectful environment. This feature allows users to report inappropriate content (posts or comments) and for designated moderators to review these reports and take appropriate action.
+
+*   **Purpose**: To empower the community to identify and flag content that violates community guidelines, and to provide moderators with the tools to manage these reports efficiently.
+
+*   **Flagging Content (User Action)**:
+    *   Logged-in users can flag any post or comment that they believe is inappropriate or violates community standards.
+    *   Flag buttons are available next to posts and comments.
+    *   Users cannot flag their own content.
+    *   When flagging, users can optionally provide a reason for their report to give moderators more context.
+
+*   **Moderator Role**:
+    *   The 'moderator' is a special user role with elevated privileges.
+    *   Users with this role gain access to the Moderation Dashboard.
+    *   (Note: Assignment of the 'moderator' role is typically handled by an administrator through a separate process, e.g., direct database modification or an admin interface, which is outside the scope of this feature's direct implementation).
+
+*   **Moderation Dashboard**:
+    *   Accessible via the `/moderation` route (requires moderator privileges).
+    *   Lists all content items (posts or comments) that have been flagged by users and are currently in 'pending' status, ordered by when they were flagged.
+    *   For each flagged item, the dashboard displays:
+        *   Flag ID
+        *   Type of content (e.g., 'post', 'comment')
+        *   ID of the flagged content
+        *   A direct link to view the actual content in context.
+        *   The reason provided by the user for flagging (if any).
+        *   The username of the user who flagged the content (with a link to their profile).
+        *   The timestamp of when the flag was submitted.
+
+*   **Moderator Actions**:
+    From the dashboard, moderators can take one of the following actions on a pending flag:
+    *   **Approve Flag**: If the moderator deems the flag valid but the content itself does not warrant removal (e.g., a borderline case that needs monitoring, or the flag was for a minor issue already resolved). The flag status is updated to 'approved'. The content remains visible.
+    *   **Reject Flag**: If the moderator finds the flag unnecessary or incorrect (e.g., the content is acceptable, or the flag was submitted in error). The flag status is updated to 'rejected'. The content remains visible.
+    *   **Remove Content & Reject Flag**: If the moderator agrees that the content is inappropriate and violates guidelines. The actual content (the post or comment) is deleted from the site. The flag status is then updated to 'content_removed_and_rejected'.
+    *   For all actions, moderators can optionally add a comment to record their reasoning or decision-making process. This comment is stored with the flag details.
+
+*   **Workflow**:
+    1. User flags a post or comment.
+    2. The flagged item appears on the Moderation Dashboard.
+    3. A moderator reviews the flagged item and the reason.
+    4. The moderator chooses an appropriate action (Approve, Reject, or Remove Content & Reject).
+    5. The flag's status is updated, and if applicable, the content is removed. The moderator who took the action and the resolution time are recorded.
+
 ## RESTful API
 
 This application provides a RESTful API for interacting with its core resources: Users, Posts, and Events.

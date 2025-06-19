@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Moderation Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Moderation Dashboard - Pending Flags</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% if flagged_items %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th scope="col">Flag ID</th>
+                        <th scope="col">Content Type</th>
+                        <th scope="col">Content ID</th>
+                        <th scope="col">Link to Content</th>
+                        <th scope="col">Reason</th>
+                        <th scope="col">Flagged By</th>
+                        <th scope="col">Timestamp</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for flag in flagged_items %}
+                    <tr>
+                        <td>{{ flag.id }}</td>
+                        <td>{{ flag.content_type }}</td>
+                        <td>{{ flag.content_id }}</td>
+                        <td>
+                            {% if flag.content_type == 'post' %}
+                                <a href="{{ url_for('view_post', post_id=flag.content_id) }}" target="_blank">View Post</a>
+                            {% elif flag.content_type == 'comment' %}
+                                {# Link to comment is now using flag.comment_post_id passed from the route #}
+                                {% if flag.comment_post_id %}
+                                    <a href="{{ url_for('view_post', post_id=flag.comment_post_id) }}#comment-{{ flag.content_id }}" target="_blank">View Comment on Post</a>
+                                {% else %}
+                                    <span>Comment (Originating Post ID not found)</span>
+                                {% endif %}
+                            {% else %}
+                                <span>{{ flag.content_type }}: ID {{ flag.content_id }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ flag.reason if flag.reason else 'N/A' }}</td>
+                        <td>
+                            {% if flag.flagged_by_user %}
+                                <a href="{{ url_for('user_profile', username=flag.flagged_by_user.username) }}">{{ flag.flagged_by_user.username }}</a>
+                            {% else %}
+                                <span>User not found</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ flag.timestamp.strftime('%Y-%m-%d %H:%M:%S') if flag.timestamp else 'N/A' }}</td>
+                        <td style="min-width: 300px;">
+                            {# Approve Form #}
+                            <form action="{{ url_for('approve_flagged_content', flag_id=flag.id) }}" method="POST" class="mb-2">
+                                <div class="input-group input-group-sm mb-1">
+                                    <textarea name="moderator_comment" class="form-control form-control-sm" placeholder="Optional comment for approving" rows="1"></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-success btn-sm w-100">Approve Flag</button>
+                            </form>
+
+                            {# Reject Form #}
+                            <form action="{{ url_for('reject_flagged_content', flag_id=flag.id) }}" method="POST" class="mb-2">
+                                <div class="input-group input-group-sm mb-1">
+                                    <textarea name="moderator_comment" class="form-control form-control-sm" placeholder="Optional comment for rejecting" rows="1"></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-warning btn-sm w-100">Reject Flag</button>
+                            </form>
+
+                            {# Remove Content and Reject Form #}
+                            <form action="{{ url_for('remove_content_and_reject_flag', flag_id=flag.id) }}" method="POST">
+                                <div class="input-group input-group-sm mb-1">
+                                    <textarea name="moderator_comment" class="form-control form-control-sm" placeholder="Reason for content removal (optional)" rows="1"></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-danger btn-sm w-100" onclick="return confirm('Are you sure you want to remove this content? This action cannot be undone.');">Remove Content & Reject Flag</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            No pending flags at the moment.
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

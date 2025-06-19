@@ -4,7 +4,7 @@ import os
 import shutil
 from flask import url_for
 from flask_socketio import SocketIOTestClient
-from app import app, db, User, Post, Comment, Reaction, TodoItem, Bookmark, Friendship, SharedPost, UserActivity, Like, Group # Added Like, Group
+from app import app, db, User, Post, Comment, Reaction, TodoItem, Bookmark, Friendship, SharedPost, UserActivity, Like, Group, FlaggedContent # Added Like, Group, FlaggedContent
 from models import group_members, Event, EventRSVP, Poll, PollOption, PollVote # Import new models
 from recommendations import suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags # Import new recommendation functions
 from werkzeug.security import generate_password_hash
@@ -472,9 +472,9 @@ def test_display_default_picture_in_navbar_no_picture(client):
 # --- Reaction Tests ---
 
 # Helper to create a user directly in DB (if different from 'testuser' or for specific test users)
-def create_user_directly(username, password="password"):
+def create_user_directly(username, password="password", role="user"): # Added role parameter
     hashed_password = generate_password_hash(password)
-    user = User(username=username, password_hash=hashed_password)
+    user = User(username=username, password_hash=hashed_password, role=role)
     db.session.add(user)
     db.session.commit()
     return user
@@ -2457,3 +2457,317 @@ class TestHashtagRecommendations:
             assert 'cool' in suggestions
             assert 'awesome' in suggestions
             assert len(set(suggestions)) == len(suggestions) # Check all elements are unique
+
+
+# --- Content Moderation Test Helpers ---
+
+def create_comment_directly(user_id, post_id, content="Test comment content"):
+    comment = Comment(user_id=user_id, post_id=post_id, content=content)
+    db.session.add(comment)
+    db.session.commit()
+    return comment
+
+def create_flag_directly(content_type, content_id, flagged_by_user_id, reason="Test flag reason", status="pending"):
+    flag = FlaggedContent(
+        content_type=content_type,
+        content_id=content_id,
+        flagged_by_user_id=flagged_by_user_id,
+        reason=reason,
+        status=status
+    )
+    db.session.add(flag)
+    db.session.commit()
+    return flag
+
+
+# --- Content Moderation Tests ---
+
+# 1. Test Flagging Posts
+def test_flag_post_authenticated_user(client):
+    user_flagger = create_user_directly("flagger_user", "password")
+    user_author = create_user_directly("author_user_post", "password")
+    post_to_flag = create_post_directly(user_id=user_author.id, title="Post to be Flagged")
+
+    login_test_user(client, username="flagger_user", password="password")
+
+    response = client.post(f'/post/{post_to_flag.id}/flag', data={'reason': 'Inappropriate content'}, follow_redirects=True)
+
+    assert response.status_code == 200 # Redirects to view_post
+    assert f'/blog/post/{post_to_flag.id}' in response.request.path
+    assert b"Post has been flagged for review." in response.data
+
+    flag_in_db = FlaggedContent.query.filter_by(content_type='post', content_id=post_to_flag.id, flagged_by_user_id=user_flagger.id).first()
+    assert flag_in_db is not None
+    assert flag_in_db.reason == 'Inappropriate content'
+    assert flag_in_db.status == 'pending'
+
+def test_flag_own_post(client):
+    user_author = create_user_directly("author_flags_own_post", "password")
+    post_own = create_post_directly(user_id=user_author.id, title="Own Post to Flag")
+
+    login_test_user(client, username="author_flags_own_post", password="password")
+
+    response = client.post(f'/post/{post_own.id}/flag', data={'reason': 'Trying to flag own post'}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f'/blog/post/{post_own.id}' in response.request.path
+    assert b"You cannot flag your own post." in response.data
+
+    flag_in_db = FlaggedContent.query.filter_by(content_type='post', content_id=post_own.id).first()
+    assert flag_in_db is None
+
+def test_flag_post_unauthenticated(client):
+    user_author = create_user_directly("author_unauth_flag", "password")
+    post_to_flag = create_post_directly(user_id=user_author.id, title="Post for Unauth Flag")
+
+    response = client.post(f'/post/{post_to_flag.id}/flag', data={'reason': 'Test'}, follow_redirects=False)
+    assert response.status_code == 302
+    assert '/login' in response.location
+
+    # Check flash message on the login page after redirect
+    with client.session_transaction() as sess:
+        flashed_messages = sess.get('_flashes', [])
+    # The flash message is set before redirect, so it should be in the session
+    # However, accessing it directly after client.post() might not work if the redirect clears it.
+    # A common way is to GET the redirected page and check its content.
+    login_page_response = client.get(response.location, follow_redirects=True) # Follow redirect to login page
+    assert b"You need to be logged in to access this page." in login_page_response.data
+
+
+def test_already_flagged_post(client):
+    user_flagger = create_user_directly("flagger_already", "password")
+    user_author = create_user_directly("author_already_flagged", "password")
+    post_to_flag = create_post_directly(user_id=user_author.id, title="Post to Flag Multiple Times")
+
+    login_test_user(client, username="flagger_already", password="password")
+
+    # First flag
+    client.post(f'/post/{post_to_flag.id}/flag', data={'reason': 'First reason'}, follow_redirects=True)
+
+    # Attempt to flag again
+    response = client.post(f'/post/{post_to_flag.id}/flag', data={'reason': 'Second reason'}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f'/blog/post/{post_to_flag.id}' in response.request.path
+    assert b"You have already flagged this post." in response.data
+
+    flags_in_db = FlaggedContent.query.filter_by(content_type='post', content_id=post_to_flag.id, flagged_by_user_id=user_flagger.id).all()
+    assert len(flags_in_db) == 1 # Should only be one flag
+
+# 2. Test Flagging Comments
+def test_flag_comment_authenticated_user(client):
+    user_flagger = create_user_directly("comment_flagger", "password")
+    user_comment_author = create_user_directly("comment_author", "password")
+    user_post_author = create_user_directly("comment_post_author", "password")
+
+    post_for_comment = create_post_directly(user_id=user_post_author.id, title="Post for Comment Flagging")
+    comment_to_flag = create_comment_directly(user_id=user_comment_author.id, post_id=post_for_comment.id, content="Comment to be flagged")
+
+    login_test_user(client, username="comment_flagger", password="password")
+
+    response = client.post(f'/comment/{comment_to_flag.id}/flag', data={'reason': 'Spam comment'}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f'/blog/post/{post_for_comment.id}' in response.request.path
+    assert b"Comment has been flagged for review." in response.data
+
+    flag_in_db = FlaggedContent.query.filter_by(content_type='comment', content_id=comment_to_flag.id, flagged_by_user_id=user_flagger.id).first()
+    assert flag_in_db is not None
+    assert flag_in_db.reason == 'Spam comment'
+    assert flag_in_db.status == 'pending'
+
+def test_flag_own_comment(client):
+    user_comment_author = create_user_directly("author_flags_own_comment", "password")
+    user_post_author = create_user_directly("post_author_own_comment", "password")
+    post_for_comment = create_post_directly(user_id=user_post_author.id, title="Post for Own Comment Flag")
+    own_comment = create_comment_directly(user_id=user_comment_author.id, post_id=post_for_comment.id, content="My own comment")
+
+    login_test_user(client, username="author_flags_own_comment", password="password")
+
+    response = client.post(f'/comment/{own_comment.id}/flag', data={'reason': 'Test own comment'}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f'/blog/post/{post_for_comment.id}' in response.request.path
+    assert b"You cannot flag your own comment." in response.data
+
+    flag_in_db = FlaggedContent.query.filter_by(content_type='comment', content_id=own_comment.id).first()
+    assert flag_in_db is None
+
+def test_flag_comment_unauthenticated(client):
+    user_comment_author = create_user_directly("comment_author_unauth", "password")
+    user_post_author = create_user_directly("post_author_unauth_comment", "password")
+    post_for_comment = create_post_directly(user_id=user_post_author.id, title="Post for Unauth Comment Flag")
+    comment_to_flag = create_comment_directly(user_id=user_comment_author.id, post_id=post_for_comment.id)
+
+    response = client.post(f'/comment/{comment_to_flag.id}/flag', data={'reason': 'Test'}, follow_redirects=False)
+    assert response.status_code == 302
+    assert '/login' in response.location
+
+    login_page_response = client.get(response.location, follow_redirects=True)
+    assert b"You need to be logged in to access this page." in login_page_response.data
+
+def test_already_flagged_comment(client):
+    user_flagger = create_user_directly("comment_flagger_already", "password")
+    user_comment_author = create_user_directly("comment_author_already", "password")
+    user_post_author = create_user_directly("post_author_already_comment", "password")
+    post_for_comment = create_post_directly(user_id=user_post_author.id, title="Post for Multi-Flag Comment")
+    comment_to_flag = create_comment_directly(user_id=user_comment_author.id, post_id=post_for_comment.id)
+
+    login_test_user(client, username="comment_flagger_already", password="password")
+
+    client.post(f'/comment/{comment_to_flag.id}/flag', data={'reason': 'First reason'}, follow_redirects=True)
+    response = client.post(f'/comment/{comment_to_flag.id}/flag', data={'reason': 'Second reason'}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f'/blog/post/{post_for_comment.id}' in response.request.path
+    assert b"You have already flagged this comment." in response.data
+
+    flags_in_db = FlaggedContent.query.filter_by(content_type='comment', content_id=comment_to_flag.id, flagged_by_user_id=user_flagger.id).all()
+    assert len(flags_in_db) == 1
+
+# 3. Test Moderator Dashboard Access
+def test_moderator_can_access_dashboard(client):
+    moderator_user = create_user_directly("mod_user_dash_access", "password", role="moderator")
+    login_test_user(client, username="mod_user_dash_access", password="password")
+
+    response = client.get('/moderation')
+    assert response.status_code == 200
+    assert b"Moderation Dashboard - Pending Flags" in response.data
+
+def test_regular_user_cannot_access_dashboard(client):
+    regular_user = create_user_directly("reg_user_dash_no_access", "password", role="user")
+    login_test_user(client, username="reg_user_dash_no_access", password="password")
+
+    response = client.get('/moderation', follow_redirects=True)
+    assert response.status_code == 200
+    assert b"You do not have permission to access this page." in response.data
+    # Check we landed on home page
+    assert response.request.path == url_for('hello_world')
+
+
+def test_unauthenticated_cannot_access_dashboard(client):
+    response = client.get('/moderation', follow_redirects=False)
+    assert response.status_code == 302
+    assert '/login' in response.location
+
+    login_page_response = client.get(response.location, follow_redirects=True)
+    assert b"You need to be logged in to access this page." in login_page_response.data
+
+# 4. Test Moderation Actions
+def test_moderator_approve_flag(client):
+    moderator = create_user_directly("mod_approve_action", "password", role="moderator")
+    flagger = create_user_directly("flagger_approve_action", "password")
+    author = create_user_directly("author_approve_action", "password")
+    post_flagged = create_post_directly(user_id=author.id, title="Post for Approval Action")
+    flag = create_flag_directly(content_type='post', content_id=post_flagged.id, flagged_by_user_id=flagger.id)
+
+    login_test_user(client, username="mod_approve_action", password="password")
+
+    mod_comment = "Looks fine."
+    response = client.post(f'/flagged_content/{flag.id}/approve', data={'moderator_comment': mod_comment}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Moderation Dashboard" in response.data
+    assert f"Flag ID {flag.id} has been approved.".encode() in response.data
+
+    updated_flag = FlaggedContent.query.get(flag.id)
+    assert updated_flag.status == 'approved'
+    assert updated_flag.moderator_id == moderator.id
+    assert updated_flag.moderator_comment == mod_comment
+    assert updated_flag.resolved_at is not None
+
+def test_moderator_reject_flag(client):
+    moderator = create_user_directly("mod_reject_action", "password", role="moderator")
+    flagger = create_user_directly("flagger_reject_action", "password")
+    author = create_user_directly("author_reject_action", "password")
+    post_flagged = create_post_directly(user_id=author.id, title="Post for Rejection Action")
+    flag = create_flag_directly(content_type='post', content_id=post_flagged.id, flagged_by_user_id=flagger.id)
+
+    login_test_user(client, username="mod_reject_action", password="password")
+
+    mod_comment = "Not a violation."
+    response = client.post(f'/flagged_content/{flag.id}/reject', data={'moderator_comment': mod_comment}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f"Flag ID {flag.id} has been rejected.".encode() in response.data
+
+    updated_flag = FlaggedContent.query.get(flag.id)
+    assert updated_flag.status == 'rejected'
+    assert updated_flag.moderator_id == moderator.id
+    assert updated_flag.moderator_comment == mod_comment
+    assert updated_flag.resolved_at is not None
+
+def test_moderator_remove_post_and_reject_flag(client):
+    moderator = create_user_directly("mod_remove_post_action", "password", role="moderator")
+    flagger = create_user_directly("flagger_remove_post_action", "password")
+    author = create_user_directly("author_remove_post_action", "password")
+    post_to_remove = create_post_directly(user_id=author.id, title="Post to be Removed Action")
+    flag = create_flag_directly(content_type='post', content_id=post_to_remove.id, flagged_by_user_id=flagger.id)
+    post_id_to_remove = post_to_remove.id
+
+    login_test_user(client, username="mod_remove_post_action", password="password")
+
+    mod_comment = "Severe violation, content removed."
+    response = client.post(f'/flagged_content/{flag.id}/remove_content_and_reject', data={'moderator_comment': mod_comment}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f"Content (post ID {post_id_to_remove}) removed and flag rejected.".encode() in response.data
+
+    updated_flag = FlaggedContent.query.get(flag.id)
+    assert updated_flag.status == 'content_removed_and_rejected'
+    assert updated_flag.moderator_id == moderator.id
+    assert updated_flag.moderator_comment == mod_comment
+    assert updated_flag.resolved_at is not None
+
+    assert Post.query.get(post_id_to_remove) is None
+
+def test_moderator_remove_comment_and_reject_flag(client):
+    moderator = create_user_directly("mod_remove_comment_action", "password", role="moderator")
+    flagger = create_user_directly("flagger_remove_comment_action", "password")
+    comment_author = create_user_directly("author_remove_comment_action", "password")
+    post_author = create_user_directly("post_author_remove_comment_action", "password")
+
+    parent_post = create_post_directly(user_id=post_author.id, title="Post for Comment Removal Action")
+    comment_to_remove = create_comment_directly(user_id=comment_author.id, post_id=parent_post.id, content="Comment to be removed action")
+    flag = create_flag_directly(content_type='comment', content_id=comment_to_remove.id, flagged_by_user_id=flagger.id)
+    comment_id_to_remove = comment_to_remove.id
+
+    login_test_user(client, username="mod_remove_comment_action", password="password")
+
+    mod_comment = "Offensive comment removed."
+    response = client.post(f'/flagged_content/{flag.id}/remove_content_and_reject', data={'moderator_comment': mod_comment}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f"Content (comment ID {comment_id_to_remove}) removed and flag rejected.".encode() in response.data
+
+    updated_flag = FlaggedContent.query.get(flag.id)
+    assert updated_flag.status == 'content_removed_and_rejected'
+    assert updated_flag.moderator_id == moderator.id
+    assert updated_flag.moderator_comment == mod_comment
+
+    assert Comment.query.get(comment_id_to_remove) is None
+
+def test_regular_user_cannot_perform_moderation_action(client):
+    regular_user = create_user_directly("reg_user_mod_action_perm", "password", role="user")
+    flagger = create_user_directly("flagger_reg_user_mod_perm", "password")
+    author = create_user_directly("author_reg_user_mod_perm", "password")
+    post_flagged = create_post_directly(user_id=author.id, title="Post for Reg User Mod Action Perm")
+    flag = create_flag_directly(content_type='post', content_id=post_flagged.id, flagged_by_user_id=flagger.id)
+
+    login_test_user(client, username="reg_user_mod_action_perm", password="password")
+
+    actions_urls = [
+        f'/flagged_content/{flag.id}/approve',
+        f'/flagged_content/{flag.id}/reject',
+        f'/flagged_content/{flag.id}/remove_content_and_reject'
+    ]
+
+    for action_url in actions_urls:
+        response = client.post(action_url, data={'moderator_comment': 'test by regular user'}, follow_redirects=True)
+        assert response.status_code == 200
+        assert b"You do not have permission to access this page." in response.data
+        assert response.request.path == url_for('hello_world') # Check redirected to home
+
+
+    assert FlaggedContent.query.get(flag.id).status == 'pending'
+    assert Post.query.get(post_flagged.id) is not None

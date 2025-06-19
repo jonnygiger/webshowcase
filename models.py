@@ -72,6 +72,13 @@ class User(db.Model):
                                     lazy='dynamic', # Allows for further querying
                                     back_populates='members')
 
+    # Role field
+    role = db.Column(db.String(80), nullable=False, default='user') # Added role field
+
+    # FlaggedContent relationships
+    flags_submitted = db.relationship('FlaggedContent', foreign_keys='FlaggedContent.flagged_by_user_id', back_populates='flagged_by_user', lazy='dynamic')
+    flags_moderated = db.relationship('FlaggedContent', foreign_keys='FlaggedContent.moderator_id', back_populates='moderator', lazy='dynamic')
+
     def __repr__(self):
         return f'<User {self.username}>'
 
@@ -358,3 +365,23 @@ class Friendship(db.Model):
 
     def __repr__(self):
         return f'<Friendship {self.user_id} to {self.friend_id} - {self.status}>'
+
+
+class FlaggedContent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    content_type = db.Column(db.String(50), nullable=False)  # e.g., 'post', 'comment'
+    content_id = db.Column(db.Integer, nullable=False)  # ID of the flagged post or comment
+    flagged_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    reason = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(50), nullable=False, default='pending')  # e.g., 'pending', 'approved', 'rejected'
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    moderator_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True) # User who resolved it
+    moderator_comment = db.Column(db.Text, nullable=True) # Why it was approved/rejected
+    resolved_at = db.Column(db.DateTime, nullable=True)
+
+    # Relationships to User
+    flagged_by_user = db.relationship('User', foreign_keys=[flagged_by_user_id], back_populates='flags_submitted')
+    moderator = db.relationship('User', foreign_keys=[moderator_id], back_populates='flags_moderated')
+
+    def __repr__(self):
+        return f'<FlaggedContent {self.id} ({self.content_type} {self.content_id}) by User {self.flagged_by_user_id} - Status: {self.status}>'

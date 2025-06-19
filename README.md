@@ -263,6 +263,20 @@ The application provides comprehensive user profiles with options for personaliz
         *   Bio
     *   Changes are validated (e.g., for uniqueness of username/email) before being saved.
 
+### User Status / Mood Updates
+
+Users can share their current status or mood with a short message and/or an emoji.
+
+*   **Functionality**:
+    *   Users can set a status update consisting of a text message (up to 280 characters) and/or a single emoji.
+    *   The latest status update is displayed prominently on their profile page, including when the status was set.
+    *   This feature is available only to logged-in users.
+    *   The form to set or update the status is conveniently located on the user's own profile page.
+*   **Implementation**:
+    *   A `UserStatus` model (`user_status` table) stores the status updates, linking to the `User` model and including fields for `status_text`, `emoji`, and a `timestamp`.
+    *   A new route `/set_status` (POST) handles the creation of new status updates.
+    *   The `User` model has a helper method `get_current_status()` to retrieve the most recent status for display.
+
 ### Blog Post Comments
 
 To enhance interactivity, users can now add comments to blog posts.

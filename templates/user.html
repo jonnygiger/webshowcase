@@ -15,6 +15,22 @@
         {% endif %}
     </div>
 
+    <!-- User Current Status -->
+    {% set current_status = user.get_current_status() %}
+    {% if current_status %}
+    <div class="user-status text-center mb-3 p-3 border rounded bg-light shadow-sm">
+        <h4 class="status-content">
+            {% if current_status.emoji %}<span class="status-emoji">{{ current_status.emoji }}</span> {% endif %}
+            {% if current_status.status_text %}<span class="status-text">{{ current_status.status_text }}</span>{% endif %}
+        </h4>
+        {% if current_status.emoji or current_status.status_text %} {# Only show timestamp if there's content #}
+        <p class="text-muted small status-timestamp mb-0">
+            Set on: {{ current_status.timestamp.strftime('%Y-%m-%d %H:%M') }}
+        </p>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Profile Picture Display -->
     <div class="mb-3 text-center profile-picture-section">
         {% if user.profile_picture %}
@@ -29,6 +45,19 @@
     <div class="mb-3 text-center profile-actions">
         <a href="{{ url_for('upload_profile_picture') }}" class="btn btn-secondary btn-sm">Change Profile Picture</a>
         <a href="{{ url_for('edit_profile') }}" class="btn btn-primary btn-sm ms-2">Edit Profile</a>
+    </div>
+
+    {# Set Status Form - only for own profile #}
+    <div class="mt-3 mb-3 text-center">
+        <form action="{{ url_for('set_status') }}" method="POST" class="form-inline justify-content-center">
+            <div class="form-group mx-sm-3 mb-2">
+                <input type="text" name="status_text" class="form-control" placeholder="What's on your mind?" style="width: 300px;">
+            </div>
+            <div class="form-group mx-sm-3 mb-2">
+                <input type="text" name="emoji" class="form-control" placeholder="😊" style="width: 70px;">
+            </div>
+            <button type="submit" class="btn btn-info mb-2">Set Status</button>
+        </form>
     </div>
     {% endif %}
 

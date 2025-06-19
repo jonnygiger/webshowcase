@@ -95,6 +95,8 @@ class User(db.Model):
     # Relationship to GroupMessage
     # group_messages = db.relationship('GroupMessage', backref='user', lazy='dynamic', cascade="all, delete-orphan")
 
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     def __repr__(self):
         return f'<User {self.username}>'
 
@@ -107,6 +109,19 @@ class User(db.Model):
             'uploaded_images': self.uploaded_images,
             'bio': self.bio
             # Add other fields if they are simple and non-sensitive
+        }
+
+    def get_stats(self):
+        likes_received_count = 0
+        for post in self.posts:
+            likes_received_count += len(post.likes)
+
+        return {
+            'posts_count': len(self.posts),
+            'comments_count': len(self.comments),
+            'likes_received_count': likes_received_count,
+            'friends_count': len(self.get_friends()),
+            'join_date': self.created_at.isoformat() if self.created_at else None,
         }
 
     def get_friends(self):

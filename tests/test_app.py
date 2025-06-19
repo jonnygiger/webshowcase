@@ -1051,3 +1051,82 @@ class TestOnThisDayAPI(AppTestCase):
             data = json.loads(response.data)
             self.assertIn('msg', data) # flask-jwt-extended default error key
             self.assertEqual(data['msg'], 'Missing Authorization Header')
+
+
+class TestUserStatsAPI(AppTestCase):
+
+    def setUp(self):
+        super().setUp()
+        # user1, user2, user3 are created by AppTestCase's _setup_base_users()
+        # For this test, we'll use self.user1 as the primary user whose stats are fetched.
+        # We need to explicitly set created_at for self.user1 for predictable join_date.
+        with app.app_context():
+            user_to_update = User.query.get(self.user1_id)
+            if user_to_update:
+                user_to_update.created_at = datetime(2023, 1, 1, 12, 0, 0)
+                db.session.add(user_to_update)
+                db.session.commit()
+                self.user1 = User.query.get(self.user1_id) # Re-fetch to ensure session has updated object
+            else:
+                self.fail(f"User with ID {self.user1_id} not found during setUp for TestUserStatsAPI.")
+
+
+    def test_user_stats_api(self):
+        with app.app_context():
+            # Setup data for self.user1
+            # 1. Posts by self.user1 (2 posts)
+            post1_u1 = self._create_db_post(user_id=self.user1.id, title="User1 Post 1")
+            post2_u1 = self._create_db_post(user_id=self.user1.id, title="User1 Post 2")
+
+            # 2. Comments by self.user1 (3 comments)
+            # Assuming self.user1 comments on their own post for simplicity
+            self._create_db_comment(user_id=self.user1.id, post_id=post1_u1.id, content="User1 Comment 1")
+            self._create_db_comment(user_id=self.user1.id, post_id=post1_u1.id, content="User1 Comment 2")
+            self._create_db_comment(user_id=self.user1.id, post_id=post2_u1.id, content="User1 Comment 3")
+
+            # 3. Likes received on self.user1's posts (2 likes received)
+            # self.user2 likes post1_u1
+            self._create_db_like(user_id=self.user2.id, post_id=post1_u1.id)
+            # self.user3 likes post2_u1
+            self._create_db_like(user_id=self.user3.id, post_id=post2_u1.id)
+
+            # 4. Friendships for self.user1 (1 friend)
+            # self.user1 is friends with self.user2
+            self._create_friendship(user1_id=self.user1.id, user2_id=self.user2.id, status='accepted')
+
+            # Log in as self.user1
+            token_user1 = self._get_jwt_token(self.user1.username, 'password')
+            headers_user1 = {'Authorization': f'Bearer {token_user1}'}
+
+            # Make GET request to self.user1's stats endpoint
+            response = self.client.get(f'/api/users/{self.user1.id}/stats', headers=headers_user1)
+
+            # Assertions for successful request
+            self.assertEqual(response.status_code, 200)
+            stats_data = json.loads(response.data)
+
+            self.assertEqual(stats_data['posts_count'], 2)
+            self.assertEqual(stats_data['comments_count'], 3)
+            self.assertEqual(stats_data['likes_received_count'], 2)
+            self.assertEqual(stats_data['friends_count'], 1)
+            self.assertIsNotNone(stats_data['join_date'])
+
+            # Ensure self.user1.created_at is not None before calling isoformat()
+            self.assertIsNotNone(self.user1.created_at, "User1's created_at was not set in setUp")
+            expected_join_date = self.user1.created_at.isoformat()
+            self.assertEqual(stats_data['join_date'], expected_join_date)
+
+            # Test unauthorized access (no token)
+            response_no_token = self.client.get(f'/api/users/{self.user1.id}/stats')
+            self.assertEqual(response_no_token.status_code, 401)
+            data_no_token = json.loads(response_no_token.data)
+            self.assertEqual(data_no_token.get('msg'), 'Missing Authorization Header')
+
+
+            # Test forbidden access (self.user2 tries to get self.user1's stats)
+            token_user2 = self._get_jwt_token(self.user2.username, 'password')
+            headers_user2 = {'Authorization': f'Bearer {token_user2}'}
+            response_forbidden = self.client.get(f'/api/users/{self.user1.id}/stats', headers=headers_user2)
+            self.assertEqual(response_forbidden.status_code, 403)
+            data_forbidden = json.loads(response_forbidden.data)
+            self.assertEqual(data_forbidden.get('message'), 'Unauthorized to view these stats')

@@ -585,6 +585,9 @@ These new recommendations are available on the main `/recommendations` page. The
 
 You can find dedicated recommendations on the `/recommendations` page (accessible when logged in). Additionally, a snippet of user suggestions is displayed on the main blog page to help you connect with others more easily.
 
+#### Enhanced Post Recommendations with Reasons
+The personalized feed, particularly for posts displayed on pages like the Discover page, now includes a specific reason why each post is being recommended to the user. This enhancement aims to provide transparency and help users understand the system's choices (e.g., "Liked by a friend," "Trending post," "From a group you joined," "From user you follow," etc.). This involves updates to the backend recommendation generation and how this information is passed to and displayed on the frontend.
+
 ### Content Moderation
 
 The application includes a content moderation system to help maintain a safe and respectful environment. This feature allows users to report inappropriate content (posts or comments) and for designated moderators to review these reports and take appropriate action.
@@ -776,13 +779,13 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
             ```
 
 *   **GET /api/users/<user_id>/feed**
-    *   **Description:** Retrieves a personalized feed of posts for the specified user. The feed is curated based on the user's activity, connections (friends, groups), and trending content.
+    *   **Description:** Retrieves a personalized feed of posts for the specified user. The feed is curated based on the user's activity, connections (friends, groups), and trending content. Each post in the feed now includes a `recommendation_reason` string, explaining why the post was suggested.
     *   **Authentication:** Not required.
     *   **Path Parameters:**
         *   `user_id` (integer): The ID of the user for whom to retrieve the feed.
     *   **Success Response (200 OK):**
         *   **Content-Type:** `application/json`
-        *   **Body:** A JSON array of post objects. Each post object typically includes `id`, `title`, `content`, `author_username`, and `timestamp`.
+        *   **Body:** A JSON object containing a `feed_posts` array. Each object in this array represents a post and includes standard post fields along with a `recommendation_reason`.
         *   **Example:**
             ```json
             {
@@ -792,7 +795,16 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
                         "title": "A Great Post",
                         "content": "This is the content of the post...",
                         "author_username": "friend_user",
-                        "timestamp": "YYYY-MM-DDTHH:MM:SS"
+                        "timestamp": "YYYY-MM-DDTHH:MM:SS",
+                        "recommendation_reason": "Liked by your friend John Doe."
+                    },
+                    {
+                        "id": 124,
+                        "title": "Another Interesting Article",
+                        "content": "Details about another article...",
+                        "author_username": "another_user",
+                        "timestamp": "YYYY-MM-DDTHH:MM:SS",
+                        "recommendation_reason": "Trending in your groups."
                     }
                     // ... more post objects
                 ]

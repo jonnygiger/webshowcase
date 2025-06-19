@@ -864,10 +864,9 @@ def get_personalized_feed_posts(user_id, limit=20):
 
     # Extract Post objects for the final list, respecting the limit
     # The subtask asks for a list of Post objects. If (Post, reason) is needed, change here.
-    result_posts = [item['post'] for item in final_candidate_list[:limit]]
 
     # For debugging or future use, one might want to return reasons too:
-    # result_with_reasons = [(item['post'], item['reason']) for item in final_candidate_list[:limit]]
+    result_with_reasons = [(item['post'], item['reason']) for item in final_candidate_list[:limit]]
 
-    app.logger.info(f"get_personalized_feed_posts: Generated {len(result_posts)} posts for user {user_id}. Candidates found: {len(feed_candidates)}")
-    return result_posts
+    app.logger.info(f"get_personalized_feed_posts: Generated {len(result_with_reasons)} posts for user {user_id}. Candidates found: {len(feed_candidates)}")
+    return result_with_reasons

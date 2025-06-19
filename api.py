@@ -152,18 +152,11 @@ class PersonalizedFeedResource(Resource):
 
         serialized_posts = []
         if isinstance(feed_posts_data, list):
-            for item in feed_posts_data:
-                if isinstance(item, Post): # If it's a Post object directly
-                    serialized_posts.append(item.to_dict())
-                elif isinstance(item, tuple) and len(item) > 0 and isinstance(item[0], Post):
-                    # If it's a tuple like (Post, reason), take the Post part
-                    # and optionally include the reason if the API contract requires it.
-                    # For now, just taking the post as per the subtask's focus on posts.
-                    post_dict = item[0].to_dict()
-                    # If reason is needed: post_dict['reason'] = item[1]
-                    serialized_posts.append(post_dict)
-                # Add more checks if the structure from get_personalized_feed_posts is different
-
+            # feed_posts_data is now a list of (Post, reason_string) tuples
+            for post_object, reason_string in feed_posts_data:
+                post_dict = post_object.to_dict()
+                post_dict['recommendation_reason'] = reason_string
+                serialized_posts.append(post_dict)
         # If get_personalized_feed_posts is guaranteed to return a list of Post objects:
         # serialized_posts = [post.to_dict() for post in feed_posts_data]
 

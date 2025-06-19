@@ -278,6 +278,62 @@ class TestFriendPostNotifications(AppTestCase): # Inherit from AppTestCase for s
             self.logout()
 
 
+class TestDiscoverPageViews(AppTestCase):
+
+    @patch('app.get_personalized_feed_posts')
+    def test_discover_page_shows_recommendation_reasons(self, mock_get_personalized_feed_posts):
+        with app.app_context():
+            # Setup: Login as a user
+            self.login(self.user1.username, 'password')
+
+            # Mocking get_personalized_feed_posts
+            # Create a mock author object that behaves like a User model instance for the template
+            mock_author = unittest.mock.MagicMock(spec=User)
+            mock_author.username = 'author_username'
+
+            # Create a mock post object that behaves like a Post model instance for the template
+            mock_post = unittest.mock.MagicMock(spec=Post)
+            mock_post.id = 123
+            mock_post.title = "Mocked Post Title"
+            # Ensure content is not None for slicing in template (post.content[:200])
+            mock_post.content = "Mocked post content here that is long enough."
+            mock_post.author = mock_author
+            # Add other attributes that might be accessed if post.to_dict() was called, or by template directly
+            mock_post.user_id = self.user2_id # Assuming user2 might be an author
+            mock_post.timestamp = datetime.utcnow()
+            mock_post.comments = [] # For len(post.comments) if used
+            mock_post.likes = []    # For len(post.likes) if used
+            mock_post.reviews = []  # For len(post.reviews) if used
+            mock_post.hashtags = ""
+            mock_post.is_featured = False
+            mock_post.featured_at = None
+            mock_post.last_edited = None
+
+
+            mock_reason = "Test reason for this post."
+            # The function is expected to return a list of (Post, reason_string) tuples
+            mock_get_personalized_feed_posts.return_value = [(mock_post, mock_reason)]
+
+            # Execution: Make a GET request to /discover
+            response = self.client.get('/discover')
+
+            # Assertions
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+
+            # Check for the reason string
+            self.assertIn(f"Recommended because: {mock_reason}", response_data)
+            # Check for post details
+            self.assertIn(mock_post.title, response_data)
+            self.assertIn(mock_post.author.username, response_data)
+            # Check a snippet of content if it's displayed
+            self.assertIn(mock_post.content[:50], response_data)
+
+            # Assert that the mock was called correctly
+            mock_get_personalized_feed_posts.assert_called_once_with(self.user1_id, limit=15)
+
+            self.logout()
+
 class TestRecommendationAPI(AppTestCase):
 
     def _create_db_group(self, creator_id, name="Test Group", description="A group for testing"):
@@ -691,7 +747,7 @@ class TestUserFeedAPI(AppTestCase):
         return like
 
     def test_get_user_feed_successful_and_structure(self):
-        """ Test Case 1: Successful Feed Retrieval with correct structure. """
+        """ Test Case 1: Successful Feed Retrieval with correct structure, including recommendation reason. """
         with app.app_context():
             # user1 is the target, user2 is a friend who makes a post.
             self._create_friendship(self.user1_id, self.user2_id)
@@ -707,23 +763,68 @@ class TestUserFeedAPI(AppTestCase):
             self.assertIsInstance(feed_posts, list)
 
             if feed_posts: # Check structure if posts are returned
-                # Check if the friend's post is among them (it should be, given simple setup)
                 found_friend_post = False
                 for post_data in feed_posts:
                     self.assertIn('id', post_data)
                     self.assertIn('title', post_data)
                     self.assertIn('content', post_data)
-                    self.assertIn('author_username', post_data) # Assuming Post.to_dict() includes this
+                    self.assertIn('author_username', post_data)
                     self.assertIn('timestamp', post_data)
+                    # Assert recommendation_reason is present
+                    self.assertIn('recommendation_reason', post_data)
+                    self.assertIsInstance(post_data['recommendation_reason'], str)
+                    # self.assertTrue(len(post_data['recommendation_reason'].strip()) > 0) # Check if non-empty, if that's a strict rule
+
                     if post_data['id'] == post_by_friend.id:
                         found_friend_post = True
                         self.assertEqual(post_data['title'], "Friend's Post for Feed")
                 self.assertTrue(found_friend_post, "Friend's post not found in the feed where it was expected.")
             else:
-                # This case might happen if recommendation logic is complex or filters everything.
-                # For this simple setup, we expect post_by_friend.
-                # self.fail("Expected posts in feed, but got empty list in a simple scenario.")
                 app.logger.warning("test_get_user_feed_successful_and_structure received an empty feed, which might be unexpected for this test's simple data setup.")
+
+    def test_get_personalized_feed_with_reasons(self):
+        """ Test the personalized feed API specifically for recommendation reasons content. """
+        with app.app_context():
+            # Setup: user1 and user2 are friends. user2 creates a post.
+            self._create_friendship(self.user1_id, self.user2_id, status='accepted')
+            post_by_user2 = self._create_db_post(user_id=self.user2_id, title="Reasonable Post", content="Content that needs a reason.")
+
+            # Execution: Get user1's feed
+            response = self.client.get(f'/api/users/{self.user1_id}/feed')
+
+            # Assertions
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.content_type, 'application/json')
+
+            data = response.get_json()
+            self.assertIn('feed_posts', data)
+            feed_posts = data['feed_posts']
+            self.assertIsInstance(feed_posts, list)
+
+            found_post_with_reason = False
+            if not feed_posts:
+                app.logger.warning(f"Personalized feed for user {self.user1_id} was empty in test_get_personalized_feed_with_reasons. Post by user {self.user2_id} (ID: {post_by_user2.id}) was expected.")
+                # Depending on how critical this is for the test, you might fail here:
+                # self.fail("Personalized feed was empty, cannot verify reason structure.")
+
+            for post_data in feed_posts:
+                self.assertIsInstance(post_data, dict)
+                self.assertIn('id', post_data)
+                self.assertIn('title', post_data)
+                # ... other standard field checks
+
+                self.assertIn('recommendation_reason', post_data)
+                self.assertIsInstance(post_data['recommendation_reason'], str)
+                self.assertTrue(len(post_data['recommendation_reason'].strip()) > 0,
+                                f"Recommendation reason for post ID {post_data.get('id')} was empty or whitespace.")
+
+                if post_data['id'] == post_by_user2.id:
+                    found_post_with_reason = True
+                    # Example check for a specific part of the reason, if predictable:
+                    # self.assertIn("From user you follow", post_data['recommendation_reason'])
+
+            if feed_posts: # Only run if feed_posts is not empty
+                self.assertTrue(found_post_with_reason, f"The specific post (ID: {post_by_user2.id}) by user2 was not found in user1's feed, or was missing a valid reason.")
 
 
     def test_feed_personalization_friend_vs_non_friend_post(self):

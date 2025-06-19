@@ -194,19 +194,109 @@ def todo():
         return redirect(url_for('login'))
 
     if request.method == 'POST':
+        task_id = request.form.get('task_id')
         task_content = request.form.get('task')
-        if task_content and task_content.strip():
-            new_todo = TodoItem(task=task_content.strip(), user_id=user_id)
+        due_date_str = request.form.get('due_date')
+        priority = request.form.get('priority')
+
+        if not task_content or not task_content.strip():
+            flash("Task content cannot be empty.", "warning")
+            return redirect(url_for('todo'))
+
+        due_date_obj = None
+        if due_date_str:
+            try:
+                due_date_obj = datetime.strptime(due_date_str, '%Y-%m-%d')
+            except ValueError:
+                flash("Invalid due date format. Please use YYYY-MM-DD.", "warning")
+                return redirect(url_for('todo'))
+
+        if task_id: # Editing existing task
+            item_to_edit = TodoItem.query.filter_by(id=task_id, user_id=user_id).first()
+            if item_to_edit:
+                item_to_edit.task = task_content.strip()
+                item_to_edit.due_date = due_date_obj
+                item_to_edit.priority = priority if priority and priority.strip() else None
+                db.session.commit()
+                flash("To-Do item updated!", "success")
+            else:
+                flash("Task not found or you don't have permission to edit it.", "danger")
+        else: # Adding new task
+            new_todo = TodoItem(
+                task=task_content.strip(),
+                user_id=user_id,
+                due_date=due_date_obj,
+                priority=priority if priority and priority.strip() else None
+            )
             db.session.add(new_todo)
             db.session.commit()
             flash("To-Do item added!", "success")
-        else:
-            flash("Task content cannot be empty.", "warning")
+
         return redirect(url_for('todo'))
 
     # GET request
-    user_todos = TodoItem.query.filter_by(user_id=user_id).order_by(TodoItem.timestamp.asc()).all()
+    sort_by = request.args.get('sort_by', 'timestamp')
+    order = request.args.get('order', 'asc')
+
+    query = TodoItem.query.filter_by(user_id=user_id)
+
+    if sort_by == 'due_date':
+        if order == 'desc':
+            query = query.order_by(db.nullslast(TodoItem.due_date.desc()))
+        else:
+            query = query.order_by(db.nullsfirst(TodoItem.due_date.asc()))
+    elif sort_by == 'priority':
+        priority_order = db.case(
+            {_prio: i for i, _prio in enumerate(['High', 'Medium', 'Low'])},
+            value=TodoItem.priority,
+            else_=-1 # For None or other values, sort them as lowest
+        )
+        if order == 'desc': # High -> Low
+            query = query.order_by(priority_order.asc()) # Lower number = higher priority
+        else: # Low -> High
+            query = query.order_by(priority_order.desc()) # Higher number = lower priority
+    elif sort_by == 'status':
+        if order == 'desc':
+            query = query.order_by(TodoItem.is_done.desc())
+        else:
+            query = query.order_by(TodoItem.is_done.asc())
+    else: # Default sort by timestamp
+        if order == 'desc':
+            query = query.order_by(TodoItem.timestamp.desc())
+        else:
+            query = query.order_by(TodoItem.timestamp.asc())
+
+    user_todos = query.all()
     return render_template('todo.html', todos=user_todos)
+
+
+@app.route('/todo/update_status/<int:item_id>', methods=['POST'])
+@login_required
+def update_todo_status(item_id):
+    user_id = session.get('user_id')
+    item_to_update = TodoItem.query.filter_by(id=item_id, user_id=user_id).first()
+    if item_to_update:
+        item_to_update.is_done = not item_to_update.is_done
+        db.session.commit()
+        flash(f"Task status updated!", "success")
+    else:
+        flash("Task not found or permission denied.", "danger")
+    return redirect(url_for('todo'))
+
+
+@app.route('/todo/delete/<int:item_id>', methods=['POST'])
+@login_required
+def delete_todo_item(item_id):
+    user_id = session.get('user_id')
+    item_to_delete = TodoItem.query.filter_by(id=item_id, user_id=user_id).first()
+    if item_to_delete:
+        db.session.delete(item_to_delete)
+        db.session.commit()
+        flash("To-Do item deleted!", "success")
+    else:
+        flash("Task not found or permission denied.", "danger")
+    return redirect(url_for('todo'))
+
 
 @app.route('/todo/clear')
 @login_required
@@ -683,32 +773,32 @@ def handle_join_room_event(data):
     app.logger.info(f"User {session.get('username', 'Anonymous')} joined room: {data['room']}")
     join_room(data['room'])
 
-with app.app_context():
-    if not os.path.exists(os.path.join(app.root_path, 'site.db')):  # Check if db file exists in instance folder
-        db.create_all()
-        print("Database created!")
-        # Try to create demo user only if DB was just created
-        demo_user = User.query.filter_by(username="demo").first()
-        if not demo_user:
-            hashed_password = generate_password_hash("password123")
-            new_demo_user = User(username="demo", password_hash=hashed_password)
-            db.session.add(new_demo_user)
-            db.session.commit()
-            print("Demo user created.")
-        else:
-            print("Demo user already exists.")
-    else:
-        print("Database already exists.")
-        # Check and create demo user if DB exists but demo user might be missing (e.g. manual DB deletion)
-        demo_user = User.query.filter_by(username="demo").first()
-        if not demo_user:
-            hashed_password = generate_password_hash("password123")
-            new_demo_user = User(username="demo", password_hash=hashed_password)
-            db.session.add(new_demo_user)
-            db.session.commit()
-            print("Demo user created as it was missing from existing DB.")
-        else:
-            print("Demo user confirmed to exist in existing DB.")
+# with app.app_context():
+#     if not os.path.exists(os.path.join(app.root_path, 'site.db')):  # Check if db file exists in instance folder
+#         db.create_all()
+#         print("Database created!")
+#         # Try to create demo user only if DB was just created
+#         demo_user = User.query.filter_by(username="demo").first()
+#         if not demo_user:
+#             hashed_password = generate_password_hash("password123")
+#             new_demo_user = User(username="demo", password_hash=hashed_password)
+#             db.session.add(new_demo_user)
+#             db.session.commit()
+#             print("Demo user created.")
+#         else:
+#             print("Demo user already exists.")
+#     else:
+#         print("Database already exists.")
+#         # Check and create demo user if DB exists but demo user might be missing (e.g. manual DB deletion)
+#         demo_user = User.query.filter_by(username="demo").first()
+#         if not demo_user:
+#             hashed_password = generate_password_hash("password123")
+#             new_demo_user = User(username="demo", password_hash=hashed_password)
+#             db.session.add(new_demo_user)
+#             db.session.commit()
+#             print("Demo user created as it was missing from existing DB.")
+#         else:
+#             print("Demo user confirmed to exist in existing DB.")
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
@@ -1094,22 +1184,22 @@ def join_group(group_id):
 
     return redirect(url_for('view_group', group_id=group_id))
 
-@app.route('/api/login', methods=['POST'])
-def api_login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-
-    if not username or not password:
-        return {'message': 'Username and password are required'}, 400
-
-    user = User.query.filter_by(username=username).first()
-
-    if user and check_password_hash(user.password_hash, password):
-        access_token = create_access_token(identity=user.id) # Use user.id as identity
-        return {'access_token': access_token}, 200
-    else:
-        return {'message': 'Invalid credentials'}, 401
+# @app.route('/api/login', methods=['POST'])
+# def api_login():
+#     data = request.get_json()
+#     username = data.get('username')
+#     password = data.get('password')
+#
+#     if not username or not password:
+#         return {'message': 'Username and password are required'}, 400
+#
+#     user = User.query.filter_by(username=username).first()
+#
+#     if user and check_password_hash(user.password_hash, password):
+#         access_token = create_access_token(identity=user.id) # Use user.id as identity
+#         return {'access_token': access_token}, 200
+#     else:
+#         return {'message': 'Invalid credentials'}, 401
 
 @app.route('/group/<int:group_id>/leave', methods=['POST'])
 @login_required

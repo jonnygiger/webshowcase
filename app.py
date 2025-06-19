@@ -37,6 +37,51 @@ socketio = SocketIO(app)
 api = Api(app)
 jwt = JWTManager(app)
 
+# Helper function for preparing and emitting activity events
+def emit_new_activity_event(activity_log):
+    if not activity_log or not activity_log.user: # Check if activity_log and its user attribute exist
+        app.logger.error(f"Invalid activity_log or missing user for activity ID {activity_log.id if activity_log else 'Unknown'}")
+        return
+
+    actor = activity_log.user # Directly use the relationship if available and loaded
+
+    payload = {
+        'activity_id': activity_log.id,
+        'user_id': actor.id,
+        'username': actor.username,
+        'profile_picture': actor.profile_picture if actor.profile_picture else url_for('static', filename='profile_pics/default.png', _external=True),
+        'activity_type': activity_log.activity_type,
+        'related_id': activity_log.related_id,
+        'content_preview': activity_log.content_preview,
+        'link': activity_log.link,
+        'timestamp': activity_log.timestamp.isoformat() if activity_log.timestamp else datetime.utcnow().isoformat(),
+        'target_user_id': None,
+        'target_username': None,
+    }
+
+    if activity_log.activity_type == "new_follow" and activity_log.target_user_id:
+        # Ensure target_user is loaded for the activity object if it's accessed via activity_log.target_user
+        target_user = getattr(activity_log, 'target_user', None) # Use getattr for safety
+        if not target_user and activity_log.target_user_id: # Fallback to query if not preloaded
+            target_user = User.query.get(activity_log.target_user_id)
+
+        if target_user:
+            payload['target_user_id'] = target_user.id
+            payload['target_username'] = target_user.username
+        else:
+            app.logger.warning(f"Target user not found for new_follow activity ID {activity_log.id}")
+
+    friends_of_actor = actor.get_friends() # Assuming get_friends() is a method on User model
+    if friends_of_actor:
+        for friend in friends_of_actor:
+            if friend.id != actor.id: # Don't send to self
+                room = f'user_{friend.id}'
+                socketio.emit('new_activity_event', payload, room=room)
+                app.logger.info(f"Emitted new_activity_event to room {room} for activity {activity_log.id} by user {actor.username}")
+    else:
+        app.logger.info(f"No friends found for actor {actor.username} to emit activity {activity_log.id}")
+
+
 api.add_resource(UserListResource, '/api/users')
 api.add_resource(UserResource, '/api/users/<int:user_id>')
 api.add_resource(PostListResource, '/api/posts')
@@ -686,10 +731,10 @@ def create_post():
             )
             db.session.add(activity)
             db.session.commit()
+            # After successful commit, activity object is updated with ID and timestamp
+            emit_new_activity_event(activity) # Emit SocketIO event
         except Exception as e:
-            app.logger.error(f"Error creating UserActivity for new_post: {e}")
-            # Decide if you want to flash a message to the user or just log
-            # flash('Could not log activity due to an internal error.', 'warning')
+            app.logger.error(f"Error creating UserActivity for new_post or emitting event: {e}")
             db.session.rollback() # Rollback activity commit if it fails
 
         # Friend post notification logic
@@ -942,8 +987,9 @@ def add_comment(post_id):
         )
         db.session.add(activity)
         db.session.commit()
+        emit_new_activity_event(activity) # Emit SocketIO event
     except Exception as e:
-        app.logger.error(f"Error creating UserActivity for new_comment: {e}")
+        app.logger.error(f"Error creating UserActivity for new_comment or emitting event: {e}")
         db.session.rollback()
 
     # Prepare data for SocketIO emission (ensure it's serializable)
@@ -1009,12 +1055,10 @@ def like_post(post_id):
                 )
                 db.session.add(activity)
                 db.session.commit()
+                emit_new_activity_event(activity) # Emit SocketIO event
             except Exception as e:
-                app.logger.error(f"Error creating UserActivity for new_like: {e}")
-                # Rollback the UserActivity commit, but not the Like commit
+                app.logger.error(f"Error creating UserActivity for new_like or emitting event: {e}")
                 db.session.rollback()
-                # Optionally, flash a less critical message or just log
-                # flash('Activity could not be logged, but your like was successful.', 'warning')
 
         except Exception as e:
             db.session.rollback()
@@ -2078,6 +2122,22 @@ def accept_friend_request(request_id):
         friend_request.status = 'accepted'
         db.session.commit()
         flash('Friend request accepted successfully!', 'success')
+
+        # Log 'new_follow' activity
+        try:
+            activity = UserActivity(
+                user_id=current_user_id,  # The user who accepted the request
+                activity_type="new_follow",
+                target_user_id=friend_request.requester.id,  # The user whose request was accepted
+                link=url_for('user_profile', username=friend_request.requester.username, _external=True)
+            )
+            db.session.add(activity)
+            db.session.commit()
+            emit_new_activity_event(activity) # Emit SocketIO event
+        except Exception as e:
+            app.logger.error(f"Error creating UserActivity for new_follow or emitting event: {e}")
+            db.session.rollback()
+
         # Redirect to the profile of the user who sent the request
         return redirect(url_for('user_profile', username=friend_request.requester.username))
     elif friend_request.status == 'accepted':
@@ -2159,6 +2219,29 @@ def user_activity_feed(username):
                                    .order_by(UserActivity.timestamp.desc())\
                                    .all()
     return render_template('user_activity.html', user=user, activities=activities)
+
+
+@app.route('/live_feed')
+@login_required
+def live_feed():
+    current_user_id = session.get('user_id')
+    current_user = User.query.get(current_user_id)
+
+    if not current_user:
+        flash('User not found. Please log in again.', 'danger')
+        return redirect(url_for('login'))
+
+    friends = current_user.get_friends()  # Assuming get_friends() returns a list of User objects
+    friend_ids = [friend.id for friend in friends]
+
+    activities = []
+    if friend_ids:
+        activities = UserActivity.query.filter(UserActivity.user_id.in_(friend_ids))\
+                                     .order_by(UserActivity.timestamp.desc())\
+                                     .limit(30)\
+                                     .all()
+
+    return render_template('live_feed.html', activities=activities)
 
 
 @app.route('/recommendations')

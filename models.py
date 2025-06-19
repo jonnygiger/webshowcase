@@ -150,9 +150,12 @@ class UserActivity(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     activity_type = db.Column(db.String(50), nullable=False)  # e.g., "new_post", "new_comment", "new_event"
     related_id = db.Column(db.Integer, nullable=True)  # e.g., post_id, comment_id, event_id
+    target_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Added target_user_id
     content_preview = db.Column(db.Text, nullable=True)  # e.g., a snippet of the post or comment
     link = db.Column(db.String(255), nullable=True)  # e.g., URL to the post or event
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    target_user = db.relationship('User', foreign_keys=[target_user_id])  # Added target_user relationship
 
     def __repr__(self):
         return f'<UserActivity {self.id} - User {self.user_id}, Type: {self.activity_type}>'

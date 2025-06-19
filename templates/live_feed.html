@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Live Activity Feed - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Live Activity Feed</h2>
+    <hr>
+    <ul class="list-group" id="activity-list">
+        {% if activities %}
+            {% for activity in activities %}
+                <li class="list-group-item">
+                    <p>
+                        <img src="{{ activity.user.profile_picture if activity.user.profile_picture else url_for('static', filename='profile_pics/default.png') }}" alt="{{ activity.user.username }}'s profile picture" class="rounded-circle" style="width: 30px; height: 30px; object-fit: cover; margin-right: 10px;">
+                        <strong><a href="{{ url_for('user_profile', username=activity.user.username) }}">{{ activity.user.username }}</a></strong>
+                        {% if activity.activity_type == 'new_post' %}
+                            created a new post: <a href="{{ activity.link }}">{{ activity.content_preview|truncate(80) if activity.content_preview else 'View Post' }}</a>
+                        {% elif activity.activity_type == 'new_comment' %}
+                            commented on a post: <a href="{{ activity.link }}">{{ activity.content_preview|truncate(80) if activity.content_preview else 'View Post' }}</a>
+                        {% elif activity.activity_type == 'new_like' %}
+                            liked a post: <a href="{{ activity.link }}">{{ activity.content_preview|truncate(80) if activity.content_preview else 'View Post' }}</a>
+                        {% elif activity.activity_type == 'new_follow' %}
+                            started following <a href="{{ activity.link }}">{{ activity.target_user.username if activity.target_user else 'a user' }}</a>.
+                        {% elif activity.activity_type == 'new_event' %}
+                            created an event: <a href="{{ activity.link }}">{{ activity.content_preview|truncate(80) if activity.content_preview else 'View Event' }}</a>
+                        {% else %}
+                            performed an activity: {{ activity.activity_type }}
+                        {% endif %}
+                        <small class="text-muted">- {{ activity.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                    </p>
+                </li>
+            {% endfor %}
+        {% else %}
+            <p id="no-activity-message">No recent activity from your friends. Try adding more friends or check back later!</p>
+        {% endif %}
+    </ul>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }} {# Includes SocketIO from base.html if defined there in a block #}
+<script type="text/javascript">
+document.addEventListener('DOMContentLoaded', (event) => {
+    // The socket connection is already established in base.html
+    // And user room joining is also handled in base.html if current_user is available
+
+    if (typeof socket !== 'undefined') { // Check if socket is defined (from base.html)
+        socket.on('new_activity_event', function(data) {
+            console.log('Received new_activity_event:', data);
+
+            const activityList = document.getElementById('activity-list');
+            const noActivityMessage = document.getElementById('no-activity-message');
+
+            if (noActivityMessage) {
+                noActivityMessage.style.display = 'none';
+            }
+
+            const listItem = document.createElement('li');
+            listItem.className = 'list-group-item new-activity-item'; // Added class for potential styling
+
+            let activityHtml = `
+                <p>
+                    <img src="${data.profile_picture || '{{ url_for('static', filename='profile_pics/default.png') }}' }" alt="${data.username}'s profile picture" class="rounded-circle" style="width: 30px; height: 30px; object-fit: cover; margin-right: 10px;">
+                    <strong><a href="/user/${data.username}">${data.username}</a></strong> `;
+
+            if (data.activity_type === 'new_post') {
+                activityHtml += `created a new post: <a href="${data.link}">${data.content_preview ? data.content_preview.substring(0, 80) : 'View Post'}</a>`;
+            } else if (data.activity_type === 'new_comment') {
+                activityHtml += `commented on a post: <a href="${data.link}">${data.content_preview ? data.content_preview.substring(0, 80) : 'View Post'}</a>`;
+            } else if (data.activity_type === 'new_like') {
+                activityHtml += `liked a post: <a href="${data.link}">${data.content_preview ? data.content_preview.substring(0, 80) : 'View Post'}</a>`;
+            } else if (data.activity_type === 'new_follow') {
+                activityHtml += `started following <a href="${data.link}">${data.target_username || 'a user'}</a>.`;
+            } else if (data.activity_type === 'new_event') {
+                activityHtml += `created an event: <a href="${data.link}">${data.content_preview ? data.content_preview.substring(0, 80) : 'View Event'}</a>`;
+            } else {
+                activityHtml += `performed an activity: ${data.activity_type}`;
+            }
+
+            const date = new Date(data.timestamp);
+            const formattedTimestamp = date.getFullYear() + '-' +
+                                     ('0' + (date.getMonth() + 1)).slice(-2) + '-' +
+                                     ('0' + date.getDate()).slice(-2) + ' ' +
+                                     ('0' + date.getHours()).slice(-2) + ':' +
+                                     ('0' + date.getMinutes()).slice(-2) + ':' +
+                                     ('0' + date.getSeconds()).slice(-2);
+
+            activityHtml += ` <small class="text-muted">- ${formattedTimestamp}</small></p>`;
+            listItem.innerHTML = activityHtml;
+
+            activityList.insertBefore(listItem, activityList.firstChild);
+
+            // Optional: Add a subtle animation/highlight for new item
+            setTimeout(() => {
+                listItem.classList.remove('new-activity-item');
+            }, 2000); // Remove class after 2 seconds
+        });
+    } else {
+        console.error('Socket.IO client (socket) not found. Ensure it is loaded, connected, and the variable is globally accessible if defined in base.html.');
+    }
+});
+</script>
+<style>
+    .new-activity-item {
+        background-color: #e6f7ff; /* Light blue highlight */
+        transition: background-color 1.5s ease-out;
+    }
+</style>
+{% endblock %}

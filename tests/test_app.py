@@ -1145,6 +1145,345 @@ class TestUserStatsAPI(AppTestCase):
             self.assertEqual(data_forbidden.get('message'), 'Unauthorized to view these stats')
 
 
+# Helper to create UserActivity for tests
+def _create_db_user_activity(user_id, activity_type, related_id=None, target_user_id=None, content_preview=None, link=None, timestamp=None):
+    from models import UserActivity # Local import if needed or ensure it's available
+    activity = UserActivity(
+        user_id=user_id,
+        activity_type=activity_type,
+        related_id=related_id,
+        target_user_id=target_user_id,
+        content_preview=content_preview,
+        link=link,
+        timestamp=timestamp or datetime.utcnow()
+    )
+    db.session.add(activity)
+    db.session.commit()
+    return activity
+
+class TestLiveActivityFeed(AppTestCase):
+
+    def setUp(self):
+        super().setUp()
+        # self.user1, self.user2, self.user3 are created by AppTestCase
+        # Make user1 and user3 friends with user2 for socketio emit tests
+        self._create_friendship(self.user2_id, self.user1_id, status='accepted') # user2 is friends with user1
+        self._create_friendship(self.user2_id, self.user3_id, status='accepted') # user2 is friends with user3
+
+    @patch('app.socketio.emit')
+    def test_new_follow_activity_logging_and_socketio(self, mock_socketio_emit):
+        with app.app_context():
+            # user1 sends friend request to user2
+            friend_req = Friendship(user_id=self.user1_id, friend_id=self.user2_id, status='pending')
+            db.session.add(friend_req)
+            db.session.commit()
+            request_id = friend_req.id
+
+            # user2 logs in and accepts the request
+            self.login(self.user2.username, 'password')
+            response = self.client.post(f'/friend_request/{request_id}/accept', follow_redirects=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Friend request accepted successfully!", response.get_data(as_text=True))
+
+            activity = UserActivity.query.filter_by(user_id=self.user2_id, activity_type='new_follow').first()
+            self.assertIsNotNone(activity)
+            self.assertEqual(activity.target_user_id, self.user1_id)
+            self.assertIn(self.user1.username, activity.link) # Link should be to the followed user's profile
+
+            # Check socketio emit (user2 accepted, so event goes to friends of user2)
+            # user2 is friends with user1 and user3 from setUp.
+            # Activity is user2 following user1.
+            # So, user2's friends (user1, user3) should get the event.
+            # However, user1 is the target_user, so the event might be less relevant to them in some designs,
+            # but the current emit_new_activity_event sends to all friends of the actor.
+
+            # Expected payload for emit_new_activity_event
+            # actor is user2, target_user is user1
+            expected_payload = {
+                'activity_id': activity.id,
+                'user_id': self.user2_id,
+                'username': self.user2.username,
+                'profile_picture': self.user2.profile_picture if self.user2.profile_picture else '/static/profile_pics/default.png',
+                'activity_type': 'new_follow',
+                'related_id': None, # No related_id for 'new_follow' typically
+                'content_preview': None, # No content_preview for 'new_follow'
+                'link': activity.link,
+                'timestamp': ANY, # Handled by ANY for simplicity
+                'target_user_id': self.user1_id,
+                'target_username': self.user1.username,
+            }
+
+            # Check call for user1 (friend of user2)
+            mock_socketio_emit.assert_any_call('new_activity_event', expected_payload, room=f'user_{self.user1_id}')
+            # Check call for user3 (friend of user2)
+            mock_socketio_emit.assert_any_call('new_activity_event', expected_payload, room=f'user_{self.user3_id}')
+
+            # Ensure it wasn't called for user2 (actor)
+            # This requires checking all calls if emit was called multiple times for other reasons.
+            # For simplicity, we'll trust emit_new_activity_event's internal logic for not sending to self.
+            # A more rigorous check:
+            called_rooms = [call_args[1].get('room') for call_args in mock_socketio_emit.call_args_list if call_args[0][0] == 'new_activity_event']
+            self.assertNotIn(f'user_{self.user2_id}', called_rooms)
+
+            self.logout()
+
+    def test_live_feed_unauthorized_access(self):
+        with app.app_context():
+            response = self.client.get('/live_feed', follow_redirects=False)
+            self.assertEqual(response.status_code, 302) # Redirects to login
+            self.assertIn('/login', response.location)
+
+    def test_live_feed_authorized_access_and_data(self):
+        with app.app_context():
+            # User main (user1), friend1 (user2), friend2 (user3)
+            # non_friend (create a new one)
+            user_non_friend = User(username='nonfriend', email='nf@example.com', password_hash=generate_password_hash('password'))
+            db.session.add(user_non_friend)
+            db.session.commit()
+
+            # Friendships: user1 is friends with user2 and user3
+            self._create_friendship(self.user1_id, self.user2_id)
+            self._create_friendship(self.user1_id, self.user3_id)
+
+            # Activities by friends
+            act_friend1_post = _create_db_user_activity(user_id=self.user2_id, activity_type='new_post', related_id=1, content_preview="Friend1 post", timestamp=datetime.utcnow() - timedelta(minutes=10))
+            act_friend2_like = _create_db_user_activity(user_id=self.user3_id, activity_type='new_like', related_id=2, content_preview="Friend2 liked something", timestamp=datetime.utcnow() - timedelta(minutes=5))
+
+            # Activity by user_main (should not be in their own live feed)
+            _create_db_user_activity(user_id=self.user1_id, activity_type='new_post', related_id=3, content_preview="My own post", timestamp=datetime.utcnow() - timedelta(minutes=1))
+            # Activity by non_friend (should not be in user1's live feed)
+            _create_db_user_activity(user_id=user_non_friend.id, activity_type='new_post', related_id=4, content_preview="Non-friend post", timestamp=datetime.utcnow() - timedelta(minutes=2))
+
+
+            self.login(self.user1.username, 'password')
+            response = self.client.get('/live_feed')
+            self.assertEqual(response.status_code, 200)
+            self.assert_template_used('live_feed.html') # Requires Flask-Testing or custom setup for this assertion
+
+            response_data = response.get_data(as_text=True)
+            self.assertIn(self.user2.username, response_data) # friend1's activity
+            self.assertIn("Friend1 post", response_data)
+            self.assertIn(self.user3.username, response_data) # friend2's activity
+            self.assertIn("Friend2 liked something", response_data)
+
+            self.assertNotIn("My own post", response_data)
+            self.assertNotIn(user_non_friend.username, response_data)
+            self.assertNotIn("Non-friend post", response_data)
+
+            # Check order (friend2's like is newer)
+            self.assertTrue(response_data.find("Friend2 liked something") < response_data.find("Friend1 post"))
+
+            self.logout()
+
+    @patch('app.socketio.emit')
+    def test_emit_new_activity_event_helper_direct(self, mock_socketio_emit):
+        from app import emit_new_activity_event # Import the helper
+        with app.app_context():
+            # user2 is the actor, friends with user1 and user3 (setup in TestLiveActivityFeed.setUp)
+            actor = self.user2
+
+            # Create a sample UserActivity object manually for actor (user2)
+            # This activity is by user2, about a post they made (hypothetically)
+            activity = UserActivity(
+                id=100, # Assign a mock ID
+                user_id=actor.id,
+                user=actor, # Link the user object
+                activity_type='new_post',
+                related_id=50,
+                content_preview='Helper test post preview',
+                link='/blog/post/50',
+                timestamp=datetime.utcnow()
+            )
+            # No need to add to DB for this direct test if User.get_friends() doesn't rely on DB state for these specific users
+
+            emit_new_activity_event(activity)
+
+            expected_payload = {
+                'activity_id': 100,
+                'user_id': actor.id,
+                'username': actor.username,
+                'profile_picture': actor.profile_picture if actor.profile_picture else '/static/profile_pics/default.png',
+                'activity_type': 'new_post',
+                'related_id': 50,
+                'content_preview': 'Helper test post preview',
+                'link': '/blog/post/50',
+                'timestamp': activity.timestamp.isoformat(),
+                'target_user_id': None,
+                'target_username': None,
+            }
+
+            # user2 is friends with user1 and user3
+            calls = [
+                call('new_activity_event', expected_payload, room=f'user_{self.user1_id}'),
+                call('new_activity_event', expected_payload, room=f'user_{self.user3_id}')
+            ]
+            mock_socketio_emit.assert_has_calls(calls, any_order=True)
+            self.assertEqual(mock_socketio_emit.call_count, 2) # Assuming user2 only has user1 and user3 as friends in this test context.
+
+            # Test with a 'new_follow' activity
+            mock_socketio_emit.reset_mock()
+
+            followed_user = self.user1 # user2 follows user1
+            follow_activity = UserActivity(
+                id=101,
+                user_id=actor.id,
+                user=actor,
+                activity_type='new_follow',
+                target_user_id=followed_user.id,
+                target_user=followed_user, # Link the target_user object
+                link=f'/user/{followed_user.username}',
+                timestamp=datetime.utcnow()
+            )
+
+            emit_new_activity_event(follow_activity)
+
+            expected_follow_payload = {
+                'activity_id': 101,
+                'user_id': actor.id,
+                'username': actor.username,
+                'profile_picture': actor.profile_picture if actor.profile_picture else '/static/profile_pics/default.png',
+                'activity_type': 'new_follow',
+                'related_id': None,
+                'content_preview': None,
+                'link': f'/user/{followed_user.username}',
+                'timestamp': follow_activity.timestamp.isoformat(),
+                'target_user_id': followed_user.id,
+                'target_username': followed_user.username,
+            }
+            calls_follow = [
+                call('new_activity_event', expected_follow_payload, room=f'user_{self.user1_id}'), # user1 is a friend of actor user2
+                call('new_activity_event', expected_follow_payload, room=f'user_{self.user3_id}'), # user3 is a friend of actor user2
+            ]
+            mock_socketio_emit.assert_has_calls(calls_follow, any_order=True)
+            self.assertEqual(mock_socketio_emit.call_count, 2)
+
+    @patch('app.socketio.emit')
+    def test_new_post_activity_logging_and_socketio(self, mock_socketio_emit):
+        with app.app_context():
+            # user2 (actor) creates a post. Friends are user1 and user3.
+            self.login(self.user2.username, 'password')
+            post_title = "User2 New Post for SocketIO Test"
+            post_content = "SocketIO content here."
+            response = self.client.post('/blog/create', data=dict(
+                title=post_title,
+                content=post_content,
+                hashtags="test,socketio"
+            ), follow_redirects=True)
+            self.assertEqual(response.status_code, 200) # Assuming redirect to blog page
+            self.assertIn("Blog post created successfully!", response.get_data(as_text=True))
+
+            created_post = Post.query.filter_by(user_id=self.user2_id, title=post_title).first()
+            self.assertIsNotNone(created_post)
+
+            activity = UserActivity.query.filter_by(user_id=self.user2_id, activity_type='new_post', related_id=created_post.id).first()
+            self.assertIsNotNone(activity)
+            self.assertEqual(activity.content_preview, post_content[:100])
+            self.assertIn(f'/blog/post/{created_post.id}', activity.link)
+
+            expected_payload = {
+                'activity_id': activity.id,
+                'user_id': self.user2_id,
+                'username': self.user2.username,
+                'profile_picture': self.user2.profile_picture if self.user2.profile_picture else '/static/profile_pics/default.png',
+                'activity_type': 'new_post',
+                'related_id': created_post.id,
+                'content_preview': post_content[:100],
+                'link': ANY, # Link is generated with url_for, check presence and part of it
+                'timestamp': ANY,
+                'target_user_id': None,
+                'target_username': None,
+            }
+
+            # Check calls for friends of user2 (user1 and user3)
+            calls = [
+                call('new_activity_event', expected_payload, room=f'user_{self.user1_id}'),
+                call('new_activity_event', expected_payload, room=f'user_{self.user3_id}')
+            ]
+            mock_socketio_emit.assert_has_calls(calls, any_order=True)
+            self.assertEqual(mock_socketio_emit.call_count, 2) # Only 2 friends
+            self.logout()
+
+    @patch('app.socketio.emit')
+    def test_new_comment_activity_logging_and_socketio(self, mock_socketio_emit):
+        with app.app_context():
+            # user1 creates a post
+            post_by_user1 = self._create_db_post(user_id=self.user1_id, title="Post to be commented on")
+
+            # user2 (actor) comments on user1's post. Friends of user2 are user1 and user3.
+            self.login(self.user2.username, 'password')
+            comment_content = "A insightful comment by user2."
+            response = self.client.post(f'/blog/post/{post_by_user1.id}/comment', data=dict(
+                comment_content=comment_content
+            ), follow_redirects=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Comment added successfully!", response.get_data(as_text=True))
+
+            # Verify UserActivity
+            activity = UserActivity.query.filter_by(user_id=self.user2_id, activity_type='new_comment', related_id=post_by_user1.id).first()
+            self.assertIsNotNone(activity)
+            self.assertEqual(activity.content_preview, comment_content[:100])
+            self.assertIn(f'/blog/post/{post_by_user1.id}', activity.link)
+
+            expected_payload = {
+                'activity_id': activity.id,
+                'user_id': self.user2_id,
+                'username': self.user2.username,
+                'profile_picture': self.user2.profile_picture if self.user2.profile_picture else '/static/profile_pics/default.png',
+                'activity_type': 'new_comment',
+                'related_id': post_by_user1.id,
+                'content_preview': comment_content[:100],
+                'link': ANY,
+                'timestamp': ANY,
+                'target_user_id': None,
+                'target_username': None,
+            }
+            calls = [
+                call('new_activity_event', expected_payload, room=f'user_{self.user1_id}'),
+                call('new_activity_event', expected_payload, room=f'user_{self.user3_id}')
+            ]
+            mock_socketio_emit.assert_has_calls(calls, any_order=True)
+            self.assertEqual(mock_socketio_emit.call_count, 2)
+            self.logout()
+
+    @patch('app.socketio.emit')
+    def test_new_like_activity_logging_and_socketio(self, mock_socketio_emit):
+        with app.app_context():
+            # user1 creates a post
+            post_by_user1 = self._create_db_post(user_id=self.user1_id, title="Post to be liked")
+
+            # user2 (actor) likes user1's post. Friends of user2 are user1 and user3.
+            self.login(self.user2.username, 'password')
+            response = self.client.post(f'/blog/post/{post_by_user1.id}/like', follow_redirects=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Post liked!", response.get_data(as_text=True))
+
+            activity = UserActivity.query.filter_by(user_id=self.user2_id, activity_type='new_like', related_id=post_by_user1.id).first()
+            self.assertIsNotNone(activity)
+            self.assertEqual(activity.content_preview, post_by_user1.content[:100]) # Assuming post content is used for preview
+            self.assertIn(f'/blog/post/{post_by_user1.id}', activity.link)
+
+            expected_payload = {
+                'activity_id': activity.id,
+                'user_id': self.user2_id,
+                'username': self.user2.username,
+                'profile_picture': self.user2.profile_picture if self.user2.profile_picture else '/static/profile_pics/default.png',
+                'activity_type': 'new_like',
+                'related_id': post_by_user1.id,
+                'content_preview': post_by_user1.content[:100],
+                'link': ANY,
+                'timestamp': ANY,
+                'target_user_id': None,
+                'target_username': None,
+            }
+            calls = [
+                call('new_activity_event', expected_payload, room=f'user_{self.user1_id}'),
+                call('new_activity_event', expected_payload, room=f'user_{self.user3_id}')
+            ]
+            mock_socketio_emit.assert_has_calls(calls, any_order=True)
+            self.assertEqual(mock_socketio_emit.call_count, 2)
+            self.logout()
+
+
 class TestFileSharing(AppTestCase):
 
     def create_dummy_file(self, filename="test.txt", content=b"hello world", content_type="text/plain"):

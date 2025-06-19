@@ -20,12 +20,12 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification
-from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource # Added PersonalizedFeedResource
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification, TrendingHashtag
+from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource # Added PersonalizedFeedResource and TrendingHashtagsResource
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
     suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags,
-    get_trending_hashtags, suggest_trending_posts # Added suggest_trending_posts
+    get_trending_hashtags, suggest_trending_posts, update_trending_hashtags # Added suggest_trending_posts and update_trending_hashtags
 )
 
 app = Flask(__name__)
@@ -45,6 +45,7 @@ api.add_resource(EventListResource, '/api/events')
 api.add_resource(EventResource, '/api/events/<int:event_id>')
 api.add_resource(RecommendationResource, '/api/recommendations') # Added RecommendationResource endpoint
 api.add_resource(PersonalizedFeedResource, '/api/personalized-feed')
+api.add_resource(TrendingHashtagsResource, '/api/trending_hashtags') # Added TrendingHashtagsResource endpoint
 
 # Scheduler for periodic tasks
 scheduler = BackgroundScheduler()
@@ -1524,8 +1525,9 @@ if __name__ == '__main__':
         if not scheduler.running: # Ensure scheduler is not started more than once
             # Add the job before starting the scheduler
             scheduler.add_job(func=generate_activity_summary, trigger="interval", minutes=1)
+            scheduler.add_job(func=update_trending_hashtags, trigger="interval", minutes=10) # Add new job
             scheduler.start()
-            print("Scheduler started.")
+            print("Scheduler started with generate_activity_summary and update_trending_hashtags jobs.")
             # It's good practice to shut down the scheduler when the app exits
             import atexit
             atexit.register(lambda: scheduler.shutdown())

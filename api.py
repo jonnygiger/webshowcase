@@ -1,6 +1,6 @@
 from flask import request
 from flask_restful import Resource, reqparse
-from models import db, User, Post, Event, Poll, PollOption # Assuming models.py contains these
+from models import db, User, Post, Event, Poll, PollOption, TrendingHashtag # Assuming models.py contains these
 from flask_jwt_extended import jwt_required, get_jwt_identity # Will be used later
 from datetime import datetime
 
@@ -228,3 +228,9 @@ class RecommendationResource(Resource):
             'suggested_users_to_follow': suggested_users,
             'suggested_polls_to_vote': suggested_polls
         }, 200
+
+
+class TrendingHashtagsResource(Resource):
+    def get(self):
+        trending_hashtags_from_db = TrendingHashtag.query.order_by(TrendingHashtag.rank.asc()).all()
+        return {'trending_hashtags': [th.to_dict() for th in trending_hashtags_from_db]}, 200

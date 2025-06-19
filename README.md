@@ -699,6 +699,34 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
         }
         ```
 
+### Trending Hashtags API
+
+*   **GET /api/trending_hashtags**
+    *   Description: Retrieves a list of currently trending hashtags, ordered by rank.
+    *   Authentication: Not required.
+    *   Response (Success - 200 OK):
+        ```json
+        {
+            "trending_hashtags": [
+                {
+                    "id": 1,
+                    "hashtag": "flaskdev",
+                    "score": 25.5,
+                    "rank": 1,
+                    "calculated_at": "2023-11-01T10:00:00Z"
+                },
+                {
+                    "id": 2,
+                    "hashtag": "python",
+                    "score": 18.2,
+                    "rank": 2,
+                    "calculated_at": "2023-11-01T10:00:00Z"
+                }
+                // ... other trending hashtags
+            ]
+        }
+        ```
+
 ### Content Recommendations API
 
 *   **GET /api/recommendations**

@@ -20,7 +20,7 @@
           {% if post.last_edited %}
             (Edited: {{ post.last_edited }})
           {% endif %}
-          | {{ post.likes }} like(s)
+          | {{ post.likes }} like(s) | {{ post.shares.count() if post.shares else 0 }} Share(s) {# Display Share Count #}
           <br> {# Add a line break for better spacing of review info #}
           Average Rating:
             {% if post.review_count > 0 %}
@@ -42,6 +42,11 @@
                       Bookmark
                   {% endif %}
               </button>
+          </form>
+        {% endif %}
+        {% if current_user.is_authenticated %}
+          <form action="{{ url_for('share_post', post_id=post.id) }}" method="POST" style="display: inline; margin-left: 10px;">
+              <button type="submit" class="btn btn-sm btn-outline-success">Share</button> {# Simple Share Button #}
           </form>
         {% endif %}
         </p>

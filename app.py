@@ -19,7 +19,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship # Add Reaction and Bookmark, Friendship
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost # Add Reaction and Bookmark, Friendship, SharedPost
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
 
 app = Flask(__name__)
@@ -213,6 +213,9 @@ def user_profile(username):
         else:
             friendship_status = 'not_friends'
 
+    # Fetch posts shared by this user
+    shared_posts_by_user = SharedPost.query.filter_by(shared_by_user_id=user.id).order_by(SharedPost.shared_at.desc()).all()
+
     # Pass the whole user object to the template, which includes user.profile_picture
     return render_template('user.html',
                            user=user,
@@ -220,6 +223,7 @@ def user_profile(username):
                            posts=user_posts,
                            user_gallery_images=user_gallery_images_list, # Clarified variable name
                            organized_events=organized_events,
+                           shared_posts_by_user=shared_posts_by_user, # Add shared posts to context
                            bookmarked_post_ids=bookmarked_post_ids,
                            friendship_status=friendship_status,
                            pending_request_id=pending_request_id)
@@ -791,6 +795,46 @@ def bookmark_post(post_id):
         flash('Post bookmarked!', 'success')
 
     return redirect(url_for('view_post', post_id=post_id))
+
+
+@app.route('/post/<int:post_id>/share', methods=['POST'])
+@login_required
+def share_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    user_id = session.get('user_id')
+
+    if not user_id: # Should be caught by @login_required, but as a safeguard
+        flash('You must be logged in to share posts.', 'danger')
+        return redirect(url_for('login'))
+
+    # Check if the user is trying to share their own post - allow this
+    # if post.user_id == user_id:
+    #     flash("You cannot share your own post.", 'warning')
+    #     return redirect(url_for('view_post', post_id=post_id))
+
+    # Check if this user has already shared this specific post
+    existing_share = SharedPost.query.filter_by(
+        original_post_id=post.id,
+        shared_by_user_id=user_id
+    ).first()
+
+    if existing_share:
+        flash('You have already shared this post.', 'info')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    sharing_comment = request.form.get('sharing_comment') # Optional comment
+
+    new_share = SharedPost(
+        original_post_id=post.id,
+        shared_by_user_id=user_id,
+        sharing_user_comment=sharing_comment
+    )
+    db.session.add(new_share)
+    db.session.commit()
+
+    flash('Post shared successfully!', 'success')
+    return redirect(url_for('view_post', post_id=post_id))
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():

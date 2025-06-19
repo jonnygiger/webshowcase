@@ -306,6 +306,23 @@ class Bookmark(db.Model):
     def __repr__(self):
         return f'<Bookmark User {self.user_id} Post {self.post_id}>'
 
+
+class SharedPost(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    original_post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    shared_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    shared_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    sharing_user_comment = db.Column(db.Text, nullable=True)
+
+    # Relationship to the original Post
+    original_post = db.relationship('Post', backref=db.backref('shares', lazy='dynamic'))
+    # Relationship to the User who shared the post
+    sharing_user = db.relationship('User', backref=db.backref('shared_posts', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<SharedPost id={self.id} original_post_id={self.original_post_id} shared_by_user_id={self.shared_by_user_id}>'
+
+
 class Friendship(db.Model):
     __tablename__ = 'friendship' # Explicitly name the table
     id = db.Column(db.Integer, primary_key=True)

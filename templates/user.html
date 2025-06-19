@@ -117,6 +117,31 @@
         {% endif %}
     </div>
 
+    <!-- Shared Posts Section -->
+    <div class="content-box mt-4">
+        <h3>Shared Posts</h3>
+        {% if shared_posts_by_user %}
+            {% for shared_item in shared_posts_by_user %}
+                <div class="card mb-3">
+                    <div class="card-header">
+                        Shared by <a href="{{ url_for('user_profile', username=shared_item.sharing_user.username) }}">{{ shared_item.sharing_user.username }}</a> on {{ shared_item.shared_at.strftime('%Y-%m-%d %H:%M') }}
+                    </div>
+                    <div class="card-body">
+                        {% if shared_item.sharing_user_comment %}
+                            <p class="card-text fst-italic">"{{ shared_item.sharing_user_comment }}"</p>
+                        {% endif %}
+                        <h5 class="card-title"><a href="{{ url_for('view_post', post_id=shared_item.original_post.id) }}">{{ shared_item.original_post.title }}</a></h5>
+                        <p class="card-text"><small class="text-muted">Originally posted by <a href="{{ url_for('user_profile', username=shared_item.original_post.author.username) }}">{{ shared_item.original_post.author.username }}</a> on {{ shared_item.original_post.timestamp.strftime('%Y-%m-%d %H:%M') }}</small></p>
+                        <p class="card-text">{{ shared_item.original_post.content[:200] | safe }}...</p> {# Snippet of original post, ensure content is safe if it contains HTML #}
+                        <a href="{{ url_for('view_post', post_id=shared_item.original_post.id) }}" class="btn btn-sm btn-outline-primary">View Original Post</a>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>{{ user.username }} has not shared any posts yet.</p>
+        {% endif %}
+    </div>
+
     <!-- Joined Groups -->
     <div class="mt-4 content-box"> {# Added content-box for consistency #}
         <h4>Joined Groups</h4>

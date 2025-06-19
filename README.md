@@ -275,3 +275,35 @@ This application now includes a "Polls" feature, allowing users to create and pa
     *   A user can only vote once on any given poll. Attempts to vote multiple times are prevented.
     *   Poll authors have the ability to delete their own polls. Non-authors cannot delete polls.
     *   Poll results are displayed to all users, showing the number of votes for each option and the corresponding percentage of total votes.
+
+### Event Management
+
+The application now includes an Event Management system, allowing users to organize and participate in events.
+
+*   **Purpose**: Enables users to create events, announce them to the community, and manage RSVPs.
+*   **Authentication**: Creating events and RSVPing requires users to be logged in. All users can view event listings and details.
+
+*   **Key Functionalities**:
+    *   **Event Creation**: Logged-in users can create new events by providing a title, description, date, time (optional), and location.
+    *   **Event Listing**: All users can view a list of upcoming events on the `/events` page, sorted by event date.
+    *   **Detailed Event View**: Clicking on an event shows its full details, including description, date, time, location, and organizer.
+    *   **RSVP System**: Logged-in users can RSVP to an event with "Attending", "Maybe", or "Not Attending". Their current RSVP status is displayed on the event page.
+    *   **RSVP Counts**: The event page displays a summary of how many users have RSVP'd with each status (e.g., "Attending: 5, Maybe: 2, Not Attending: 1").
+    *   **Event Deletion**: Event organizers can delete their own events. This action is restricted to the user who created the event.
+    *   **User Profile Integration**: Users' profiles display a list of events they have organized.
+
+*   **Routes & Usage**:
+    *   `/events`: (GET) Displays a list of all upcoming events.
+    *   `/events/create`: (GET/POST)
+        *   Requires login.
+        *   `GET`: Shows a form to create a new event.
+        *   `POST`: Submits the new event details.
+    *   `/event/<int:event_id>`: (GET)
+        *   Displays detailed information for a specific event, including RSVP counts and options for logged-in users to RSVP.
+        *   If the logged-in user is the organizer, a "Delete Event" button is visible.
+    *   `/event/<int:event_id>/rsvp`: (POST)
+        *   Requires login.
+        *   Processes the RSVP submitted by a user for the event.
+    *   `/event/<int:event_id>/delete`: (POST)
+        *   Requires login and that the logged-in user is the event organizer.
+        *   Deletes the specified event and its RSVP data.

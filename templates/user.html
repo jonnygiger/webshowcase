@@ -41,4 +41,20 @@
             <p>This user has not uploaded any images yet.</p>
         {% endif %}
     </div>
+
+    <div class="content-box">
+        <h3>Organized Events</h3>
+        {% if organized_events %}
+            <ul>
+                {% for event in organized_events %}
+                    <li>
+                        <a href="{{ url_for('view_event', event_id=event.id) }}">{{ event.title }}</a>
+                        <span class="text-muted"> - Created on: {{ event.created_at }} (Event Date: {{ event.date }})</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>{{ username }} has not organized any events yet.</p>
+        {% endif %}
+    </div>
 {% endblock %}

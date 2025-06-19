@@ -111,6 +111,12 @@ def manage_app_state(app_instance):
     current_app_instance.poll_id_counter = 0
     current_app_instance.poll_option_id_counter = 0
 
+    # Clear event data
+    from app import events, event_rsvps # Import event specific data
+    events.clear()
+    event_rsvps.clear()
+    current_app_instance.event_id_counter = 0
+
     yield
 
     cleanup_uploads(upload_folder)
@@ -127,6 +133,11 @@ def manage_app_state(app_instance):
     poll_votes.clear()
     current_app_instance.poll_id_counter = 0
     current_app_instance.poll_option_id_counter = 0
+
+    # Clear event data after tests
+    events.clear()
+    event_rsvps.clear()
+    current_app_instance.event_id_counter = 0
 
 
 # --- Existing tests ... (keeping them as is) ---
@@ -1145,95 +1156,265 @@ class TestAppSocketIO(unittest.TestCase):
         self.socketio_test_client.disconnect()
         self.assertFalse(self.socketio_test_client.is_connected())
 
-# To make pytest discover and run these unittest.TestCase tests, no special command is needed.
-# Pytest will automatically find them if the file is named test_*.py or *_test.py.
-# And the class starts with Test*.
-# The manage_app_state fixture might not automatically apply to unittest.TestCase methods
-# in the same way it applies to pytest test functions.
-# The setUp method in TestAppSocketIO now explicitly resets state.
-# Ensure that app.py has generate_password_hash if it's used there, or import it where needed.
-# The `sys.path.insert` and `del sys.modules['app']` in `setUpClass` help ensure
-# that the tests are using a fresh version of the app, especially if run multiple times
-# or after other tests that might have modified app state globally.
-# Removed the socketio_instance fixture as the TestAppSocketIO class now handles its own app/socketio setup.
-# The global `manage_app_state` fixture will still run for pytest test functions.
-# For the unittest.TestCase class, its own setUp/tearDown manage its state.
-# Added login for gallery tests that were missing it and likely failing before.
-# Corrected username for comment test to use "testuser" which is created in manage_app_state/setUp.
+# --- Event Management Tests ---
+class TestEventManager:
+    # Helper to create an event, returns the event_id
+    def _create_event_via_api(self, client, title="Test Event", description="Test Description",
+                              event_date="2024-12-31", event_time="18:00", location="Test Location"):
+        from app import app as current_app # To access event_id_counter for prediction
 
-# Final check on imports: `from app import app, socketio, users, blog_posts, comments, generate_password_hash`
-# This implies these are all accessible from the top level of app.py.
-# `generate_password_hash` is imported in tests/test_app.py.
-# `app.join_room` implies `join_room` is an attribute of the `app` object, which is unlikely.
-# It's `from flask_socketio import join_room`, and used as `join_room()` in `app.py`.
-# So, the patch should be `app.join_room` if `join_room` was imported as `from flask_socketio import join_room` in `app.py`
-# and then used as `app.join_room`. More likely, it is `from app import join_room` if `app.py` re-exports it,
-# or directly `flask_socketio.join_room` if `app.py` calls it that way.
-# The current `app.py` uses `join_room` directly after `from flask_socketio import ... join_room`.
-# So, the patch target should be `app.join_room` (if app.py made it an attribute or method of `app` or `socketio` instance)
-# or, more likely, `flask_socketio.join_room` if that's its canonical path, or `app.join_room` if it's imported into `app.py`'s namespace.
-# Given the code `from flask_socketio import SocketIO, emit, join_room` and then `@socketio.on('join_room') ... join_room(data['room'])`
-# the correct patch target for `join_room` is `app.join_room` (assuming `app.py` is the module where `join_room` is imported and used).
-# Similarly for `socketio.emit`, it's `app.socketio.emit`. This seems correct.
+        # Assumes client is already logged in
+        client.post(url_for('create_event'), data={
+            'title': title,
+            'description': description,
+            'event_date': event_date,
+            'event_time': event_time,
+            'location': location
+        }, follow_redirects=False) # Usually redirects to view_event or events_list
 
-# The `test_upload_page_get` was missing login. Added.
-# `test_gallery_upload` related tests also need login. Added.
-# Test `test_add_comment_to_post_logged_in` used "commentuser", changed to "testuser" to use the one from setup.
-# `test_successful_registration` had `users` import issue, changed to `app_users` from app module.
-# Added `flask_app_for_helpers.blog_post_id_counter` in `_create_post` to be explicit.
-# `app_instance` in `manage_app_state` is the flask_app.
-# `current_app_instance.blog_post_id_counter` should be `app_instance.blog_post_id_counter`.
-# In `manage_app_state`, `from app import app as current_app_instance` is good.
-# In `TestAppSocketIO.setUpClass`, `cls.app = flask_app` is correct.
-# In `TestAppSocketIO.setUp`, `self.app.blog_post_id_counter = 0` is correct.
-# `test_successful_registration` was trying to assert `username in users`. This `users` is the global one in `app.py`.
-# It's better to use `app_users` from `from app import users as app_users` to be sure. The `manage_app_state` fixture
-# imports `from app import users` and clears it, so it should be the correct one.
-# Changed `_create_post` to return the ID based on `flask_app_for_helpers.blog_post_id_counter`.
-# In `test_create_view_edit_delete_post_as_author`, used `from app import blog_posts as app_blog_posts` for clarity.
+        # Return the ID of the created event.
+        return current_app.event_id_counter # This will be the ID of the event just created.
 
-# The key for SocketIO tests is that the `SocketIOTestClient` uses the *same* `app` and `socketio` instances
-# that are being configured and used by the Flask test client and the application itself.
-# The `TestAppSocketIO.setUpClass` and `setUp` methods aim to achieve this.
-# The `manage_app_state` fixture uses `app_instance` which is `flask_app`.
-# So `from app import users, blog_posts, comments, app as current_app_instance` in `manage_app_state` is correct.
-# And `users.clear()` etc., modify the actual app's global state.
-# The `TestAppSocketIO.setUp` also correctly modifies these global state variables via `self.app_users`, etc.
-# This should provide good test isolation.
+    # 1. Event Creation
+    def test_create_event_get_not_logged_in(self, client):
+        response = client.get(url_for('create_event'), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+        # Check flash message on redirected page
+        response_redirected = client.get(response.location)
+        assert b"You need to be logged in to access this page." in response_redirected.data
 
-# One final check for `test_upload_image_success` and similar:
-# `_login_user(client, "demo", "password123")` was added. This is good.
-# Previously, these tests would have failed or tested behavior for unauthenticated users if
-# the gallery upload route was protected (which it is).
 
-# The `flask_app_for_helpers` alias might be confusing. It's just another import of `app.app`.
-# `app_instance` fixture is the one that should be used for app config in tests.
-# `flask_app_for_helpers.blog_post_id_counter` is okay if `flask_app_for_helpers` is indeed the app object.
-# `from app import app as flask_app_for_helpers` makes it so.
-# `app.blog_post_id_counter` is an attribute of the Flask app object itself, set in `app.py`.
+    def test_create_event_get_logged_in(self, client):
+        _login_user(client, "testuser", "password")
+        response = client.get(url_for('create_event'))
+        assert response.status_code == 200
+        assert b"Create New Event" in response.data
+        assert b'name="title"' in response.data
 
-# The patch for `join_room` should be `app.join_room` if `join_room` is imported in `app.py` and used there.
-# Let's look at `app.py`:
-# `from flask_socketio import SocketIO, emit, join_room`
-# ...
-# `@socketio.on('join_room')`
-# `def handle_join_room_event(data):`
-# `    app.logger.info(...)`
-# `    join_room(data['room'])`
-# Here `join_room` is called directly. It's not `app.join_room` or `socketio.join_room`.
-# It's the `join_room` imported from `flask_socketio`.
-# So the patch target should be the canonical path of `join_room` as it's used in `app.py`.
-# If `app.py` is the module under test, and it imports `join_room` from `flask_socketio`,
-# then from the test's perspective, it's `app.join_room`.
-# So `@patch('app.join_room')` is correct.The existing test file `tests/test_app.py` is quite comprehensive and uses pytest with fixtures. I've integrated the new SocketIO tests by:
-1.  Adding a new class `TestAppSocketIO` that inherits from `unittest.TestCase`. Pytest can discover and run tests from such classes.
-2.  This class has its own `setUpClass` to import the Flask app and SocketIO instances once, and a `setUp` method to initialize test clients (Flask and SocketIO), and reset relevant application state (users, blog posts, comments, counters) before each test in this class. This mirrors the state reset done by the `manage_app_state` fixture for pytest functions, ensuring test isolation.
-3.  The `testuser` is added to the `users` dictionary within the `setUp` method of `TestAppSocketIO` (and also in the global `manage_app_state` fixture for other tests that might need it).
-4.  A test blog post is created in `setUp` to be used by comment-related SocketIO tests.
-5.  The three new test methods (`test_add_comment_emits_socketio_event`, `test_join_room_event`, `test_socketio_connection_and_disconnect`) are added to this class.
-6.  Patching targets are `app.socketio.emit` and `app.join_room`, which assumes that when `app.py` calls `emit` (it's `socketio.emit(...)`) and `join_room` (it's `join_room(...)`), these are effectively names within the `app` module's scope from the perspective of the patcher. This is standard for patching objects used by the module under test.
-7.  Ensured that Flask's app context is pushed and popped correctly in `setUp` and `tearDown` for the unittest-style class.
-8.  Added missing login calls to some existing gallery tests (`test_upload_page_get`, `test_upload_image_success`, etc.) as the upload route requires login. This should fix potential pre-existing issues in those tests.
-9.  Standardized user creation for tests by ensuring "testuser" (password: "password") is available for SocketIO tests and general use, and "demo" (password: "password123") for existing tests.
+    def test_create_event_post_success(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        event_data = {
+            'title': 'My Awesome Event',
+            'description': 'This is a great event.',
+            'event_date': '2025-01-15',
+            'event_time': '10:00',
+            'location': 'Conference Hall A'
+        }
+        response = client.post(url_for('create_event'), data=event_data, follow_redirects=False)
 
-The file is now updated with these changes.
+        from app import events as app_events, app as current_app
+        assert response.status_code == 302
+        assert response.location == url_for('events_list')
+
+        assert len(app_events) == 1
+        created_event = app_events[0]
+        assert created_event['title'] == event_data['title']
+        assert created_event['description'] == event_data['description']
+        assert created_event['date'] == event_data['event_date']
+        assert created_event['time'] == event_data['event_time']
+        assert created_event['location'] == event_data['location']
+        assert created_event['organizer_username'] == "testuser"
+        assert created_event['id'] == current_app.event_id_counter
+
+        response_redirected = client.get(response.location)
+        assert b"Event created successfully!" in response_redirected.data
+
+
+    def test_create_event_post_missing_title(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        from app import events as app_events
+        initial_event_count = len(app_events)
+
+        event_data = {
+            'title': '',
+            'description': 'Description without title.',
+            'event_date': '2025-02-10',
+            'event_time': '14:00',
+            'location': 'Room B'
+        }
+        response = client.post(url_for('create_event'), data=event_data, follow_redirects=True)
+
+        assert response.status_code == 200
+        assert b"Event title is required." in response.data
+        assert len(app_events) == initial_event_count
+
+    def test_create_event_post_missing_date(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        from app import events as app_events
+        initial_event_count = len(app_events)
+
+        event_data = {
+            'title': 'Event With No Date',
+            'description': 'This event has no date.',
+            'event_date': '',
+            'event_time': '11:00',
+            'location': 'Venue C'
+        }
+        response = client.post(url_for('create_event'), data=event_data, follow_redirects=True)
+
+        assert response.status_code == 200
+        assert b"Event date is required." in response.data
+        assert len(app_events) == initial_event_count
+
+    # 2. Event Listing
+    def test_events_list_page_empty(self, client):
+        _login_user(client, "testuser", "password") # events_list requires login
+        response = client.get(url_for('events_list'))
+        assert response.status_code == 200
+        assert b"Upcoming Events" in response.data # Title of the page
+        # The template shows "No events scheduled yet." if events list is empty.
+        # The actual text might vary based on templates/events.html content.
+        assert b"No events scheduled yet." in response.data
+
+
+    def test_events_list_shows_event(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        event_id = self._create_event_via_api(client, title="Visible Test Event")
+
+        response = client.get(url_for('events_list'))
+        assert response.status_code == 200
+        assert b"Visible Test Event" in response.data
+        assert bytes(url_for('view_event', event_id=event_id), 'utf-8') in response.data
+
+    # 3. Single Event View
+    def test_view_event_exists(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        event_id = self._create_event_via_api(client, title="Detailed Test Event", description="Details here.")
+
+        response = client.get(url_for('view_event', event_id=event_id))
+        assert response.status_code == 200
+        assert b"Detailed Test Event" in response.data
+        assert b"Details here." in response.data
+        assert b"Organized by: testuser" in response.data # Check organizer displayed
+        assert b"RSVP Status" in response.data # Check RSVP section is present
+
+    def test_view_event_not_exists(self, client):
+        _login_user(client, "testuser", "password") # Login to access view_event if it has protection
+        response = client.get(url_for('view_event', event_id=999), follow_redirects=True)
+        assert response.status_code == 200 # After redirect to events_list
+        assert b"Event not found!" in response.data
+        assert b"Upcoming Events" in response.data # Should be on events_list page
+
+    # 4. RSVP Functionality
+    def test_rsvp_event_not_logged_in(self, client, app_instance):
+        # Create an event first (e.g., by user "testuser")
+        _login_user(client, "testuser", "password")
+        event_id = self._create_event_via_api(client, title="Event for RSVP Test")
+        client.get('/logout', follow_redirects=True) # Log out
+
+        response = client.post(url_for('rsvp_event', event_id=event_id),
+                               data={'rsvp_status': 'Attending'},
+                               follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+        response_redirected = client.get(response.location)
+        assert b"You need to be logged in to access this page." in response_redirected.data
+
+
+    def test_rsvp_event_success(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        event_id = self._create_event_via_api(client, title="RSVP Success Event")
+
+        from app import event_rsvps as app_event_rsvps
+        assert event_id not in app_event_rsvps or "testuser" not in app_event_rsvps[event_id]
+
+        response = client.post(url_for('rsvp_event', event_id=event_id),
+                               data={'rsvp_status': 'Attending'},
+                               follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('view_event', event_id=event_id)
+
+        response_redirected = client.get(response.location)
+        assert b'Your RSVP ("Attending") has been recorded!' in response_redirected.data
+        assert b"Your RSVP: Attending" in response_redirected.data # Check updated view
+
+        assert event_id in app_event_rsvps
+        assert app_event_rsvps[event_id]["testuser"] == "Attending"
+
+    def test_rsvp_event_invalid_status(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        event_id = self._create_event_via_api(client, title="RSVP Invalid Status Event")
+
+        from app import event_rsvps as app_event_rsvps
+        initial_rsvps_for_event = app_event_rsvps.get(event_id, {}).copy()
+
+        response = client.post(url_for('rsvp_event', event_id=event_id),
+                               data={'rsvp_status': 'Definitely Attending'},  # Invalid status
+                               follow_redirects=True) # Follow to see flash on view_event
+
+        assert response.status_code == 200 # Should be on view_event page
+        assert b"Invalid RSVP status submitted." in response.data
+        # Check that RSVPs didn't change for an invalid status
+        assert app_event_rsvps.get(event_id, {}) == initial_rsvps_for_event
+
+    def test_rsvp_to_nonexistent_event(self, client):
+        _login_user(client, "testuser", "password")
+        response = client.post(url_for('rsvp_event', event_id=999),
+                               data={'rsvp_status': 'Attending'},
+                               follow_redirects=True)
+        assert response.status_code == 200 # Redirects to events_list
+        assert b"Event not found!" in response.data
+        assert b"Upcoming Events" in response.data # Check we are on events_list
+
+    # 5. Event Deletion
+    def test_delete_event_not_logged_in(self, client, app_instance):
+        _login_user(client, "testuser", "password")
+        event_id = self._create_event_via_api(client, title="Delete Test Event Unauth")
+        client.get('/logout', follow_redirects=True)
+
+        response = client.post(url_for('delete_event', event_id=event_id), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('login')
+        response_redirected = client.get(response.location)
+        assert b"You need to be logged in to access this page." in response_redirected.data
+
+    def test_delete_event_not_organizer(self, client, app_instance):
+        # User "organizer" creates an event
+        _register_user(client, "organizer", "orgpassword")
+        _login_user(client, "organizer", "orgpassword")
+        event_id = self._create_event_via_api(client, title="Event by Organizer")
+
+        # User "testuser" (who is not the organizer) tries to delete it
+        _login_user(client, "testuser", "password")
+        response = client.post(url_for('delete_event', event_id=event_id), follow_redirects=False)
+
+        assert response.status_code == 302
+        assert response.location == url_for('view_event', event_id=event_id)
+
+        response_redirected = client.get(response.location)
+        assert b"You are not authorized to delete this event." in response_redirected.data
+
+        from app import events as app_events
+        assert any(event['id'] == event_id for event in app_events) # Event should still exist
+
+    def test_delete_event_success_organizer(self, client, app_instance):
+        _login_user(client, "testuser", "password") # testuser is the organizer
+        event_id = self._create_event_via_api(client, title="Event to be Deleted by Organizer")
+
+        # Add a dummy RSVP to check it gets cleared
+        from app import event_rsvps as app_event_rsvps
+        app_event_rsvps[event_id] = {"someuser": "Attending"}
+
+        response = client.post(url_for('delete_event', event_id=event_id), follow_redirects=False)
+        assert response.status_code == 302
+        assert response.location == url_for('events_list')
+
+        response_redirected = client.get(response.location)
+        assert b"Event deleted successfully." in response_redirected.data
+
+        from app import events as app_events
+        assert not any(event['id'] == event_id for event in app_events) # Event should be gone
+        assert event_id not in app_event_rsvps # RSVPs for event should be gone
+
+    def test_delete_nonexistent_event(self, client):
+        _login_user(client, "testuser", "password")
+        response = client.post(url_for('delete_event', event_id=999), follow_redirects=True)
+        assert response.status_code == 200 # Redirects to events_list
+        assert b"Event not found!" in response.data
+        assert b"Upcoming Events" in response.data # Check we are on events_list
+
+
+# Note: The comment block at the end of the original file is removed by this replacement.
+# If it's important, it would need to be re-added after the TestEventManager class.
+# For now, assuming it's not critical for test functionality.

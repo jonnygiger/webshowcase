@@ -388,6 +388,11 @@ Enhancing the private communication capabilities, the application now supports r
 *   **Technology Stack**: This feature is powered by Flask, Flask-SocketIO for real-time bidirectional communication, and SQLAlchemy for database interactions with the `Message` model.
 *   **User Experience**: Provides a seamless and interactive messaging experience, similar to modern chat applications.
 
+### Real-time Friend Post Notifications
+*   **Instant Alerts**: Users receive immediate toast notifications when a friend they are connected with creates a new blog post. This allows for timely discovery of content shared by friends.
+*   **Dedicated Activity Page**: A "Friend Activity" page (`/friend_post_notifications`) provides a chronological history of these notifications. Users can view details, link directly to the friend's post, and manage the read status of each notification (mark as read individually or mark all as read).
+*   **Technology**: Leverages Flask-SocketIO for real-time event emission and client-side JavaScript to display these toast notifications dynamically.
+
 ### Polls Feature
 
 This application now includes a "Polls" feature, allowing users to create and participate in polls.

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}My Shared Files Inbox{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>My Shared Files Inbox</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% if not received_files %}
+        <p>You have not received any files.</p>
+    {% else %}
+        <div class="list-group">
+            {% for file in received_files %}
+                <div class="list-group-item {% if not file.is_read %}list-group-item-info{% endif %}">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">
+                            {{ file.original_filename }}
+                            {% if not file.is_read %}
+                                <span class="badge bg-primary">New</span>
+                            {% endif %}
+                        </h5>
+                        <small>{{ file.upload_timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                    </div>
+                    <p class="mb-1">
+                        Sent by: <a href="{{ url_for('user_profile', username=file.sender.username) }}">{{ file.sender.username }}</a>
+                    </p>
+                    {% if file.message %}
+                        <p class="mb-1">Message: {{ file.message }}</p>
+                    {% endif %}
+                    <div class="mt-2">
+                        <a href="{{ url_for('download_shared_file', shared_file_id=file.id) }}" class="btn btn-sm btn-success">Download</a>
+                        <form action="{{ url_for('delete_shared_file', shared_file_id=file.id) }}" method="post" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this file?');">
+                            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                        </form>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

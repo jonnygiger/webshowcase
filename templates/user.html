@@ -68,9 +68,11 @@
         <a href="{{ url_for('user_activity_feed', username=user.username) }}" class="btn btn-outline-secondary btn-sm">View Activity Feed</a>
     </div>
 
-    {% if session['logged_in'] and session['username'] != username %}
-        <div class="mb-3">
-            <a href="{{ url_for('send_message', receiver_username=username) }}" class="btn btn-primary">Send Message to {{ username }}</a>
+    {# Actions for other users' profiles #}
+    {% if current_user and current_user.id != user.id %}
+        <div class="mb-3 text-center profile-actions-others">
+            <a href="{{ url_for('send_message', receiver_username=user.username) }}" class="btn btn-primary btn-sm">Send Message to {{ user.username }}</a>
+            <a href="{{ url_for('share_file_route', receiver_username=user.username) }}" class="btn btn-info btn-sm ms-2">Share File with {{ user.username }}</a>
         </div>
     {% endif %}
 

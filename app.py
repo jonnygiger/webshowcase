@@ -20,7 +20,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification, TrendingHashtag
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag, SharedFile # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification, TrendingHashtag, SharedFile
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource, UserStatsResource # Added OnThisDayResource
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
@@ -61,6 +61,11 @@ app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads') # For gener
 app.config['PROFILE_PICS_FOLDER'] = os.path.join(app.root_path, 'static', 'profile_pics')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
 
+# Shared files configuration
+app.config['SHARED_FILES_UPLOAD_FOLDER'] = os.path.join(app.root_path, 'shared_files_uploads')
+app.config['SHARED_FILES_ALLOWED_EXTENSIONS'] = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'zip', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'}
+app.config['SHARED_FILES_MAX_SIZE'] = 16 * 1024 * 1024  # 16MB limit
+
 app.last_activity_check_time = datetime.utcnow() # Changed to utcnow for consistency
 
 # Ensure the upload folder exists
@@ -75,10 +80,18 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 if not os.path.exists(app.config['PROFILE_PICS_FOLDER']):
     os.makedirs(app.config['PROFILE_PICS_FOLDER'])
 
+if not os.path.exists(app.config['SHARED_FILES_UPLOAD_FOLDER']):
+    os.makedirs(app.config['SHARED_FILES_UPLOAD_FOLDER'])
+
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[0] != "" and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+def allowed_shared_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[0] != "" and \
+           filename.rsplit('.', 1)[1].lower() in app.config['SHARED_FILES_ALLOWED_EXTENSIONS']
 
 def generate_activity_summary():
     """
@@ -2424,3 +2437,137 @@ def mark_all_friend_post_notifications_as_read():
         # return redirect(url_for('view_friend_post_notifications'))
         # For JSON response:
         return jsonify({'status': 'error', 'message': 'Could not mark all notifications as read.'}), 500
+
+
+# Shared File Routes
+
+@app.route('/files/share/<receiver_username>', methods=['GET', 'POST'])
+@login_required
+def share_file_route(receiver_username):
+    receiver_user = User.query.filter_by(username=receiver_username).first()
+    if not receiver_user:
+        flash('Recipient user not found.', 'danger')
+        return redirect(request.referrer or url_for('hello_world'))
+
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            flash('No file part in the request.', 'danger')
+            return redirect(request.url)
+
+        file = request.files['file']
+        if file.filename == '':
+            flash('No file selected for uploading.', 'danger')
+            return redirect(request.url)
+
+        # Check file size
+        file.seek(0, os.SEEK_END) # Go to the end of the file
+        file_length = file.tell() # Get the size
+        file.seek(0) # Reset pointer to the beginning for saving
+        if file_length > app.config['SHARED_FILES_MAX_SIZE']:
+            flash(f"File is too large. Maximum size is {app.config['SHARED_FILES_MAX_SIZE']//(1024*1024)}MB.", 'danger')
+            return redirect(request.url)
+
+        if file and allowed_shared_file(file.filename):
+            original_filename = secure_filename(file.filename)
+            extension = original_filename.rsplit('.', 1)[1].lower()
+            saved_filename = f"{uuid.uuid4().hex}.{extension}"
+            file_path = os.path.join(app.config['SHARED_FILES_UPLOAD_FOLDER'], saved_filename)
+
+            try:
+                file.save(file_path)
+                message_text = request.form.get('message')
+
+                new_shared_file = SharedFile(
+                    sender_id=session['user_id'],
+                    receiver_id=receiver_user.id,
+                    original_filename=original_filename,
+                    saved_filename=saved_filename,
+                    message=message_text
+                )
+                db.session.add(new_shared_file)
+                db.session.commit()
+                flash('File successfully shared!', 'success')
+                # TODO: Add SocketIO notification to receiver_user
+                return redirect(url_for('files_inbox'))
+            except Exception as e:
+                db.session.rollback()
+                app.logger.error(f"Error saving shared file or DB record: {e}")
+                flash('An error occurred while sharing the file. Please try again.', 'danger')
+                # Consider removing the file if it was saved but DB commit failed
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except OSError as ose:
+                        app.logger.error(f"Error removing orphaned shared file after DB error: {ose}")
+                return redirect(request.url)
+        else:
+            flash('File type not allowed or no file provided.', 'danger')
+            return redirect(request.url)
+
+    return render_template('share_file.html', receiver_user=receiver_user)
+
+
+@app.route('/files/inbox')
+@login_required
+def files_inbox():
+    received_files = SharedFile.query.filter_by(receiver_id=session['user_id'])\
+                                     .order_by(SharedFile.upload_timestamp.desc())\
+                                     .all()
+    return render_template('files_inbox.html', received_files=received_files)
+
+
+@app.route('/files/download/<int:shared_file_id>', methods=['GET'])
+@login_required
+def download_shared_file(shared_file_id):
+    shared_file = SharedFile.query.get_or_404(shared_file_id)
+
+    if shared_file.receiver_id != session['user_id'] and shared_file.sender_id != session['user_id']: # Allow sender to download too
+        flash('You are not authorized to download this file.', 'danger')
+        return redirect(url_for('files_inbox')) # Or hello_world
+
+    try:
+        if shared_file.receiver_id == session['user_id'] and not shared_file.is_read:
+            shared_file.is_read = True
+            db.session.commit()
+
+        return send_from_directory(
+            app.config['SHARED_FILES_UPLOAD_FOLDER'],
+            shared_file.saved_filename,
+            as_attachment=True,
+            download_name=shared_file.original_filename # Flask 2.0+
+            # For older Flask, use: attachment_filename=shared_file.original_filename
+        )
+    except Exception as e:
+        db.session.rollback() # In case commit for is_read failed, though unlikely here
+        app.logger.error(f"Error during file download or marking as read: {e}")
+        flash('An error occurred while trying to download the file.', 'danger')
+        return redirect(url_for('files_inbox'))
+
+
+@app.route('/files/delete/<int:shared_file_id>', methods=['POST'])
+@login_required
+def delete_shared_file(shared_file_id):
+    shared_file = SharedFile.query.get_or_404(shared_file_id)
+
+    if shared_file.receiver_id != session['user_id'] and shared_file.sender_id != session['user_id']:
+        flash('You are not authorized to delete this file.', 'danger')
+        return redirect(url_for('files_inbox'))
+
+    file_path = os.path.join(app.config['SHARED_FILES_UPLOAD_FOLDER'], shared_file.saved_filename)
+
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+        db.session.delete(shared_file)
+        db.session.commit()
+        flash('File successfully deleted.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting shared file or DB record: {e}")
+        # If DB delete failed, but file was removed, this is an inconsistent state.
+        # If file removal failed, but DB record was deleted, also inconsistent.
+        # A more robust solution might involve a two-phase commit or background cleanup tasks.
+        flash('An error occurred while deleting the file. Please try again.', 'danger')
+
+    return redirect(url_for('files_inbox'))

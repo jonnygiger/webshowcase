@@ -393,6 +393,38 @@ Enhancing the private communication capabilities, the application now supports r
 *   **Dedicated Activity Page**: A "Friend Activity" page (`/friend_post_notifications`) provides a chronological history of these notifications. Users can view details, link directly to the friend's post, and manage the read status of each notification (mark as read individually or mark all as read).
 *   **Technology**: Leverages Flask-SocketIO for real-time event emission and client-side JavaScript to display these toast notifications dynamically.
 
+### User-to-User File Sharing
+
+Allows users to securely share files directly with other registered users.
+
+*   **Functionality Details**:
+    *   **Sending Files**:
+        *   Users can initiate a file share from another user's profile page by clicking the "Share File with [username]" button, or by directly navigating to the share page if the recipient's username is known.
+        *   An optional message can be attached to the file share.
+        *   Supported file types include common documents, images, and archives (e.g., .txt, .pdf, .png, .jpg, .zip, .docx, .xlsx, .pptx).
+        *   There is a maximum file size limit (e.g., 16MB).
+    *   **Receiving Files**:
+        *   Users can view files shared with them in their "File Inbox", accessible from the main navigation bar.
+        *   Each file entry in the inbox displays the sender's username, the original filename, the upload timestamp, and any attached message.
+        *   New or unread files are visually highlighted in the inbox.
+    *   **Downloading Files**:
+        *   Files can be downloaded by clicking the "Download" link next to the file in the inbox.
+        *   Only the intended recipient and the original sender are authorized to download a shared file.
+        *   When a recipient downloads a file, it is automatically marked as "read".
+    *   **Deleting Files**:
+        *   Users can delete files from their inbox (if they are the receiver).
+        *   Users can also delete files they have sent (this action is also performed from their view of the file, typically the inbox if they sent it to themselves, or if a "sent files" view were implemented). The current implementation allows deletion if the user is either sender or receiver.
+
+*   **Routes & Key UI Points**:
+    *   `/files/share/<receiver_username>`: Page to initiate sharing a file with a specific user.
+    *   `/files/inbox`: Displays all files received by the logged-in user.
+    *   `/files/download/<shared_file_id>`: Endpoint for downloading a specific shared file (accessed via links in the inbox).
+    *   `/files/delete/<shared_file_id>`: Endpoint for deleting a shared file (accessed via buttons in the inbox).
+
+*   **Technical Notes**:
+    *   Files are stored in a dedicated secure folder on the server.
+    *   Unique filenames are used internally for stored files to prevent conflicts.
+
 ### Polls Feature
 
 This application now includes a "Polls" feature, allowing users to create and participate in polls.

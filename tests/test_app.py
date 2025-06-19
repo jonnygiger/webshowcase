@@ -1,9 +1,10 @@
 import os
 import unittest
 import json # For checking JSON responses
+import io # For BytesIO
 from unittest.mock import patch, call, ANY
 from app import app, db, socketio # Import socketio from app
-from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag # Added Group, Event, Poll, PollOption, TrendingHashtag
+from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile # Added Group, Event, Poll, PollOption, TrendingHashtag, SharedFile
 from recommendations import update_trending_hashtags # For testing the job logic
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash
@@ -34,6 +35,18 @@ class AppTestCase(unittest.TestCase):
         with app.app_context():
             db.session.remove()
             db.drop_all()
+
+        # Clean up shared files directory after each test if it exists
+        shared_files_folder = app.config.get('SHARED_FILES_UPLOAD_FOLDER')
+        if shared_files_folder and os.path.exists(shared_files_folder):
+            for filename in os.listdir(shared_files_folder):
+                file_path = os.path.join(shared_files_folder, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                except Exception as e:
+                    print(f"Failed to delete {file_path}. Reason: {e}")
+
 
     def _setup_base_users(self):
         # Using instance variables for user objects to make them accessible in tests
@@ -1130,3 +1143,220 @@ class TestUserStatsAPI(AppTestCase):
             self.assertEqual(response_forbidden.status_code, 403)
             data_forbidden = json.loads(response_forbidden.data)
             self.assertEqual(data_forbidden.get('message'), 'Unauthorized to view these stats')
+
+
+class TestFileSharing(AppTestCase):
+
+    def create_dummy_file(self, filename="test.txt", content=b"hello world", content_type="text/plain"):
+        return (io.BytesIO(content), filename, content_type)
+
+    def test_share_file_get_page(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            response = self.client.get(f'/files/share/{self.user2.username}')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(f"Share File with {self.user2.username}", response.get_data(as_text=True))
+            self.logout()
+
+    def test_share_file_successful_upload(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            dummy_file_data = self.create_dummy_file(filename="upload_test.txt", content=b"Test file content for upload.")
+
+            data = {
+                'file': dummy_file_data,
+                'message': "This is a test message for the shared file."
+            }
+            response = self.client.post(f'/files/share/{self.user2.username}', data=data, content_type='multipart/form-data', follow_redirects=True)
+
+            self.assertEqual(response.status_code, 200) # After redirect, should land on inbox
+            self.assertIn("File successfully shared!", response.get_data(as_text=True))
+
+            shared_file_record = SharedFile.query.filter_by(sender_id=self.user1_id, receiver_id=self.user2_id).first()
+            self.assertIsNotNone(shared_file_record)
+            self.assertEqual(shared_file_record.original_filename, "upload_test.txt")
+            self.assertEqual(shared_file_record.message, "This is a test message for the shared file.")
+
+            file_path = os.path.join(app.config['SHARED_FILES_UPLOAD_FOLDER'], shared_file_record.saved_filename)
+            self.assertTrue(os.path.exists(file_path))
+
+            # Cleanup (file will be cleaned by tearDown, record needs manual delete or rely on tearDown's db.drop_all)
+            # For explicit test cleanup:
+            # os.remove(file_path)
+            # db.session.delete(shared_file_record)
+            # db.session.commit()
+            self.logout()
+
+    def test_share_file_invalid_file_type(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            dummy_file_data = self.create_dummy_file(filename="test.exe", content=b"executable content", content_type="application/octet-stream")
+
+            data = {'file': dummy_file_data}
+            response = self.client.post(f'/files/share/{self.user2.username}', data=data, content_type='multipart/form-data', follow_redirects=True)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("File type not allowed", response.get_data(as_text=True))
+            self.assertIsNone(SharedFile.query.filter_by(original_filename="test.exe").first())
+            self.logout()
+
+    def test_share_file_too_large(self):
+        with app.app_context():
+            original_max_size = app.config['SHARED_FILES_MAX_SIZE']
+            app.config['SHARED_FILES_MAX_SIZE'] = 10 # 10 bytes
+
+            self.login(self.user1.username, 'password')
+            dummy_file_data = self.create_dummy_file(filename="large_file.txt", content=b"This content is definitely larger than 10 bytes.")
+
+            data = {'file': dummy_file_data}
+            response = self.client.post(f'/files/share/{self.user2.username}', data=data, content_type='multipart/form-data', follow_redirects=True)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("File is too large", response.get_data(as_text=True))
+            self.assertIsNone(SharedFile.query.filter_by(original_filename="large_file.txt").first())
+
+            app.config['SHARED_FILES_MAX_SIZE'] = original_max_size # Restore original config
+            self.logout()
+
+    def test_files_inbox_empty(self):
+        with app.app_context():
+            self.login(self.user2.username, 'password')
+            response = self.client.get('/files/inbox')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("You have not received any files.", response.get_data(as_text=True))
+            self.logout()
+
+    def test_files_inbox_with_files(self):
+        with app.app_context():
+            # user1 shares file with user2
+            self.login(self.user1.username, 'password')
+            dummy_file_data = self.create_dummy_file(filename="inbox_test_file.txt")
+            self.client.post(f'/files/share/{self.user2.username}', data={'file': dummy_file_data, 'message': 'Hi!'}, content_type='multipart/form-data')
+            self.logout()
+
+            # user2 logs in and checks inbox
+            self.login(self.user2.username, 'password')
+            response = self.client.get('/files/inbox')
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+            self.assertIn("inbox_test_file.txt", response_data)
+            self.assertIn(self.user1.username, response_data) # Sender's username
+            self.assertIn("Hi!", response_data) # Message
+            self.assertIn("(New)", response_data) # Unread indicator
+            self.logout()
+
+    def test_download_shared_file_receiver(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            dummy_file_data = self.create_dummy_file(filename="download_me.txt", content=b"Downloadable content.")
+            self.client.post(f'/files/share/{self.user2.username}', data={'file': dummy_file_data}, content_type='multipart/form-data')
+            shared_file = SharedFile.query.filter_by(original_filename="download_me.txt").first()
+            self.assertIsNotNone(shared_file)
+            self.assertFalse(shared_file.is_read)
+            self.logout()
+
+            self.login(self.user2.username, 'password')
+            response = self.client.get(f'/files/download/{shared_file.id}')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.mimetype, 'text/plain') # Based on .txt, might vary
+            self.assertIn('attachment; filename=download_me.txt', response.headers['Content-Disposition'])
+            self.assertEqual(response.data, b"Downloadable content.")
+
+            db.session.refresh(shared_file) # Refresh from DB
+            self.assertTrue(shared_file.is_read)
+            self.logout()
+
+    def test_download_shared_file_sender(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            dummy_file_data = self.create_dummy_file(filename="sender_download.txt")
+            self.client.post(f'/files/share/{self.user2.username}', data={'file': dummy_file_data}, content_type='multipart/form-data')
+            shared_file = SharedFile.query.filter_by(original_filename="sender_download.txt").first()
+            self.assertIsNotNone(shared_file)
+            initial_is_read_status = shared_file.is_read # Should be False
+            self.logout()
+
+            self.login(self.user1.username, 'password') # Sender logs back in
+            response = self.client.get(f'/files/download/{shared_file.id}')
+            self.assertEqual(response.status_code, 200)
+
+            db.session.refresh(shared_file)
+            self.assertEqual(shared_file.is_read, initial_is_read_status) # is_read should not change for sender
+            self.logout()
+
+    def test_download_shared_file_unauthorized(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            dummy_file_data = self.create_dummy_file(filename="unauth_download.txt")
+            self.client.post(f'/files/share/{self.user2.username}', data={'file': dummy_file_data}, content_type='multipart/form-data')
+            shared_file = SharedFile.query.filter_by(original_filename="unauth_download.txt").first()
+            self.assertIsNotNone(shared_file)
+            self.logout()
+
+            self.login(self.user3.username, 'password') # Unauthorized user
+            response = self.client.get(f'/files/download/{shared_file.id}', follow_redirects=True)
+            self.assertEqual(response.status_code, 200) # After redirect
+            self.assertIn("You are not authorized to download this file.", response.get_data(as_text=True))
+            self.logout()
+
+    def test_delete_shared_file_receiver(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            dummy_file_data = self.create_dummy_file(filename="to_delete_receiver.txt")
+            self.client.post(f'/files/share/{self.user2.username}', data={'file': dummy_file_data}, content_type='multipart/form-data')
+            shared_file = SharedFile.query.filter_by(original_filename="to_delete_receiver.txt").first()
+            self.assertIsNotNone(shared_file)
+            saved_filename = shared_file.saved_filename
+            file_path = os.path.join(app.config['SHARED_FILES_UPLOAD_FOLDER'], saved_filename)
+            self.assertTrue(os.path.exists(file_path))
+            self.logout()
+
+            self.login(self.user2.username, 'password') # Receiver logs in
+            response = self.client.post(f'/files/delete/{shared_file.id}', follow_redirects=True)
+            self.assertEqual(response.status_code, 200) # After redirect to inbox
+            self.assertIn("File successfully deleted.", response.get_data(as_text=True))
+
+            self.assertIsNone(SharedFile.query.get(shared_file.id))
+            self.assertFalse(os.path.exists(file_path))
+            self.logout()
+
+    def test_delete_shared_file_sender(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password') # Sender
+            dummy_file_data = self.create_dummy_file(filename="to_delete_sender.txt")
+            self.client.post(f'/files/share/{self.user2.username}', data={'file': dummy_file_data}, content_type='multipart/form-data')
+            shared_file = SharedFile.query.filter_by(original_filename="to_delete_sender.txt").first()
+            self.assertIsNotNone(shared_file)
+            saved_filename = shared_file.saved_filename
+            file_id = shared_file.id
+            file_path = os.path.join(app.config['SHARED_FILES_UPLOAD_FOLDER'], saved_filename)
+            self.assertTrue(os.path.exists(file_path))
+            # Do not logout, sender is already logged in
+
+            response = self.client.post(f'/files/delete/{file_id}', follow_redirects=True)
+            self.assertEqual(response.status_code, 200) # After redirect to inbox
+            self.assertIn("File successfully deleted.", response.get_data(as_text=True))
+
+            self.assertIsNone(SharedFile.query.get(file_id))
+            self.assertFalse(os.path.exists(file_path))
+            self.logout()
+
+    def test_delete_shared_file_unauthorized(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            dummy_file_data = self.create_dummy_file(filename="unauth_delete.txt")
+            self.client.post(f'/files/share/{self.user2.username}', data={'file': dummy_file_data}, content_type='multipart/form-data')
+            shared_file = SharedFile.query.filter_by(original_filename="unauth_delete.txt").first()
+            self.assertIsNotNone(shared_file)
+            file_id = shared_file.id
+            file_path = os.path.join(app.config['SHARED_FILES_UPLOAD_FOLDER'], shared_file.saved_filename)
+            self.logout()
+
+            self.login(self.user3.username, 'password') # Unauthorized user
+            response = self.client.post(f'/files/delete/{file_id}', follow_redirects=True)
+            self.assertEqual(response.status_code, 200) # After redirect
+            self.assertIn("You are not authorized to delete this file.", response.get_data(as_text=True))
+
+            self.assertIsNotNone(SharedFile.query.get(file_id)) # Still exists
+            self.assertTrue(os.path.exists(file_path)) # File still exists
+            self.logout()

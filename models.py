@@ -1,6 +1,30 @@
 from app import db
 from datetime import datetime
 
+# Association table for User-Group many-to-many relationship
+group_members = db.Table('group_members',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('group_id', db.Integer, db.ForeignKey('group.id'), primary_key=True)
+)
+
+class Group(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.Text, nullable=True)
+    creator_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationship to User (creator)
+    creator = db.relationship('User', back_populates='created_groups')
+
+    # Relationship to User (members) via association table
+    members = db.relationship('User', secondary=group_members,
+                              lazy='dynamic', # Allows for further querying
+                              back_populates='joined_groups')
+
+    def __repr__(self):
+        return f"<Group '{self.name}'>"
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -19,6 +43,12 @@ class User(db.Model):
     poll_votes = db.relationship('PollVote', backref='voter', lazy=True)
     events = db.relationship('Event', backref='organizer', lazy=True)
     event_rsvps = db.relationship('EventRSVP', backref='attendee', lazy=True)
+
+    # Group relationships
+    created_groups = db.relationship('Group', back_populates='creator', lazy=True, foreign_keys='Group.creator_id')
+    joined_groups = db.relationship('Group', secondary=group_members,
+                                    lazy='dynamic', # Allows for further querying
+                                    back_populates='members')
 
     def __repr__(self):
         return f'<User {self.username}>'

@@ -57,4 +57,23 @@
             <p>{{ username }} has not organized any events yet.</p>
         {% endif %}
     </div>
+
+    <!-- Joined Groups -->
+    <div class="mt-4 content-box"> {# Added content-box for consistency #}
+        <h4>Joined Groups</h4>
+        {% if user.joined_groups and user.joined_groups.count() > 0 %}
+            <ul class="list-group">
+                {% for group_item in user.joined_groups %} {# Renamed to avoid conflict with group in other contexts #}
+                    <li class="list-group-item">
+                        <a href="{{ url_for('view_group', group_id=group_item.id) }}">{{ group_item.name }}</a>
+                        {% if group_item.creator_id == user.id %}
+                            <span class="badge bg-primary ms-2">Creator</span>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>{{ user.username }} has not joined any groups yet.</p> {# Use user.username for consistency #}
+        {% endif %}
+    </div>
 {% endblock %}

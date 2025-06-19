@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}{{ group.name }} - Group Details{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header">
+            <h2>{{ group.name }}</h2>
+        </div>
+        <div class="card-body">
+            <p class="card-text"><strong>Description:</strong> {{ group.description if group.description else 'No description provided.' }}</p>
+            <p class="card-text"><small class="text-muted">Created by: {{ group.creator.username }} on {{ group.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small></p>
+
+            <hr>
+            <h4>Members ({{ group.members.count() }})</h4>
+            {% if group.members.count() > 0 %}
+                <ul class="list-group">
+                    {% for member in group.members %}
+                        <li class="list-group-item"><a href="{{ url_for('user_profile', username=member.username) }}">{{ member.username }}</a></li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>This group has no members yet.</p>
+            {% endif %}
+
+            <hr>
+            <!-- Membership actions -->
+            <div id="membership-actions" class="mt-3">
+                {% if session.logged_in %}
+                    {% if current_user_is_member %}
+                        <form method="POST" action="{{ url_for('leave_group', group_id=group.id) }}" style="display: inline;">
+                            <button type="submit" class="btn btn-danger">Leave Group</button>
+                        </form>
+                    {% elif group.creator_id == session.user_id %}
+                         <p><span class="badge bg-info">You are the creator of this group.</span></p>
+                    {% else %}
+                        <form method="POST" action="{{ url_for('join_group', group_id=group.id) }}" style="display: inline;">
+                            <button type="submit" class="btn btn-success">Join Group</button>
+                        </form>
+                    {% endif %}
+                {% else %}
+                    <p><a href="{{ url_for('login', next=request.url) }}">Log in</a> to join this group.</p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card-footer">
+            <a href="{{ url_for('groups_list') }}" class="btn btn-secondary">Back to Groups List</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

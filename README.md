@@ -329,6 +329,31 @@ The application now includes an Event Management system, allowing users to organ
         *   Requires login and that the logged-in user is the event organizer.
         *   Deletes the specified event and its RSVP data.
 
+### User Groups Feature
+
+To foster community building, the application now supports User Groups. This feature allows users to create, join, and participate in groups centered around common interests or topics.
+
+*   **Purpose**: Enables users to form and manage their own communities within the application, share discussions (future enhancement), and organize members.
+*   **Authentication**: Creating, joining, and leaving groups are actions that require users to be logged in. All users (including non-logged-in visitors) can view group lists and individual group pages.
+
+*   **Key Functionalities**:
+    *   **Group Creation**: Logged-in users can create new groups by providing a name and an optional description. The user who creates the group automatically becomes its first member and is marked as the creator.
+    *   **Group Listing**: A dedicated page displays all available groups, showing their name, description snippet, creator, and current member count.
+    *   **Detailed Group View**: Each group has its own page displaying its full description, list of members (with links to their profiles), and who created it.
+    *   **Membership Management**:
+        *   Logged-in users can join any public group (unless they are already a member).
+        *   Members of a group can choose to leave it. (Currently, creators can also leave their groups).
+    *   **User Profile Integration**: Each user's profile page now includes a section listing all the groups they are a member of, with direct links to those group pages. A "Creator" badge is shown if the user is the creator of a listed group.
+
+*   **Routes & Usage**:
+    *   `/groups/create` (GET/POST):
+        *   `GET`: Displays the form for creating a new group.
+        *   `POST`: Processes the group creation form. Requires login.
+    *   `/groups` (GET): Displays a list of all existing groups.
+    *   `/group/<int:group_id>` (GET): Displays the detailed page for a specific group, including its members and options to join/leave (if applicable for the logged-in user).
+    *   `/group/<int:group_id>/join` (POST): Allows a logged-in user to join the specified group.
+    *   `/group/<int:group_id>/leave` (POST): Allows a logged-in user to leave the specified group.
+
 ### In-App Notifications
 
 To keep users informed about recent activity on the platform, an in-app notification system has been implemented.

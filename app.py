@@ -15,7 +15,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group # Add Group
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
@@ -57,9 +57,6 @@ def generate_activity_summary():
     """
     # This function will need to be completely rewritten to use SQLAlchemy queries
     # against the Post, Event, and Poll models.
-    Checks for new posts, events, and polls since the last check
-    and creates notifications for them.
-    """
     # app.last_activity_check_time is a naive datetime, convert to aware if needed, or ensure consistency
     # For this implementation, assuming naive datetime comparison is sufficient if DB stores naive UTC.
     # Models use default=datetime.utcnow, which is naive.
@@ -167,7 +164,13 @@ def user_profile(username):
         else:
             post_item.average_rating = 0
 
-    return render_template('user.html', username=username, posts=user_posts, user_images=user_images_list, organized_events=organized_events)
+    # Pass the whole user object to the template
+    return render_template('user.html',
+                           user=user,
+                           username=username, # username is still useful for display
+                           posts=user_posts,
+                           user_images=user_images_list,
+                           organized_events=organized_events)
 
 @app.route('/todo', methods=['GET', 'POST'])
 @login_required
@@ -987,3 +990,102 @@ def trigger_notifications_test_only():
     else:
         flash('This endpoint is for testing only and disabled in production.', 'danger')
         return redirect(url_for('hello_world'))
+
+@app.route('/groups')
+def groups_list():
+    all_groups = Group.query.order_by(Group.created_at.desc()).all()
+    return render_template('groups_list.html', groups=all_groups)
+
+@app.route('/group/<int:group_id>')
+def view_group(group_id):
+    group = Group.query.get_or_404(group_id)
+    current_user_is_member = False
+    if 'user_id' in session:
+        user_id = session['user_id']
+        # Check if the user is a member. group.members is a dynamic query.
+        current_user_is_member = group.members.filter(User.id == user_id).count() > 0
+
+    return render_template('group_detail.html', group=group, current_user_is_member=current_user_is_member)
+
+@app.route('/groups/create', methods=['GET', 'POST'])
+@login_required
+def create_group():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        description = request.form.get('description')
+        user_id = session.get('user_id')
+
+        if not name or not name.strip():
+            flash('Group name is required.', 'danger')
+            return render_template('create_group.html')
+
+        existing_group = Group.query.filter_by(name=name.strip()).first()
+        if existing_group:
+            flash('A group with this name already exists. Please choose a different name.', 'danger')
+            return render_template('create_group.html')
+
+        current_user = User.query.get(user_id)
+        if not current_user: # Should not happen if @login_required works
+            flash('User not found. Please log in again.', 'danger')
+            return redirect(url_for('login'))
+
+        new_group = Group(name=name.strip(), description=description.strip(), creator_id=user_id)
+        # Add the creator as the first member
+        new_group.members.append(current_user) # SQLAlchemy handles the association table
+
+        db.session.add(new_group)
+        db.session.commit()
+
+        flash(f'Group "{new_group.name}" created successfully!', 'success')
+        # Eventually, redirect to url_for('view_group', group_id=new_group.id)
+        # For now, let's redirect to a placeholder or the future groups list
+        return redirect(url_for('groups_list')) # Assumes 'groups_list' will be created
+
+    return render_template('create_group.html')
+
+@app.route('/group/<int:group_id>/join', methods=['POST'])
+@login_required
+def join_group(group_id):
+    group = Group.query.get_or_404(group_id)
+    user_id = session.get('user_id')
+    current_user = User.query.get(user_id)
+
+    if not current_user: # Should be caught by @login_required
+        flash('User not found. Please log in again.', 'danger')
+        return redirect(url_for('login'))
+
+    # Check if already a member
+    if group.members.filter(User.id == user_id).count() > 0:
+        flash('You are already a member of this group.', 'info')
+    else:
+        group.members.append(current_user)
+        db.session.commit()
+        flash(f'You have successfully joined the group: {group.name}!', 'success')
+
+    return redirect(url_for('view_group', group_id=group_id))
+
+@app.route('/group/<int:group_id>/leave', methods=['POST'])
+@login_required
+def leave_group(group_id):
+    group = Group.query.get_or_404(group_id)
+    user_id = session.get('user_id')
+    current_user = User.query.get(user_id)
+
+    if not current_user: # Should be caught by @login_required
+        flash('User not found. Please log in again.', 'danger')
+        return redirect(url_for('login'))
+
+    # Check if the user is the creator; prevent leaving if so (optional rule)
+    # For this implementation, let's assume creators can leave, but they'd lose creator status visibility
+    # A more complex system might prevent creator from leaving or require transferring ownership.
+    # For now, we allow it.
+
+    member_to_remove = group.members.filter(User.id == user_id).first()
+    if member_to_remove:
+        group.members.remove(member_to_remove)
+        db.session.commit()
+        flash(f'You have successfully left the group: {group.name}.', 'success')
+    else:
+        flash('You are not a member of this group.', 'info')
+
+    return redirect(url_for('view_group', group_id=group_id))

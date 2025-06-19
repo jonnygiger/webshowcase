@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}On This Day{% endblock %}
+
+{% block content %}
+<div class="on-this-day-container">
+    <h1>On This Day</h1>
+    <p>Content from this day in previous years.</p>
+
+    {% if not posts and not events %}
+        <div class="alert alert-info" role="alert">
+            Nothing to show for 'On This Day' from previous years.
+        </div>
+    {% else %}
+        <section class="on-this-day-posts">
+            <h2>Past Posts</h2>
+            {% if posts %}
+                <ul class="list-group">
+                    {% for post in posts %}
+                        <li class="list-group-item">
+                            <h4><a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a></h4>
+                            <p class="post-timestamp"><small>Posted on: {{ post.timestamp.strftime('%Y-%m-%d %H:%M') }}</small></p>
+                            <p class="post-content-snippet">
+                                {{ post.content | truncate(150, True) }}
+                            </p>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No posts from this day in previous years.</p>
+            {% endif %}
+        </section>
+
+        <hr class="my-4">
+
+        <section class="on-this-day-events">
+            <h2>Past Events</h2>
+            {% if events %}
+                <ul class="list-group">
+                    {% for event in events %}
+                        <li class="list-group-item">
+                            <h4><a href="{{ url_for('view_event', event_id=event.id) }}">{{ event.title }}</a></h4>
+                            <p class="event-date-time">
+                                <small>
+                                    Event Date: {{ event.date }}
+                                    {% if event.time %}| Time: {{ event.time }}{% endif %}
+                                </small>
+                            </p>
+                            <p class="event-description-snippet">
+                                {{ event.description | truncate(150, True) }}
+                            </p>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No events from this day in previous years.</p>
+            {% endif %}
+        </section>
+    {% endif %}
+</div>
+
+<style>
+    .on-this-day-container {
+        padding: 20px;
+    }
+    .on-this-day-posts h2, .on-this-day-events h2 {
+        margin-top: 20px;
+        margin-bottom: 15px;
+        color: #333;
+        border-bottom: 2px solid #eee;
+        padding-bottom: 5px;
+    }
+    .list-group-item {
+        margin-bottom: 15px;
+        border: 1px solid #ddd;
+        padding: 15px;
+        border-radius: 5px;
+        background-color: #f9f9f9;
+    }
+    .list-group-item h4 a {
+        color: #007bff;
+        text-decoration: none;
+    }
+    .list-group-item h4 a:hover {
+        text-decoration: underline;
+    }
+    .post-timestamp, .event-date-time {
+        font-size: 0.9em;
+        color: #666;
+        margin-bottom: 5px;
+    }
+    .post-content-snippet, .event-description-snippet {
+        font-size: 1em;
+        color: #444;
+    }
+    .alert-info {
+        margin-top: 20px;
+    }
+    hr.my-4 {
+        margin-top: 2rem;
+        margin-bottom: 2rem;
+    }
+</style>
+{% endblock %}

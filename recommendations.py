@@ -1,6 +1,6 @@
 from app import db # Added app for logger
 from models import User, Post, Group, Friendship, Like, Event, EventRSVP, Poll, PollVote, Comment, SharedPost, TrendingHashtag # Added SharedPost and TrendingHashtag
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, extract
 from collections import defaultdict, Counter
 from datetime import datetime, timedelta # Ensure datetime and timedelta are imported
 from flask import current_app
@@ -871,3 +871,45 @@ def get_personalized_feed_posts(user_id, limit=20):
 
     current_app.logger.info(f"get_personalized_feed_posts: Generated {len(result_with_reasons)} posts for user {user_id}. Candidates found: {len(feed_candidates)}")
     return result_with_reasons
+
+
+def get_on_this_day_content(user_id):
+    """
+    Retrieves posts and events created by the user on the current month and day from previous years.
+    """
+    today = datetime.utcnow()
+    current_month = today.month
+    current_day = today.day
+    current_year = today.year
+
+    # Fetch posts from previous years on this day
+    posts_on_this_day = Post.query.filter(
+        Post.user_id == user_id,
+        extract('month', Post.timestamp) == current_month,
+        extract('day', Post.timestamp) == current_day,
+        extract('year', Post.timestamp) != current_year
+    ).all()
+
+    # Fetch events from previous years on this day
+    # Event.date is a string, e.g., "YYYY-MM-DD"
+    all_user_events = Event.query.filter(
+        Event.user_id == user_id
+    ).all()
+
+    events_on_this_day = []
+    for event in all_user_events:
+        try:
+            event_date_obj = datetime.strptime(event.date, '%Y-%m-%d')
+            if event_date_obj.month == current_month and \
+               event_date_obj.day == current_day and \
+               event_date_obj.year != current_year:
+                events_on_this_day.append(event)
+        except ValueError:
+            # Handle cases where event.date might not be in the expected format
+            current_app.logger.error(f"Could not parse date string for event ID {event.id}: {event.date}")
+            continue
+
+    return {
+        "posts": posts_on_this_day,
+        "events": events_on_this_day
+    }

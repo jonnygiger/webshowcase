@@ -544,6 +544,94 @@ class TestPersonalizedFeedAPI(AppTestCase):
             self.assertEqual(data['msg'], 'Missing Authorization Header')
 
 
+class TestOnThisDayPage(AppTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.test_user = self.user1
+        self.fixed_today = datetime(2023, 10, 26, 12, 0, 0) # Fixed date for testing - Oct 26
+
+        # Create a helper for events, similar to _create_db_post
+        self.post_target_correct = self._create_db_post(
+            user_id=self.test_user.id, title="Correct Web Post", content="Web content from Oct 26, 2022",
+            timestamp=datetime(2022, 10, 26, 10, 0, 0)
+        )
+        self.event_target_correct = self._create_db_event( # Use the helper defined below
+            user_id=self.test_user.id, title="Correct Web Event", date_str='2022-10-26',
+            description="Web event on Oct 26, 2022"
+        )
+        # For filtering tests
+        self.post_current_year_web = self._create_db_post(
+            user_id=self.test_user.id, title="Current Year Web Post",
+            timestamp=datetime(2023, 10, 26, 11, 0, 0)
+        )
+        self.event_different_day_web = self._create_db_event( # Use the helper
+            user_id=self.test_user.id, title="Different Day Web Event", date_str='2022-10-27'
+        )
+        db.session.commit() # Commit all created items
+
+    def _create_db_event(self, user_id, title, date_str, description="Test Event", time="12:00", location="Test Location", created_at=None):
+        event = Event(
+            user_id=user_id, title=title, description=description,
+            date=date_str, time=time, location=location,
+            created_at=created_at or datetime.utcnow()
+        )
+        db.session.add(event)
+        # db.session.commit() # Commit handled in setUp or test method after all creations
+        return event
+
+    def test_on_this_day_page_unauthorized(self):
+        with app.app_context():
+            response = self.client.get('/onthisday', follow_redirects=False)
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(response.location.endswith('/login')) # Check if ends with /login
+
+    @patch('app.datetime') # Patch datetime used in app.py for the route's internal logic
+    @patch('recommendations.datetime') # Patch datetime used in the recommendations.py function
+    def test_on_this_day_page_no_content(self, mock_reco_datetime, mock_app_datetime):
+        with app.app_context():
+            no_content_date = datetime(2023, 1, 1, 12, 0, 0)
+            mock_app_datetime.utcnow.return_value = no_content_date
+            mock_reco_datetime.utcnow.return_value = no_content_date
+            mock_reco_datetime.strptime = datetime.strptime # Ensure strptime is not mocked
+
+            self.login(self.test_user.username, 'password')
+            response = self.client.get('/onthisday')
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+
+            self.assertIn("No posts from this day in previous years.", response_data)
+            self.assertIn("No events from this day in previous years.", response_data)
+            # Check for the overall message if both are empty
+            self.assertIn("Nothing to show for 'On This Day' from previous years.", response_data)
+            self.logout()
+
+    @patch('app.datetime') # Patch datetime used in app.py for the route's internal logic
+    @patch('recommendations.datetime') # Patch datetime used in the recommendations.py function
+    def test_on_this_day_page_with_content_and_filtering(self, mock_reco_datetime, mock_app_datetime):
+        with app.app_context():
+            from flask import url_for # Import url_for within app_context for tests
+            mock_app_datetime.utcnow.return_value = self.fixed_today
+            mock_reco_datetime.utcnow.return_value = self.fixed_today
+            mock_reco_datetime.strptime = datetime.strptime
+
+            self.login(self.test_user.username, 'password')
+            response = self.client.get('/onthisday')
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+
+            # Check for correct content
+            self.assertIn(self.post_target_correct.title, response_data)
+            self.assertIn(self.event_target_correct.title, response_data)
+            self.assertIn(url_for('view_post', post_id=self.post_target_correct.id), response_data)
+            self.assertIn(url_for('view_event', event_id=self.event_target_correct.id), response_data)
+
+            # Check that filtered content is NOT present
+            self.assertNotIn(self.post_current_year_web.title, response_data)
+            self.assertNotIn(self.event_different_day_web.title, response_data)
+            self.logout()
+
+
     def test_personalized_feed_success_and_structure(self):
         with app.app_context():
             # 1. Setup Data
@@ -947,79 +1035,119 @@ class TestOnThisDayAPI(AppTestCase):
     def setUp(self):
         super().setUp()
         self.test_user = self.user1 # Use user1 from base setup
-        self.fixed_today = datetime(2023, 10, 26, 12, 0, 0) # Fixed date for testing
+        self.fixed_today = datetime(2023, 10, 26, 12, 0, 0) # Fixed date for testing - Oct 26
 
-        # Posts
-        self.post_on_this_day_past = self._create_db_post(
-            user_id=self.test_user.id,
-            title="Past Post Same Day",
-            content="Content from Oct 26, 2022",
-            timestamp=datetime(2022, 10, 26, 10, 0, 0)
+        # Posts for self.test_user (user1)
+        self.post_target_correct = self._create_db_post(
+            user_id=self.test_user.id, title="Correct Post", content="Content from Oct 26, 2022",
+            timestamp=datetime(2022, 10, 26, 10, 0, 0) # Correct: Same day/month, past year
         )
-        self.post_on_this_day_current_year = self._create_db_post(
-            user_id=self.test_user.id,
-            title="Current Year Post Same Day",
-            content="Content from Oct 26, 2023",
-            timestamp=datetime(2023, 10, 26, 11, 0, 0) # Same as fixed_today's date, but different time
+        self.post_current_year = self._create_db_post(
+            user_id=self.test_user.id, title="Current Year Post", content="Content from Oct 26, 2023",
+            timestamp=datetime(2023, 10, 26, 11, 0, 0) # Incorrect: Same day/month, current year
         )
-        self.post_different_day_past = self._create_db_post(
-            user_id=self.test_user.id,
-            title="Past Post Different Day",
-            content="Content from Oct 27, 2022",
-            timestamp=datetime(2022, 10, 27, 12, 0, 0)
+        self.post_different_day = self._create_db_post(
+            user_id=self.test_user.id, title="Different Day Post", content="Content from Oct 27, 2022",
+            timestamp=datetime(2022, 10, 27, 12, 0, 0) # Incorrect: Different day
         )
-        self.post_other_user = self._create_db_post( # Should not appear for self.test_user
-            user_id=self.user2.id,
-            title="Other User Past Post Same Day",
-            content="Content from Oct 26, 2022 by other user",
-            timestamp=datetime(2022, 10, 26, 10, 0, 0)
+        self.post_different_month = self._create_db_post(
+            user_id=self.test_user.id, title="Different Month Post", content="Content from Nov 26, 2022",
+            timestamp=datetime(2022, 11, 26, 12, 0, 0) # Incorrect: Different month
+        )
+        self.post_by_other_user_correct_date = self._create_db_post(
+            user_id=self.user2.id, title="Other User Correct Date Post", content="Content from Oct 26, 2022 by other user",
+            timestamp=datetime(2022, 10, 26, 10, 0, 0) # Correct date, but wrong user
         )
 
-        # Events
-        self.event_on_this_day_past = Event(
-            user_id=self.test_user.id,
-            title="Past Event Same Day",
-            description="Event on Oct 26, 2022",
-            date='2022-10-26', # Stored as string
-            time='14:00',
-            location='Past Location'
+        # Events for self.test_user (user1)
+        self.event_target_correct = self._create_db_event(
+            user_id=self.test_user.id, title="Correct Event", date_str='2022-10-26',
+            description="Event on Oct 26, 2022" # Correct: Same day/month, past year
         )
-        self.event_on_this_day_current_year = Event(
-            user_id=self.test_user.id,
-            title="Current Year Event Same Day",
-            description="Event on Oct 26, 2023",
-            date='2023-10-26',
-            time='15:00',
-            location='Current Location'
+        self.event_current_year = self._create_db_event(
+            user_id=self.test_user.id, title="Current Year Event", date_str='2023-10-26',
+            description="Event on Oct 26, 2023" # Incorrect: Same day/month, current year
         )
-        self.event_different_day_past = Event(
-            user_id=self.test_user.id,
-            title="Past Event Different Day",
-            description="Event on Oct 27, 2022",
-            date='2022-10-27',
-            time='16:00',
-            location='Different Past Location'
+        self.event_different_day = self._create_db_event(
+            user_id=self.test_user.id, title="Different Day Event", date_str='2022-10-27',
+            description="Event on Oct 27, 2022" # Incorrect: Different day
         )
-        self.event_other_user = Event( # Should not appear for self.test_user
-            user_id=self.user2.id,
-            title="Other User Past Event Same Day",
-            description="Event on Oct 26, 2022 by other user",
-            date='2022-10-26',
-            time='14:00',
-            location='Other Past Location'
+        self.event_different_month = self._create_db_event(
+            user_id=self.test_user.id, title="Different Month Event", date_str='2022-11-26',
+            description="Event on Nov 26, 2022" # Incorrect: Different month
         )
-        db.session.add_all([
-            self.event_on_this_day_past,
-            self.event_on_this_day_current_year,
-            self.event_different_day_past,
-            self.event_other_user
-        ])
+        self.event_by_other_user_correct_date = self._create_db_event(
+            user_id=self.user2.id, title="Other User Correct Date Event", date_str='2022-10-26',
+            description="Event on Oct 26, 2022 by other user" # Correct date, but wrong user
+        )
+        # Event with invalid date format (should be skipped by logic)
+        self.event_invalid_date_format = self._create_db_event(
+            user_id=self.test_user.id, title="Invalid Date Format Event", date_str='2022/10/26' # Wrong format
+        )
         db.session.commit()
 
-    @patch('api.datetime') # Patching datetime object in api.py
-    def test_on_this_day_with_content(self, mock_datetime):
+
+    def _create_db_event(self, user_id, title, date_str, description="Test Event Description", time="12:00", location="Test Location", created_at=None):
+        event = Event(
+            user_id=user_id, title=title, description=description,
+            date=date_str, time=time, location=location,
+            created_at=created_at or datetime.utcnow()
+        )
+        db.session.add(event)
+        # db.session.commit() # Commit is handled in setUp after all creations
+        return event
+
+    @patch('recommendations.datetime') # Patch datetime used in recommendations.py
+    @patch('api.datetime') # Patch datetime used in api.py (if any, for current_year logic if not passed from recommendations)
+    def test_on_this_day_with_content_and_filtering(self, mock_api_datetime, mock_reco_datetime):
         with app.app_context():
-            mock_datetime.utcnow.return_value = self.fixed_today # Mock current time
+            mock_reco_datetime.utcnow.return_value = self.fixed_today
+            mock_reco_datetime.strptime = datetime.strptime # Ensure strptime is not mocked away for Event date parsing
+            mock_api_datetime.utcnow.return_value = self.fixed_today # If api directly uses it
+
+            token = self._get_jwt_token(self.test_user.username, 'password')
+            headers = {'Authorization': f'Bearer {token}'}
+
+            response = self.client.get('/api/onthisday', headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
+
+            self.assertIn('on_this_day_posts', data)
+            self.assertIn('on_this_day_events', data)
+
+            # Verify correct post is present
+            self.assertEqual(len(data['on_this_day_posts']), 1, f"Expected 1 post, got {len(data['on_this_day_posts'])}: {data['on_this_day_posts']}")
+            self.assertEqual(data['on_this_day_posts'][0]['id'], self.post_target_correct.id)
+            self.assertEqual(data['on_this_day_posts'][0]['title'], self.post_target_correct.title)
+
+            # Verify correct event is present
+            self.assertEqual(len(data['on_this_day_events']), 1, f"Expected 1 event, got {len(data['on_this_day_events'])}: {data['on_this_day_events']}")
+            self.assertEqual(data['on_this_day_events'][0]['id'], self.event_target_correct.id)
+            self.assertEqual(data['on_this_day_events'][0]['title'], self.event_target_correct.title)
+
+            # Check that other posts/events are NOT present
+            post_ids_in_response = {p['id'] for p in data['on_this_day_posts']}
+            self.assertNotIn(self.post_current_year.id, post_ids_in_response)
+            self.assertNotIn(self.post_different_day.id, post_ids_in_response)
+            self.assertNotIn(self.post_different_month.id, post_ids_in_response)
+            self.assertNotIn(self.post_by_other_user_correct_date.id, post_ids_in_response)
+
+            event_ids_in_response = {e['id'] for e in data['on_this_day_events']}
+            self.assertNotIn(self.event_current_year.id, event_ids_in_response)
+            self.assertNotIn(self.event_different_day.id, event_ids_in_response)
+            self.assertNotIn(self.event_different_month.id, event_ids_in_response)
+            self.assertNotIn(self.event_by_other_user_correct_date.id, event_ids_in_response)
+            self.assertNotIn(self.event_invalid_date_format.id, event_ids_in_response)
+
+    @patch('recommendations.datetime')
+    @patch('api.datetime')
+    def test_on_this_day_no_content(self, mock_api_datetime, mock_reco_datetime):
+        with app.app_context():
+            # Mock current time to a date where no "on this day" content was created for self.test_user
+            no_content_date = datetime(2023, 1, 1, 12, 0, 0)
+            mock_reco_datetime.utcnow.return_value = no_content_date
+            mock_reco_datetime.strptime = datetime.strptime
+            mock_api_datetime.utcnow.return_value = no_content_date
 
             token = self._get_jwt_token(self.test_user.username, 'password')
             headers = {'Authorization': f'Bearer {token}'}

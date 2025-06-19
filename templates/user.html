@@ -64,6 +64,10 @@
         <a href="{{ url_for('view_friends_list', username=user.username) }}" class="btn btn-outline-info btn-sm">{{ user.username }}'s Friends</a>
     </div>
 
+    <div class="mb-3 text-center">
+        <a href="{{ url_for('user_activity_feed', username=user.username) }}" class="btn btn-outline-secondary btn-sm">View Activity Feed</a>
+    </div>
+
     {% if session['logged_in'] and session['username'] != username %}
         <div class="mb-3">
             <a href="{{ url_for('send_message', receiver_username=username) }}" class="btn btn-primary">Send Message to {{ username }}</a>

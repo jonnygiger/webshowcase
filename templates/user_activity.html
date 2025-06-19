@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}{{ user.username }}'s Activity Feed{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{{ user.username }}'s Activity Feed</h2>
+    <hr>
+
+    {% if activities %}
+        <ul class="list-group">
+            {% for activity in activities %}
+            <li class="list-group-item">
+                <div class="d-flex w-100 justify-content-between">
+                    <h5 class="mb-1">
+                        {% if activity.activity_type == "new_post" %}
+                            Created a new post: <a href="{{ activity.link }}">{{ activity.content_preview | truncate(80, True) }}</a>
+                        {% elif activity.activity_type == "new_comment" %}
+                            Commented on a post: <a href="{{ activity.link }}">{{ activity.content_preview | truncate(80, True) }}</a>
+                        {% elif activity.activity_type == "new_event" %}
+                            Created a new event: <a href="{{ activity.link }}">{{ activity.content_preview | truncate(80, True) }}</a>
+                        {% else %}
+                            Performed an action: {{ activity.activity_type }}
+                            {% if activity.link and activity.content_preview %}
+                                <a href="{{ activity.link }}">{{ activity.content_preview | truncate(80, True) }}</a>
+                            {% elif activity.content_preview %}
+                                {{ activity.content_preview | truncate(80, True) }}
+                            {% endif %}
+                        {% endif %}
+                    </h5>
+                    <small class="text-muted">{{ activity.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
+                </div>
+                {% if activity.activity_type == "new_post" and activity.content_preview %}
+                    <p class="mb-1 text-muted"><em>Preview: "{{ activity.content_preview | truncate(150, True) }}"</em></p>
+                {% elif activity.activity_type == "new_comment" and activity.content_preview %}
+                     <p class="mb-1 text-muted"><em>Comment: "{{ activity.content_preview | truncate(150, True) }}"</em></p>
+                {% elif activity.activity_type == "new_event" and activity.content_preview %}
+                     <p class="mb-1 text-muted"><em>Event: {{ activity.content_preview | truncate(150, True) }}</em></p>
+                {% endif %}
+                 <small class="text-muted">Activity ID: {{ activity.id }}</small>
+            </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            No recent activity to display for {{ user.username }}.
+        </div>
+    {% endif %}
+
+    <div class="mt-3">
+        <a href="{{ url_for('user_profile', username=user.username) }}" class="btn btn-outline-secondary">Back to Profile</a>
+    </div>
+
+</div>
+{% endblock %}

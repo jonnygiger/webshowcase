@@ -1,7 +1,8 @@
 import pytest
 import os
 import shutil
-from app import app, db, User, Post, Reaction, TodoItem, Bookmark, Friendship, SharedPost # Added Post, Reaction, Bookmark, Friendship, SharedPost
+from flask import url_for
+from app import app, db, User, Post, Comment, Event, Reaction, TodoItem, Bookmark, Friendship, SharedPost, UserActivity # Added Comment, Event, UserActivity
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 from io import BytesIO # For simulating file uploads
@@ -1100,6 +1101,99 @@ def test_display_no_shared_posts_on_user_profile(client):
     assert f"{user_no_shares.username} has not shared any posts yet." in response.data.decode()
 
 
+# --- Activity Logging Tests ---
+
+def test_new_post_activity_logging(client):
+    """Test that creating a new post logs a 'new_post' activity."""
+    login_test_user(client, username="testuser", password="testpassword")
+    user = get_test_user_obj()
+
+    post_title = "Activity Test Post"
+    post_content = "This post should trigger an activity log."
+
+    # Create a new post
+    response_create_post = client.post('/blog/create', data=dict(
+        title=post_title,
+        content=post_content,
+        hashtags="activity,test"
+    ), follow_redirects=True)
+    assert response_create_post.status_code == 200
+
+    created_post = Post.query.filter_by(title=post_title).first()
+    assert created_post is not None
+
+    # Check for UserActivity
+    activity = UserActivity.query.filter_by(user_id=user.id, activity_type="new_post").first()
+    assert activity is not None
+    assert activity.related_id == created_post.id
+    assert post_content[:100] in activity.content_preview
+    # For link verification, we need an app context to use url_for, or check the string partially
+    # The client fixture runs within an app context, so direct url_for should work if imported or app context is explicit
+    with client.application.app_context():
+        expected_link = url_for('view_post', post_id=created_post.id, _external=True)
+    assert activity.link == expected_link
+    assert activity.user_id == user.id
+
+def test_new_comment_activity_logging(client):
+    """Test that adding a new comment logs a 'new_comment' activity."""
+    # User1 creates a post
+    user1 = create_user_directly("post_author_user", "password")
+    post_by_user1 = create_post_directly(user_id=user1.id, title="Post for Comment Activity")
+
+    # User2 (testuser) logs in and comments
+    login_test_user(client, username="testuser", password="testpassword")
+    commenting_user = get_test_user_obj()
+
+    comment_content = "This is a test comment for activity logging."
+    response_add_comment = client.post(f'/blog/post/{post_by_user1.id}/comment', data=dict(
+        comment_content=comment_content
+    ), follow_redirects=True)
+    assert response_add_comment.status_code == 200
+
+    # Check for UserActivity
+    activity = UserActivity.query.filter_by(user_id=commenting_user.id, activity_type="new_comment").first()
+    assert activity is not None
+    assert activity.related_id == post_by_user1.id # Should relate to the post
+    assert comment_content[:100] in activity.content_preview
+    with client.application.app_context():
+        expected_link = url_for('view_post', post_id=post_by_user1.id, _external=True)
+    assert activity.link == expected_link
+    assert activity.user_id == commenting_user.id
+
+def test_new_event_activity_logging(client):
+    """Test that creating a new event logs a 'new_event' activity."""
+    login_test_user(client, username="testuser", password="testpassword")
+    event_creating_user = get_test_user_obj()
+
+    event_title = "Community Meetup for Activity Test"
+    event_description = "A test event to check activity logging."
+    event_date = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+    event_time = "10:00"
+    event_location = "Virtual"
+
+    response_create_event = client.post('/events/create', data=dict(
+        title=event_title,
+        description=event_description,
+        event_date=event_date,
+        event_time=event_time,
+        location=event_location
+    ), follow_redirects=True)
+    assert response_create_event.status_code == 200 # Redirects to events_list
+
+    created_event = Event.query.filter_by(title=event_title).first()
+    assert created_event is not None
+
+    # Check for UserActivity
+    activity = UserActivity.query.filter_by(user_id=event_creating_user.id, activity_type="new_event").first()
+    assert activity is not None
+    assert activity.related_id == created_event.id
+    assert event_title[:100] in activity.content_preview # As per current implementation
+    with client.application.app_context():
+        expected_link = url_for('view_event', event_id=created_event.id, _external=True)
+    assert activity.link == expected_link
+    assert activity.user_id == event_creating_user.id
+
+
 # --- Profile Editing Tests ---
 
 def test_edit_profile_unauthenticated(client):
@@ -1256,6 +1350,102 @@ def test_edit_profile_post_empty_email(client):
     assert b"Email cannot be empty." in response.data
     db_user = User.query.get(user.id)
     assert db_user.email == original_email # Email should not change
+
+
+# --- User Activity Feed Page Tests ---
+
+def test_user_activity_feed_content(client):
+    """Test the content of the user activity feed page with activities."""
+    login_test_user(client, username="testuser", password="testpassword")
+    user = get_test_user_obj()
+
+    # 1. Create a post as 'testuser' to generate 'new_post' activity
+    post_title = "My Activity Post"
+    post_content_snippet = "This is a post for the activity feed."
+    client.post('/blog/create', data=dict(
+        title=post_title,
+        content=post_content_snippet + " More content here.",
+        hashtags="feedtest"
+    ), follow_redirects=True)
+
+    created_post = Post.query.filter_by(title=post_title, user_id=user.id).first()
+    assert created_post is not None
+
+    # 2. Create another user and a post by them
+    other_user = create_user_directly("otherposterfeed", "password")
+    other_post = create_post_directly(user_id=other_user.id, title="Other User's Post for Comment")
+
+    # 3. 'testuser' comments on 'other_user's post to generate 'new_comment' activity
+    comment_content_snippet = "My comment on other's post."
+    client.post(f'/blog/post/{other_post.id}/comment', data=dict(
+        comment_content=comment_content_snippet + " More details."
+    ), follow_redirects=True)
+
+    # 4. Access 'testuser's activity feed
+    response = client.get(f'/user/{user.username}/activity')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert f"{user.username}'s Activity Feed" in response_data
+
+    # Check for 'new_post' activity
+    assert "Created a new post:" in response_data
+    assert post_content_snippet in response_data
+    with client.application.app_context():
+        post_link = url_for('view_post', post_id=created_post.id, _external=True)
+    assert f'href="{post_link}"' in response_data
+
+    # Check for 'new_comment' activity
+    assert "Commented on a post:" in response_data
+    assert comment_content_snippet in response_data
+    with client.application.app_context():
+        comment_link = url_for('view_post', post_id=other_post.id, _external=True)
+    assert f'href="{comment_link}"' in response_data
+
+    # Check order (newest first - comment should be before post if comment was made after)
+    # This depends on exact timing; for simplicity, we're just checking presence here.
+    # More precise order checking would require freezing time or careful timestamp comparison.
+
+def test_user_activity_feed_no_activities(client):
+    """Test the activity feed page for a user with no activities."""
+    # Create a new user who won't have activities
+    no_activity_user = create_user_directly("noactivityuser", "password")
+    login_test_user(client, username="noactivityuser", password="password")
+
+    response = client.get(f'/user/{no_activity_user.username}/activity')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert f"{no_activity_user.username}'s Activity Feed" in response_data
+    assert "No recent activity to display for noactivityuser." in response_data
+
+def test_link_to_activity_feed_on_profile_page(client):
+    """Test that the link to the activity feed is present on the user's profile page."""
+    login_test_user(client, username="testuser", password="testpassword")
+    user = get_test_user_obj()
+
+    response = client.get(f'/user/{user.username}')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert "View Activity Feed" in response_data
+    with client.application.app_context():
+        expected_url = url_for('user_activity_feed', username=user.username)
+    assert f'href="{expected_url}"' in response_data
+
+def test_user_activity_feed_login_required(client):
+    """Test that accessing the activity feed requires login."""
+    # Ensure no one is logged in (client is fresh from fixture)
+    # Create a user whose activity page we'll try to access
+    target_user = create_user_directly("targetuserforfeed", "password")
+
+    response = client.get(f'/user/{target_user.username}/activity', follow_redirects=False)
+    assert response.status_code == 302
+    assert '/login' in response.location
+
+    # Check flash message on login page
+    login_page_response = client.get(response.location)
+    assert b"You need to be logged in to access this page." in login_page_response.data
 
 
 # --- Hashtag Functionality Tests ---

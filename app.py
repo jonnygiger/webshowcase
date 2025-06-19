@@ -19,7 +19,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost # Add Reaction and Bookmark, Friendship, SharedPost
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity # Add UserActivity
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
 
 app = Flask(__name__)
@@ -546,7 +546,24 @@ def create_post():
 
         new_post_db = Post(title=title, content=content, user_id=user_id, hashtags=hashtags) # Add hashtags
         db.session.add(new_post_db)
-        db.session.commit()
+        db.session.commit() # new_post_db now has an ID
+
+        # Log new_post activity
+        try:
+            activity = UserActivity(
+                user_id=user_id, # Assuming user_id is current_user.id from session
+                activity_type="new_post",
+                related_id=new_post_db.id,
+                content_preview=new_post_db.content[:100] if new_post_db.content else "",
+                link=url_for('view_post', post_id=new_post_db.id, _external=True) # Use _external=True for full URL
+            )
+            db.session.add(activity)
+            db.session.commit()
+        except Exception as e:
+            app.logger.error(f"Error creating UserActivity for new_post: {e}")
+            # Decide if you want to flash a message to the user or just log
+            # flash('Could not log activity due to an internal error.', 'warning')
+            db.session.rollback() # Rollback activity commit if it fails
 
         flash('Blog post created successfully!', 'success')
         return redirect(url_for('blog'))
@@ -704,7 +721,24 @@ def add_comment(post_id):
 
     new_comment_db = Comment(content=comment_content, user_id=user_id, post_id=post.id)
     db.session.add(new_comment_db)
-    db.session.commit()
+    db.session.commit() # new_comment_db now has an ID
+
+    # Log new_comment activity
+    try:
+        activity = UserActivity(
+            user_id=user_id, # user_id of the commenter
+            activity_type="new_comment",
+            related_id=post.id, # id of the post being commented on
+            content_preview=new_comment_db.content[:100] if new_comment_db.content else "",
+            link=url_for('view_post', post_id=post.id, _external=True) # Link to the post
+            # Optionally, could try to append #comment-<comment_id> if view_post supports it
+            # link=url_for('view_post', post_id=post.id, _anchor=f'comment-{new_comment_db.id}', _external=True)
+        )
+        db.session.add(activity)
+        db.session.commit()
+    except Exception as e:
+        app.logger.error(f"Error creating UserActivity for new_comment: {e}")
+        db.session.rollback()
 
     # Prepare data for SocketIO emission (ensure it's serializable)
     new_comment_data = {
@@ -1224,7 +1258,23 @@ def create_event():
             user_id=user_id
         )
         db.session.add(new_event_db)
-        db.session.commit()
+        db.session.commit() # new_event_db now has an ID
+
+        # Log new_event activity
+        try:
+            activity = UserActivity(
+                user_id=user_id, # user_id of the event creator
+                activity_type="new_event",
+                related_id=new_event_db.id,
+                content_preview=new_event_db.title[:100] if new_event_db.title else "", # Preview is event title
+                link=url_for('view_event', event_id=new_event_db.id, _external=True)
+            )
+            db.session.add(activity)
+            db.session.commit()
+        except Exception as e:
+            app.logger.error(f"Error creating UserActivity for new_event: {e}")
+            db.session.rollback()
+
         flash('Event created successfully!', 'success')
         return redirect(url_for('events_list'))
 
@@ -1738,3 +1788,13 @@ def remove_friend(friend_user_id):
         flash(f'You are not currently friends with {friend_user.username}.', 'info')
 
     return redirect(url_for('user_profile', username=friend_user.username))
+
+
+@app.route('/user/<username>/activity')
+@login_required
+def user_activity_feed(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    activities = UserActivity.query.filter_by(user_id=user.id)\
+                                   .order_by(UserActivity.timestamp.desc())\
+                                   .all()
+    return render_template('user_activity.html', user=user, activities=activities)

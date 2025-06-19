@@ -67,6 +67,20 @@ The application now includes a friendship system, allowing users to connect with
         *   `GET /user/<username>/friends`: Publicly accessible page listing a user's friends. Also linked from user profiles.
     *   **Profile Page Integration:** User profiles dynamically display the current friendship status and relevant action buttons (Send Request, Accept/Reject, Remove Friend, View Pending Status).
 
+### User Activity Feed
+
+The application now tracks and displays user activities, providing insight into recent actions within the platform.
+
+*   **Functionality**:
+    *   Tracks user actions such as creating new posts, adding comments to posts, and creating new events.
+    *   Each user has a dedicated activity feed page that shows their recent activities in chronological order (newest first).
+    *   Activities listed in the feed include a description of the action, a preview of the content (e.g., post title, comment snippet), and a direct link to the relevant content (e.g., the post or event page).
+*   **Access**:
+    *   A link to "View Activity Feed" is available on each user's profile page (`/user/<username>`), allowing logged-in users to view the activity of others.
+*   **Models**:
+    *   A `UserActivity` model was introduced to store activity records, including `user_id`, `activity_type`, `related_id` (e.g., post ID, event ID), `content_preview`, `link`, and `timestamp`.
+    *   The `User` model has an `activities` relationship to easily fetch all activities for a user.
+
 ### User Authentication
 
 This application now features a user authentication system.

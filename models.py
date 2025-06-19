@@ -48,6 +48,7 @@ class User(db.Model):
     events = db.relationship('Event', backref='organizer', lazy=True)
     event_rsvps = db.relationship('EventRSVP', backref='attendee', lazy=True)
     reactions = db.relationship('Reaction', backref='user', lazy=True, cascade="all, delete-orphan")
+    activities = db.relationship('UserActivity', backref='user', lazy=True) # Added UserActivity relationship
 
     # Friendship relationships
     sent_friend_requests = db.relationship(
@@ -101,6 +102,18 @@ class User(db.Model):
 
         # Deduplicate in case of any unforeseen issues, though logic should prevent it
         return list(set(friends))
+
+class UserActivity(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    activity_type = db.Column(db.String(50), nullable=False)  # e.g., "new_post", "new_comment", "new_event"
+    related_id = db.Column(db.Integer, nullable=True)  # e.g., post_id, comment_id, event_id
+    content_preview = db.Column(db.Text, nullable=True)  # e.g., a snippet of the post or comment
+    link = db.Column(db.String(255), nullable=True)  # e.g., URL to the post or event
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<UserActivity {self.id} - User {self.user_id}, Type: {self.activity_type}>'
 
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)

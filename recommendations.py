@@ -1,8 +1,9 @@
-from app import db, app # Added app for logger
+from app import db # Added app for logger
 from models import User, Post, Group, Friendship, Like, Event, EventRSVP, Poll, PollVote, Comment, SharedPost, TrendingHashtag # Added SharedPost and TrendingHashtag
 from sqlalchemy import func, or_
 from collections import defaultdict, Counter
 from datetime import datetime, timedelta # Ensure datetime and timedelta are imported
+from flask import current_app
 
 def suggest_users_to_follow(user_id, limit=5):
     """Suggest users who are friends of the current user's friends."""
@@ -673,22 +674,22 @@ def update_trending_hashtags(top_n=10, since_days=7):
     Calculates hashtag frequencies from recent posts, deletes existing trending
     hashtags, and populates the TrendingHashtag table with the new top N hashtags.
     """
-    app.logger.info(f"Starting update_trending_hashtags job. Top N: {top_n}, Since Days: {since_days}")
+    current_app.logger.info(f"Starting update_trending_hashtags job. Top N: {top_n}, Since Days: {since_days}")
     try:
         cutoff_date = datetime.utcnow() - timedelta(days=since_days)
         recent_posts = Post.query.filter(Post.timestamp >= cutoff_date).all()
 
         if not recent_posts:
-            app.logger.info("No recent posts found to update trending hashtags.")
+            current_app.logger.info("No recent posts found to update trending hashtags.")
             # Clear existing hashtags if no recent posts, or decide to keep old ones
             try:
                 db.session.begin_nested() # Start a nested transaction
                 num_deleted = TrendingHashtag.query.delete()
                 db.session.commit() # Commit the deletion
-                app.logger.info(f"Cleared {num_deleted} existing trending hashtags as no recent posts were found.")
+                current_app.logger.info(f"Cleared {num_deleted} existing trending hashtags as no recent posts were found.")
             except Exception as e:
                 db.session.rollback() # Rollback in case of error
-                app.logger.error(f"Error clearing trending hashtags: {e}")
+                current_app.logger.error(f"Error clearing trending hashtags: {e}")
             return
 
         hashtag_counts = Counter()
@@ -699,15 +700,15 @@ def update_trending_hashtags(top_n=10, since_days=7):
                     hashtag_counts.update(tags)
 
         if not hashtag_counts:
-            app.logger.info("No hashtags found in recent posts.")
+            current_app.logger.info("No hashtags found in recent posts.")
             try:
                 db.session.begin_nested()
                 num_deleted = TrendingHashtag.query.delete()
                 db.session.commit()
-                app.logger.info(f"Cleared {num_deleted} existing trending hashtags as no new ones were found.")
+                current_app.logger.info(f"Cleared {num_deleted} existing trending hashtags as no new ones were found.")
             except Exception as e:
                 db.session.rollback()
-                app.logger.error(f"Error clearing trending hashtags: {e}")
+                current_app.logger.error(f"Error clearing trending hashtags: {e}")
             return
 
         top_hashtags_with_scores = hashtag_counts.most_common(top_n)
@@ -725,11 +726,11 @@ def update_trending_hashtags(top_n=10, since_days=7):
                 db.session.add(new_trending_hashtag)
 
         db.session.commit() # Commit the transaction
-        app.logger.info(f"Successfully updated {len(top_hashtags_with_scores)} trending hashtags.")
+        current_app.logger.info(f"Successfully updated {len(top_hashtags_with_scores)} trending hashtags.")
 
     except Exception as e:
         db.session.rollback() # Rollback on any exception during the process
-        app.logger.error(f"Error in update_trending_hashtags job: {e}")
+        current_app.logger.error(f"Error in update_trending_hashtags job: {e}")
 
 
 def get_personalized_feed_posts(user_id, limit=20):
@@ -740,7 +741,7 @@ def get_personalized_feed_posts(user_id, limit=20):
     """
     current_user = User.query.get(user_id)
     if not current_user:
-        app.logger.warning(f"get_personalized_feed_posts: User with ID {user_id} not found.")
+        current_app.logger.warning(f"get_personalized_feed_posts: User with ID {user_id} not found.")
         return []
 
     # --- Scoring Constants ---
@@ -849,7 +850,7 @@ def get_personalized_feed_posts(user_id, limit=20):
                         group_name = group.name
                 add_candidate(post, SCORE_SOURCE_GROUP, "From your group", group_name)
     else:
-        app.logger.info(f"get_personalized_feed_posts: Post model does not have 'group_id'. Skipping group posts source for user {user_id}.")
+        current_app.logger.info(f"get_personalized_feed_posts: Post model does not have 'group_id'. Skipping group posts source for user {user_id}.")
 
 
     # --- Combine, Sort, and Limit ---
@@ -868,5 +869,5 @@ def get_personalized_feed_posts(user_id, limit=20):
     # For debugging or future use, one might want to return reasons too:
     result_with_reasons = [(item['post'], item['reason']) for item in final_candidate_list[:limit]]
 
-    app.logger.info(f"get_personalized_feed_posts: Generated {len(result_with_reasons)} posts for user {user_id}. Candidates found: {len(feed_candidates)}")
+    current_app.logger.info(f"get_personalized_feed_posts: Generated {len(result_with_reasons)} posts for user {user_id}. Candidates found: {len(feed_candidates)}")
     return result_with_reasons

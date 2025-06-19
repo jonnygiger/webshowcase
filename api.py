@@ -245,3 +245,24 @@ class OnThisDayResource(Resource):
             'on_this_day_posts': [post.to_dict() for post in posts_on_this_day],
             'on_this_day_events': [event.to_dict() for event in events_on_this_day]
         }, 200
+
+class UserStatsResource(Resource):
+    @jwt_required()
+    def get(self, user_id):
+        current_user_id = get_jwt_identity()
+
+        # Ensure the user_id from path is treated as the same type as current_user_id (usually int)
+        try:
+            target_user_id = int(user_id)
+        except ValueError:
+            return {'message': 'Invalid user ID format'}, 400
+
+        if target_user_id != current_user_id:
+            # Basic authorization: only the user can see their own stats.
+            # In a more complex system, admins or friends might have access.
+            return {'message': 'Unauthorized to view these stats'}, 403
+
+        user = User.query.get_or_404(target_user_id)
+
+        stats = user.get_stats()
+        return stats, 200

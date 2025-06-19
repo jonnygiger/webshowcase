@@ -21,7 +21,7 @@ migrate = Migrate()
 # and definitely before db.init_app
 from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity # Add UserActivity
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
-from recommendations import suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join, suggest_events_to_attend, suggest_polls_to_vote # Updated import
+from recommendations import suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join, suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags # Updated import
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
@@ -1841,14 +1841,14 @@ def recommendations_view():
     suggested_users = suggest_users_to_follow(user_id, limit=5)
     suggested_posts = suggest_posts_to_read(user_id, limit=5)
     suggested_groups = suggest_groups_to_join(user_id, limit=5)
-
-    # Add new calls
     suggested_events = suggest_events_to_attend(user_id, limit=5)
     suggested_polls = suggest_polls_to_vote(user_id, limit=5)
+    suggested_hashtags = suggest_hashtags(user_id, limit=5)
 
     return render_template('recommendations.html',
                            suggested_users=suggested_users,
                            suggested_posts=suggested_posts,
                            suggested_groups=suggested_groups,
-                           suggested_events=suggested_events, # Pass to template
-                           suggested_polls=suggested_polls)   # Pass to template
+                           suggested_events=suggested_events,
+                           suggested_polls=suggested_polls,
+                           suggested_hashtags=suggested_hashtags)

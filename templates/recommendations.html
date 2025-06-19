@@ -101,7 +101,7 @@
     </section>
 
     <!-- Suggested Polls -->
-    <section> {# No mb-5 if it's the last section in this container #}
+    <section class="mb-5">
         <h2>Suggested Polls to Participate In</h2>
         {% if suggested_polls %}
             <div class="list-group">
@@ -119,6 +119,22 @@
             </div>
         {% else %}
             <p>No poll suggestions at the moment. Why not create one?</p>
+        {% endif %}
+    </section>
+
+    <!-- Suggested Hashtags -->
+    <section> {# No mb-5 as this is now the last section #}
+        <h2>Recommended Hashtags</h2>
+        {% if suggested_hashtags and suggested_hashtags|length > 0 %}
+            <div class="list-group">
+                {% for tag in suggested_hashtags %}
+                    <a href="{{ url_for('view_hashtag_posts', tag=tag) }}" class="list-group-item list-group-item-action">
+                        #{{ tag }}
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No new hashtags to suggest right now. Explore more posts to get hashtag recommendations!</p>
         {% endif %}
     </section>
 </div>

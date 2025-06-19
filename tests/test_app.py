@@ -6,9 +6,11 @@ from flask import url_for
 from flask_socketio import SocketIOTestClient
 from app import app, db, User, Post, Comment, Reaction, TodoItem, Bookmark, Friendship, SharedPost, UserActivity, Like, Group # Added Like, Group
 from models import group_members, Event, EventRSVP, Poll, PollOption, PollVote # Import new models
-from recommendations import suggest_events_to_attend, suggest_polls_to_vote # Import new recommendation functions
+from recommendations import suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags # Import new recommendation functions
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
+from unittest.mock import patch, MagicMock
+from collections import Counter
 from io import BytesIO # For simulating file uploads
 
 @pytest.fixture
@@ -2244,3 +2246,214 @@ def test_recommendations_route_without_event_and_poll_suggestions(client):
 
     assert "<h3>Suggested Polls to Participate In</h3>" in response_data # Section title
     assert "No poll suggestions at the moment. Why not create one?" in response_data
+    assert "<h3>Recommended Hashtags</h3>" in response_data # Check for the new section title
+    # Depending on data setup, check for specific hashtags or the fallback message
+    # For a fresh user with no hashtag interaction and some posts with hashtags in DB:
+    # assert "No new hashtags to suggest right now." not in response_data # Assuming some are generated
+    # Or if no hashtags are expected for this specific test user:
+    assert "No new hashtags to suggest right now." in response_data # Fallback if no suggestions
+
+
+# --- Hashtag Recommendation Logic Tests ---
+
+class TestHashtagRecommendations:
+
+    @patch('recommendations.Post')
+    def test_suggest_hashtags_basic_suggestion(self, MockPost, client):
+        # Needs client fixture for app_context if function uses db.session implicitly,
+        # or if Post model is used in a way that requires app context.
+        # recommendations.py uses Post.query.all() etc. which needs context.
+        with client.application.app_context():
+            mock_user = MagicMock(spec=User)
+            mock_user.id = 1
+
+            mock_other_user = MagicMock(spec=User)
+            mock_other_user.id = 2
+
+            all_posts_mock = [
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="python,flask,web"),
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="python,javascript,css"),
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="flask,testing"),
+                MagicMock(spec=Post, user_id=mock_user.id, hashtags="python,general"), # Current user's post
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="newtag,unique,flask"),
+            ]
+
+            user_posts_mock = [
+                all_posts_mock[3] # The post by mock_user
+            ]
+
+            # Configure the mock Post.query object
+            MockPost.query.all.return_value = all_posts_mock
+            MockPost.query.filter_by.return_value.all.return_value = user_posts_mock
+
+            suggestions = suggest_hashtags(user_id=mock_user.id, limit=3)
+
+            # Expected popular tags from all_posts: python (3), flask (3), web (1), javascript (1), css (1), testing (1), newtag (1), unique (1), general (1)
+            # User used: python, general
+            # Remaining popular: flask (3), web (1), javascript (1), css (1), testing (1), newtag (1), unique (1)
+            # Expected: ['flask', 'web', 'javascript'] or ['flask', 'newtag', 'unique'] or ['flask', 'testing', 'javascript'] etc.
+            # Order of equally frequent items from Counter.most_common() can be arbitrary.
+            # Let's check presence and that user's tags are not there.
+
+            assert 'flask' in suggestions
+            assert 'python' not in suggestions
+            assert 'general' not in suggestions
+            assert len(suggestions) <= 3
+
+            # More specific check for this dataset:
+            # Frequencies: flask:3, python:3, web:1, javascript:1, css:1, testing:1, newtag:1, unique:1, general:1
+            # User used: python, general
+            # Expected available: flask (3), web(1), javascript(1), css(1), testing(1), newtag(1), unique(1)
+            # Most common is 'flask'. Then others are count 1.
+            # We expect 'flask' and two others from the count 1 list.
+            expected_first = 'flask'
+            possible_next = {'web', 'javascript', 'css', 'testing', 'newtag', 'unique'}
+
+            assert suggestions[0] == expected_first
+            assert suggestions[1] in possible_next
+            assert suggestions[2] in possible_next
+            assert suggestions[1] != suggestions[2]
+
+
+    @patch('recommendations.Post')
+    def test_suggest_hashtags_limit_respected(self, MockPost, client):
+        with client.application.app_context():
+            mock_user = MagicMock(spec=User, id=1)
+            mock_other_user = MagicMock(spec=User, id=2)
+
+            all_posts_mock = [
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="python,flask,web,popular"),
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="python,javascript,css,popular"),
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="flask,testing,popular"),
+                MagicMock(spec=Post, user_id=mock_user.id, hashtags="python,general"),
+            ]
+            user_posts_mock = [all_posts_mock[3]]
+
+            MockPost.query.all.return_value = all_posts_mock
+            MockPost.query.filter_by.return_value.all.return_value = user_posts_mock
+
+            suggestions = suggest_hashtags(user_id=mock_user.id, limit=2)
+            # Popular: popular (3), python (3), flask (2), web(1), javascript(1), css(1), testing(1), general(1)
+            # User used: python, general
+            # Available: popular (3), flask (2), web(1), javascript(1), css(1), testing(1)
+            # Expected: ['popular', 'flask']
+            assert len(suggestions) == 2
+            assert 'popular' in suggestions
+            assert 'flask' in suggestions
+            assert 'python' not in suggestions
+            assert 'general' not in suggestions
+
+
+    @patch('recommendations.Post')
+    def test_suggest_hashtags_user_used_all_popular(self, MockPost, client):
+        with client.application.app_context():
+            mock_user = MagicMock(spec=User, id=1)
+            mock_other_user = MagicMock(spec=User, id=2)
+
+            all_posts_mock = [
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="common,tag1"),
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="common,tag2"),
+                MagicMock(spec=Post, user_id=mock_user.id, hashtags="common,tag1,tag2,othertag"), # User used all common and then some
+            ]
+            user_posts_mock = [all_posts_mock[2]]
+
+            MockPost.query.all.return_value = all_posts_mock
+            MockPost.query.filter_by.return_value.all.return_value = user_posts_mock
+
+            suggestions = suggest_hashtags(user_id=mock_user.id, limit=3)
+            # Popular: common(3), tag1(2), tag2(2), othertag(1)
+            # User used: common, tag1, tag2, othertag
+            # Available: None
+            assert suggestions == []
+
+    @patch('recommendations.Post')
+    def test_suggest_hashtags_no_posts_in_db(self, MockPost, client):
+        with client.application.app_context():
+            mock_user = MagicMock(spec=User, id=1)
+            MockPost.query.all.return_value = []
+            # filter_by().all() will not be called if all_posts is empty, but good to mock defensively
+            MockPost.query.filter_by.return_value.all.return_value = []
+
+
+            suggestions = suggest_hashtags(user_id=mock_user.id, limit=3)
+            assert suggestions == []
+
+    @patch('recommendations.Post')
+    def test_suggest_hashtags_user_has_no_posts(self, MockPost, client):
+        with client.application.app_context():
+            mock_user = MagicMock(spec=User, id=1)
+            mock_other_user = MagicMock(spec=User, id=2)
+
+            all_posts_mock = [
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="python,flask,web"),
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="python,javascript,css"),
+                MagicMock(spec=Post, user_id=mock_other_user.id, hashtags="flask,testing"),
+            ]
+            # User has no posts
+            user_posts_mock = []
+
+            MockPost.query.all.return_value = all_posts_mock
+            MockPost.query.filter_by.return_value.all.return_value = user_posts_mock
+
+            suggestions = suggest_hashtags(user_id=mock_user.id, limit=3)
+            # Popular: python(2), flask(2), web(1), javascript(1), css(1), testing(1)
+            # User used: None
+            # Expected: ['python', 'flask', 'web'] (or other combination of top 3)
+
+            assert 'python' in suggestions
+            assert 'flask' in suggestions
+            assert len(suggestions) == 3 # Should get 3 suggestions
+
+            # Check that one of the "count 1" tags is present as the third item
+            possible_third = {'web', 'javascript', 'css', 'testing'}
+            assert suggestions[2] in possible_third
+
+
+    @patch('recommendations.Post')
+    def test_suggest_hashtags_empty_hashtag_strings_and_none(self, MockPost, client):
+        with client.application.app_context():
+            mock_user = MagicMock(spec=User, id=1)
+            all_posts_mock = [
+                MagicMock(spec=Post, user_id=2, hashtags="tag1,tag2"),
+                MagicMock(spec=Post, user_id=2, hashtags=""), # Empty string
+                MagicMock(spec=Post, user_id=2, hashtags=None), # None value
+                MagicMock(spec=Post, user_id=2, hashtags="tag1,,tag3"), # Empty part
+            ]
+            user_posts_mock = []
+            MockPost.query.all.return_value = all_posts_mock
+            MockPost.query.filter_by.return_value.all.return_value = user_posts_mock
+
+            suggestions = suggest_hashtags(user_id=mock_user.id, limit=3)
+            # Expected: tag1 (2), tag2 (1), tag3 (1)
+            assert 'tag1' in suggestions
+            assert 'tag2' in suggestions # or tag3
+            assert 'tag3' in suggestions # or tag2
+            assert len(suggestions) == 3
+            assert "" not in suggestions # Ensure empty string from bad data isn't suggested
+            assert None not in suggestions
+
+    @patch('recommendations.Post')
+    def test_suggest_hashtags_output_uniqueness(self, MockPost, client):
+        with client.application.app_context():
+            mock_user = MagicMock(spec=User, id=1)
+            # Test data where a tag might be repeated in popular_hashtags if not handled
+            all_posts_mock = [
+                MagicMock(spec=Post, user_id=2, hashtags="super,super,super"), # 'super' is very popular
+                MagicMock(spec=Post, user_id=2, hashtags="cool,awesome"),
+            ]
+            user_posts_mock = [] # User hasn't used any tags
+
+            MockPost.query.all.return_value = all_posts_mock
+            MockPost.query.filter_by.return_value.all.return_value = user_posts_mock
+
+            suggestions = suggest_hashtags(user_id=mock_user.id, limit=3)
+            # Counter will have {'super':3, 'cool':1, 'awesome':1}
+            # most_common() will give [('super',3), ('cool',1), ('awesome',1)] (order of cool/awesome may vary)
+            # The list of tag strings from this is ['super', 'cool', 'awesome']
+            # The function should return unique tags.
+            assert len(suggestions) == 3 # or less if fewer unique tags
+            assert suggestions.count('super') == 1 # Ensure 'super' appears only once
+            assert 'super' in suggestions
+            assert 'cool' in suggestions
+            assert 'awesome' in suggestions
+            assert len(set(suggestions)) == len(suggestions) # Check all elements are unique

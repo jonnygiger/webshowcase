@@ -305,3 +305,36 @@ def suggest_polls_to_vote(user_id, limit=5):
     suggested_polls = [poll_map[pid] for pid in final_poll_ids if pid in poll_map]
 
     return suggested_polls
+
+
+def suggest_hashtags(user_id, limit=5):
+    """Suggest popular hashtags not yet used by the user."""
+    all_posts = Post.query.all()
+    if not all_posts:
+        return []
+
+    hashtag_counts = Counter()
+    for post in all_posts:
+        if post.hashtags:
+            tags = [tag.strip() for tag in post.hashtags.split(',') if tag.strip()]
+            hashtag_counts.update(tags)
+
+    if not hashtag_counts:
+        return []
+
+    user_posts = Post.query.filter_by(user_id=user_id).all()
+    user_hashtags = set()
+    if user_posts:
+        for post in user_posts:
+            if post.hashtags:
+                tags = [tag.strip() for tag in post.hashtags.split(',') if tag.strip()]
+                for tag in tags:
+                    user_hashtags.add(tag)
+
+    # Get hashtags sorted by popularity
+    popular_hashtags = [tag for tag, count in hashtag_counts.most_common()]
+
+    # Filter out hashtags already used by the user
+    suggested_tags = [tag for tag in popular_hashtags if tag not in user_hashtags]
+
+    return suggested_tags[:limit]

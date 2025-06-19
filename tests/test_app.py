@@ -1,7 +1,7 @@
 import pytest
 import os
 import shutil
-from app import app, db, User, Post, Reaction, TodoItem, Bookmark # Added Post, Reaction, Bookmark
+from app import app, db, User, Post, Reaction, TodoItem, Bookmark, Friendship # Added Post, Reaction, Bookmark, Friendship
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 from io import BytesIO # For simulating file uploads
@@ -642,3 +642,209 @@ def test_view_bookmarks_not_logged_in(client):
     assert response.status_code == 302
     assert '/login' in response.location
     assert b"You need to be logged in to access this page." in client.get(response.location).data
+
+
+# --- Friendship Tests ---
+
+def test_send_friend_request(client):
+    """Test sending a friend request."""
+    user1 = create_user_directly("user1send", "pass1")
+    user2 = create_user_directly("user2receive", "pass2")
+
+    login_test_user(client, username="user1send", password="pass1")
+
+    # user1 sends a friend request to user2
+    response = client.post(f'/user/{user2.id}/send_friend_request', follow_redirects=True)
+    assert response.status_code == 200 # Redirects to user2's profile
+    assert b"Friend request sent successfully." in response.data
+
+    # Verify Friendship record
+    friend_request = Friendship.query.filter_by(user_id=user1.id, friend_id=user2.id).first()
+    assert friend_request is not None
+    assert friend_request.status == 'pending'
+
+    # Attempt to send again
+    response_again = client.post(f'/user/{user2.id}/send_friend_request', follow_redirects=True)
+    assert response_again.status_code == 200
+    assert b"Friend request already sent or received and pending." in response_again.data
+
+    # Attempt to send to self
+    response_self = client.post(f'/user/{user1.id}/send_friend_request', follow_redirects=True)
+    assert response_self.status_code == 200
+    assert b"You cannot send a friend request to yourself." in response_self.data
+
+def test_accept_friend_request(client):
+    """Test accepting a friend request."""
+    user1 = create_user_directly("user1acceptor", "pass1") # Will send request
+    user2 = create_user_directly("user2acceptee", "pass2") # Will receive and accept
+
+    # user1 sends request to user2
+    login_test_user(client, username="user1acceptor", password="pass1")
+    client.post(f'/user/{user2.id}/send_friend_request', follow_redirects=True)
+
+    friend_request_obj = Friendship.query.filter_by(user_id=user1.id, friend_id=user2.id).first()
+    assert friend_request_obj is not None
+    request_id = friend_request_obj.id
+
+    # user2 logs in and accepts the request
+    login_test_user(client, username="user2acceptee", password="pass2")
+    response_accept = client.post(f'/friend_request/{request_id}/accept', follow_redirects=True)
+    assert response_accept.status_code == 200 # Redirects to user1's profile
+    assert b"Friend request accepted successfully!" in response_accept.data
+
+    updated_request = Friendship.query.get(request_id)
+    assert updated_request.status == 'accepted'
+
+    # user1 (non-recipient) attempts to accept again (should not change anything or error out gracefully)
+    login_test_user(client, username="user1acceptor", password="pass1")
+    response_accept_by_sender = client.post(f'/friend_request/{request_id}/accept', follow_redirects=True)
+    assert response_accept_by_sender.status_code == 200 # Redirects to friend_requests page
+    assert b"You are not authorized to respond to this friend request." in response_accept_by_sender.data
+    assert Friendship.query.get(request_id).status == 'accepted' # Status remains 'accepted'
+
+def test_reject_friend_request(client):
+    """Test rejecting a friend request."""
+    user1 = create_user_directly("user1rejector", "pass1") # Will send
+    user2 = create_user_directly("user2rejectee", "pass2") # Will reject
+
+    login_test_user(client, username="user1rejector", password="pass1")
+    client.post(f'/user/{user2.id}/send_friend_request', follow_redirects=True)
+
+    friend_request_obj = Friendship.query.filter_by(user_id=user1.id, friend_id=user2.id).first()
+    assert friend_request_obj is not None
+    request_id = friend_request_obj.id
+
+    login_test_user(client, username="user2rejectee", password="pass2")
+    response_reject = client.post(f'/friend_request/{request_id}/reject', follow_redirects=True)
+    assert response_reject.status_code == 200 # Redirects to friend_requests page
+    assert b"Friend request rejected." in response_reject.data
+
+    updated_request = Friendship.query.get(request_id)
+    assert updated_request.status == 'rejected'
+
+    # user1 (non-recipient) attempts to reject (should not change or error out gracefully)
+    login_test_user(client, username="user1rejector", password="pass1")
+    response_reject_by_sender = client.post(f'/friend_request/{request_id}/reject', follow_redirects=True)
+    assert response_reject_by_sender.status_code == 200
+    assert b"You are not authorized to respond to this friend request." in response_reject_by_sender.data
+    assert Friendship.query.get(request_id).status == 'rejected' # Status remains 'rejected'
+
+def test_remove_friend(client):
+    """Test removing a friend."""
+    user1 = create_user_directly("user1remover", "pass1")
+    user2 = create_user_directly("user2removee", "pass2")
+
+    # Establish friendship
+    login_test_user(client, username="user1remover", password="pass1")
+    client.post(f'/user/{user2.id}/send_friend_request', follow_redirects=True)
+    request_obj = Friendship.query.filter_by(user_id=user1.id, friend_id=user2.id).first()
+
+    login_test_user(client, username="user2removee", password="pass2")
+    client.post(f'/friend_request/{request_obj.id}/accept', follow_redirects=True)
+    assert Friendship.query.get(request_obj.id).status == 'accepted'
+
+    # user1 removes user2
+    login_test_user(client, username="user1remover", password="pass1")
+    response_remove = client.post(f'/user/{user2.id}/remove_friend', follow_redirects=True)
+    assert response_remove.status_code == 200 # Redirects to user2's profile
+    assert b"You are no longer friends with user2removee." in response_remove.data
+
+    # Verify Friendship record is deleted
+    assert Friendship.query.get(request_obj.id) is None
+
+    # Attempt to remove again
+    response_remove_again = client.post(f'/user/{user2.id}/remove_friend', follow_redirects=True)
+    assert response_remove_again.status_code == 200
+    assert b"You are not currently friends with user2removee." in response_remove_again.data
+
+def test_view_friend_requests_page(client):
+    """Test viewing the friend requests page."""
+    user1 = create_user_directly("user1viewreqsender", "pass1")
+    user2 = create_user_directly("user2viewreqreceiver", "pass2")
+
+    # user1 sends request to user2
+    login_test_user(client, username="user1viewreqsender", password="pass1")
+    client.post(f'/user/{user2.id}/send_friend_request', follow_redirects=True)
+
+    # Login as user2 and view requests
+    login_test_user(client, username="user2viewreqreceiver", password="pass2")
+    response = client.get('/friend_requests')
+    assert response.status_code == 200
+    assert b"user1viewreqsender" in response.data # user1's username should be there
+    assert b"Accept" in response.data # Accept button should be there
+
+    # Login as user1 and view requests (should be empty for user1)
+    login_test_user(client, username="user1viewreqsender", password="pass1")
+    response_user1 = client.get('/friend_requests')
+    assert response_user1.status_code == 200
+    assert b"You have no pending friend requests." in response_user1.data
+
+def test_view_friends_list_page(client):
+    """Test viewing a user's friends list."""
+    user1 = create_user_directly("user1friendlist", "pass1")
+    user2 = create_user_directly("user2friendlist", "pass2")
+    user3 = create_user_directly("user3friendlist", "pass3") # Not a friend of user1
+
+    # user1 and user2 become friends
+    login_test_user(client, username="user1friendlist", password="pass1")
+    client.post(f'/user/{user2.id}/send_friend_request', follow_redirects=True)
+    request_obj = Friendship.query.filter_by(user_id=user1.id, friend_id=user2.id).first()
+    login_test_user(client, username="user2friendlist", password="pass2")
+    client.post(f'/friend_request/{request_obj.id}/accept', follow_redirects=True)
+
+    # View user1's friends list (publicly)
+    client.get('/logout', follow_redirects=True) # Logout first
+    response_user1_friends = client.get(f'/user/{user1.username}/friends')
+    assert response_user1_friends.status_code == 200
+    assert f"{user1.username}'s Friends".encode() in response_user1_friends.data
+    assert user2.username.encode() in response_user1_friends.data
+    assert user3.username.encode() not in response_user1_friends.data # user3 is not a friend
+
+    # View user2's friends list
+    response_user2_friends = client.get(f'/user/{user2.username}/friends')
+    assert response_user2_friends.status_code == 200
+    assert f"{user2.username}'s Friends".encode() in response_user2_friends.data
+    assert user1.username.encode() in response_user2_friends.data
+
+    # View user3's friends list (should be empty)
+    response_user3_friends = client.get(f'/user/{user3.username}/friends')
+    assert response_user3_friends.status_code == 200
+    assert f"{user3.username} has no friends yet.".encode() in response_user3_friends.data
+
+def test_profile_page_friendship_actions(client):
+    """Test friendship action buttons on user profile pages."""
+    user1 = create_user_directly("user1profileactions", "pass1")
+    user2 = create_user_directly("user2profileactions", "pass2")
+
+    # Scenario 1: Not Friends
+    login_test_user(client, username="user1profileactions", password="pass1")
+    response = client.get(f'/user/{user2.username}')
+    assert response.status_code == 200
+    assert b"Send Friend Request" in response.data
+
+    # Scenario 2: Request Sent by Current User (user1 to user2)
+    client.post(f'/user/{user2.id}/send_friend_request', follow_redirects=True) # user1 sends to user2
+    response = client.get(f'/user/{user2.username}') # user1 views user2's profile
+    assert response.status_code == 200
+    assert b"Friend request pending" in response.data
+    assert b"Send Friend Request" not in response.data
+
+    # Scenario 3: Request Received by Current User (user2 views user1's profile)
+    login_test_user(client, username="user2profileactions", password="pass2")
+    response = client.get(f'/user/{user1.username}') # user2 views user1's profile
+    assert response.status_code == 200
+    assert b"Accept Friend Request" in response.data
+    assert b"Reject Friend Request" in response.data
+    assert b"Send Friend Request" not in response.data
+
+    # Scenario 4: Already Friends
+    # user2 accepts user1's request
+    request_obj = Friendship.query.filter_by(user_id=user1.id, friend_id=user2.id).first()
+    client.post(f'/friend_request/{request_obj.id}/accept', follow_redirects=True)
+
+    login_test_user(client, username="user1profileactions", password="pass1") # Back to user1
+    response = client.get(f'/user/{user2.username}') # user1 views user2's profile
+    assert response.status_code == 200
+    assert b"Remove Friend" in response.data
+    assert b"Send Friend Request" not in response.data
+    assert b"Accept Friend Request" not in response.data

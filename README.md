@@ -40,6 +40,33 @@ This is a basic Flask application.
 
 ## Features
 
+### Friendship System
+
+The application now includes a friendship system, allowing users to connect with each other.
+
+*   **Functionality:**
+    *   Users can send friend requests to other users.
+    *   Users can view, accept, or reject incoming friend requests.
+    *   Users have a friends list, visible on their profile and on a dedicated friends page.
+    *   Users can remove existing friends.
+
+*   **Models:**
+    *   A `Friendship` model (`friendship` table) was introduced to manage the relationships, storing the sender (`user_id`), receiver (`friend_id`), status (`pending`, `accepted`, `rejected`), and `timestamp` of the request/friendship.
+    *   The `User` model was updated with `sent_friend_requests` and `received_friend_requests` relationships to `Friendship`, and a helper method `get_friends()` to retrieve a user's accepted friends.
+
+*   **Key API Endpoints & UI Integration:**
+    *   **Sending a Request:**
+        *   `POST /user/<target_user_id>/send_friend_request`: Button available on other users' profiles if not already friends or request pending.
+    *   **Managing Received Requests:**
+        *   `GET /friend_requests`: Dedicated page accessible from the navigation bar (for logged-in users) listing all pending incoming requests.
+        *   `POST /friend_request/<request_id>/accept`: "Accept" button on the "Friend Requests" page and directly on the sender's profile if a request is pending.
+        *   `POST /friend_request/<request_id>/reject`: "Reject" button on the "Friend Requests" page and directly on the sender's profile if a request is pending.
+    *   **Managing Existing Friends:**
+        *   `POST /user/<friend_user_id>/remove_friend`: "Remove Friend" button on a friend's profile page and on the current user's own friends list page.
+    *   **Viewing Friends:**
+        *   `GET /user/<username>/friends`: Publicly accessible page listing a user's friends. Also linked from user profiles.
+    *   **Profile Page Integration:** User profiles dynamically display the current friendship status and relevant action buttons (Send Request, Accept/Reject, Remove Friend, View Pending Status).
+
 ### User Authentication
 
 This application now features a user authentication system.

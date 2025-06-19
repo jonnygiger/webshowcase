@@ -19,7 +19,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark # Add Reaction and Bookmark
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship # Add Reaction and Bookmark, Friendship
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
 
 app = Flask(__name__)
@@ -182,10 +182,36 @@ def user_profile(username):
             post_item.average_rating = 0
 
     bookmarked_post_ids = set()
-    if 'user_id' in session:
-        current_user_id = session['user_id']
+    current_user_id = session.get('user_id') # Get current_user_id for friendship status
+    if current_user_id:
         bookmarks = Bookmark.query.filter_by(user_id=current_user_id).all()
         bookmarked_post_ids = {bookmark.post_id for bookmark in bookmarks}
+
+    friendship_status = None
+    pending_request_id = None
+    if current_user_id and current_user_id != user.id:
+        existing_friendship = Friendship.query.filter(
+            or_(
+                (Friendship.user_id == current_user_id) & (Friendship.friend_id == user.id),
+                (Friendship.user_id == user.id) & (Friendship.friend_id == current_user_id)
+            )
+        ).first()
+        if existing_friendship:
+            if existing_friendship.status == 'accepted':
+                friendship_status = 'friends'
+            elif existing_friendship.status == 'pending':
+                if existing_friendship.user_id == current_user_id: # Current user sent the request
+                    friendship_status = 'pending_sent'
+                else: # Current user received the request
+                    friendship_status = 'pending_received'
+                    pending_request_id = existing_friendship.id
+            elif existing_friendship.status == 'rejected':
+                if existing_friendship.user_id == current_user_id: # Current user's request was rejected by 'user'
+                    friendship_status = 'rejected_sent'
+                else: # Current user rejected a request from 'user'
+                    friendship_status = 'rejected_received'
+        else:
+            friendship_status = 'not_friends'
 
     # Pass the whole user object to the template, which includes user.profile_picture
     return render_template('user.html',
@@ -194,7 +220,9 @@ def user_profile(username):
                            posts=user_posts,
                            user_gallery_images=user_gallery_images_list, # Clarified variable name
                            organized_events=organized_events,
-                           bookmarked_post_ids=bookmarked_post_ids)
+                           bookmarked_post_ids=bookmarked_post_ids,
+                           friendship_status=friendship_status,
+                           pending_request_id=pending_request_id)
 
 @app.route('/todo', methods=['GET', 'POST'])
 @login_required
@@ -1417,3 +1445,171 @@ def leave_group(group_id):
         flash('You are not a member of this group.', 'info')
 
     return redirect(url_for('view_group', group_id=group_id))
+
+
+@app.route('/user/<int:target_user_id>/send_friend_request', methods=['POST'])
+@login_required
+def send_friend_request(target_user_id):
+    current_user_id = session.get('user_id')
+    if not current_user_id: # Should be caught by @login_required
+        flash('Please log in to send friend requests.', 'danger')
+        return redirect(url_for('login'))
+
+    target_user = User.query.get(target_user_id)
+    if not target_user:
+        flash('Target user not found.', 'danger')
+        return redirect(request.referrer or url_for('hello_world'))
+
+    if current_user_id == target_user_id:
+        flash('You cannot send a friend request to yourself.', 'warning')
+        return redirect(url_for('user_profile', username=target_user.username))
+
+    # Check if a friendship request already exists or they are already friends
+    existing_friendship = Friendship.query.filter(
+        or_(
+            (Friendship.user_id == current_user_id) & (Friendship.friend_id == target_user_id),
+            (Friendship.user_id == target_user_id) & (Friendship.friend_id == current_user_id)
+        )
+    ).first()
+
+    if existing_friendship:
+        if existing_friendship.status == 'pending':
+            # If the current user is the one who received the pending request, they can't send another one.
+            # If the current user is the one who sent it, this also applies.
+            flash('Friend request already sent or received and pending.', 'info')
+        elif existing_friendship.status == 'accepted':
+            flash('You are already friends with this user.', 'info')
+        elif existing_friendship.status == 'rejected':
+             # Allow sending a new request if a previous one was rejected by the target_user
+            if existing_friendship.friend_id == current_user_id: # If current user rejected it
+                flash('You previously rejected a friend request from this user. You can accept it from your requests page if still valid, or they can send a new one.', 'info')
+            else: # target_user rejected it, so current_user can send a new one
+                db.session.delete(existing_friendship) # Remove old rejected request
+                new_request = Friendship(user_id=current_user_id, friend_id=target_user_id, status='pending')
+                db.session.add(new_request)
+                db.session.commit()
+                flash('Friend request sent successfully. (Previous rejection overridden)', 'success')
+        return redirect(url_for('user_profile', username=target_user.username))
+
+    # If no existing friendship or a previous one was rejected by target_user and now deleted
+    new_request = Friendship(user_id=current_user_id, friend_id=target_user_id, status='pending')
+    db.session.add(new_request)
+    db.session.commit()
+
+    flash('Friend request sent successfully.', 'success')
+    return redirect(url_for('user_profile', username=target_user.username))
+
+
+@app.route('/friend_requests')
+@login_required
+def view_friend_requests():
+    current_user_id = session.get('user_id')
+    if not current_user_id: # Should be caught by @login_required
+        flash('Please log in to view friend requests.', 'danger')
+        return redirect(url_for('login'))
+
+    # Incoming friend requests for the current user that are pending
+    # The backref 'requester' on Friendship model (linked to Friendship.user_id)
+    # will give us the User object of who sent the request.
+    pending_requests = Friendship.query.filter_by(friend_id=current_user_id, status='pending').all()
+
+    # For each Friendship object in pending_requests, `item.requester` will be the User who sent it.
+    return render_template('friend_requests.html', pending_requests=pending_requests)
+
+
+@app.route('/user/<username>/friends')
+def view_friends_list(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    friends_list = user.get_friends() # This method should return a list of User objects
+    return render_template('friends_list.html', user=user, friends_list=friends_list)
+
+
+@app.route('/friend_request/<int:request_id>/accept', methods=['POST'])
+@login_required
+def accept_friend_request(request_id):
+    current_user_id = session.get('user_id')
+    friend_request = Friendship.query.get(request_id)
+
+    if not friend_request:
+        flash('Friend request not found.', 'danger')
+        return redirect(url_for('view_friend_requests'))
+
+    if friend_request.friend_id != current_user_id:
+        flash('You are not authorized to respond to this friend request.', 'danger')
+        return redirect(url_for('view_friend_requests'))
+
+    if friend_request.status == 'pending':
+        friend_request.status = 'accepted'
+        db.session.commit()
+        flash('Friend request accepted successfully!', 'success')
+        # Redirect to the profile of the user who sent the request
+        return redirect(url_for('user_profile', username=friend_request.requester.username))
+    elif friend_request.status == 'accepted':
+        flash('You are already friends with this user.', 'info')
+    else: # 'rejected' or other statuses
+        flash('This friend request is no longer pending or cannot be accepted.', 'warning')
+
+    return redirect(url_for('view_friend_requests'))
+
+
+@app.route('/friend_request/<int:request_id>/reject', methods=['POST'])
+@login_required
+def reject_friend_request(request_id):
+    current_user_id = session.get('user_id')
+    friend_request = Friendship.query.get(request_id)
+
+    if not friend_request:
+        flash('Friend request not found.', 'danger')
+        return redirect(url_for('view_friend_requests'))
+
+    if friend_request.friend_id != current_user_id:
+        flash('You are not authorized to respond to this friend request.', 'danger')
+        return redirect(url_for('view_friend_requests'))
+
+    if friend_request.status == 'pending':
+        friend_request.status = 'rejected' # Or db.session.delete(friend_request)
+        db.session.commit()
+        flash('Friend request rejected.', 'success')
+    elif friend_request.status == 'rejected':
+        flash('This friend request has already been rejected.', 'info')
+    else: # 'accepted' or other statuses
+        flash('This friend request is no longer pending or cannot be rejected.', 'warning')
+
+    return redirect(url_for('view_friend_requests'))
+
+
+@app.route('/user/<int:friend_user_id>/remove_friend', methods=['POST'])
+@login_required
+def remove_friend(friend_user_id):
+    current_user_id = session.get('user_id')
+    friend_user = User.query.get(friend_user_id)
+
+    if not friend_user:
+        flash('User not found.', 'danger')
+        # Redirect to a sensible default, like the user's own profile or homepage
+        current_user_obj = User.query.get(current_user_id)
+        if current_user_obj:
+             return redirect(url_for('user_profile', username=current_user_obj.username))
+        return redirect(url_for('hello_world'))
+
+
+    if current_user_id == friend_user_id:
+        flash('You cannot remove yourself as a friend.', 'warning')
+        return redirect(url_for('user_profile', username=friend_user.username))
+
+    friendship_to_remove = Friendship.query.filter(
+        Friendship.status == 'accepted',
+        or_(
+            (Friendship.user_id == current_user_id) & (Friendship.friend_id == friend_user_id),
+            (Friendship.user_id == friend_user_id) & (Friendship.friend_id == current_user_id)
+        )
+    ).first()
+
+    if friendship_to_remove:
+        db.session.delete(friendship_to_remove)
+        db.session.commit()
+        flash(f'You are no longer friends with {friend_user.username}.', 'success')
+    else:
+        flash(f'You are not currently friends with {friend_user.username}.', 'info')
+
+    return redirect(url_for('user_profile', username=friend_user.username))

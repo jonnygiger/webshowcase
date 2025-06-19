@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Friend Requests - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Friend Requests</h2>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% if pending_requests %}
+        <ul class="list-group">
+            {% for request_item in pending_requests %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <a href="{{ url_for('user_profile', username=request_item.requester.username) }}">{{ request_item.requester.username }}</a>
+                        <small class="text-muted">sent on {{ request_item.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                    </div>
+                    <div>
+                        <form action="{{ url_for('accept_friend_request', request_id=request_item.id) }}" method="POST" style="display: inline;">
+                            <button type="submit" class="btn btn-success btn-sm">Accept</button>
+                        </form>
+                        <form action="{{ url_for('reject_friend_request', request_id=request_item.id) }}" method="POST" style="display: inline;">
+                            <button type="submit" class="btn btn-danger btn-sm ms-1">Reject</button>
+                        </form>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>You have no pending friend requests.</p>
+    {% endif %}
+</div>
+{% endblock %}

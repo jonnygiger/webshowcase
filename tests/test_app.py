@@ -174,6 +174,20 @@ def create_bookmark_directly(user_id, post_id, timestamp=None):
     db.session.commit()
     return bookmark
 
+# Helper to create a share directly in DB
+def create_share_directly(user_id, post_id, comment=None, timestamp=None):
+    if timestamp is None:
+        timestamp = datetime.utcnow()
+    share = SharedPost(
+        shared_by_user_id=user_id,
+        original_post_id=post_id,
+        sharing_user_comment=comment,
+        shared_at=timestamp
+    )
+    db.session.add(share)
+    db.session.commit()
+    return share
+
 
 # Test cases will be added below
 def test_todo_access_unauthorized(client):
@@ -3451,6 +3465,93 @@ class TestGetTrendingHashtagsLogic:
             assert suggestions_mixed.count("tagone") == 1 # Ensure uniqueness in output
             assert suggestions_mixed.count("tagtwo") == 1
 
+
+# --- Trending Page Tests ---
+
+def test_trending_page_loads_no_posts(client):
+    """Test that the /trending page loads correctly when there are no posts or no trending posts."""
+    response = client.get('/trending')
+    assert response.status_code == 200
+    assert b"Trending Posts" in response.data
+    assert b"No trending posts to display at the moment." in response.data
+
+def test_trending_page_no_user_logged_in(client):
+    """Test /trending page when no user is logged in."""
+    # Create a post that could be trending to ensure the page doesn't just say "no posts"
+    # but correctly omits user-specific elements.
+    with client.application.app_context():
+        other_user = create_user_directly("other_user_for_trending_no_login", "password")
+        trending_candidate_post = create_post_directly(user_id=other_user.id, title="Trending Candidate No Login")
+        # Add a recent like to make it potentially trend
+        create_like_directly(user_id=other_user.id, post_id=trending_candidate_post.id, timestamp=datetime.utcnow() - timedelta(hours=1))
+
+    response = client.get('/trending')
+    assert response.status_code == 200
+    assert b"Trending Posts" in response.data
+    assert trending_candidate_post.title.encode() in response.data # Ensure the post is shown
+
+    # Check for absence of user-specific buttons
+    # Based on trending.html: <form action="{{ url_for('bookmark_post', post_id=post_item.id) }}" ...>
+    # This whole block is wrapped in {% if current_user %}
+    assert b"Bookmark" not in response.data # Text for bookmark button
+    assert b"Unbookmark" not in response.data # Text for unbookmark button
+    assert b"Share" not in response.data # Text for share button (assuming it's also in current_user block)
+
+def test_trending_page_with_posts_and_user_specific_elements(client):
+    """Test /trending page with posts, including user-specific interactions like bookmarks."""
+    with client.application.app_context():
+        main_user = create_user_directly("main_trending_viewer", "password")
+        actor1 = create_user_directly("actor1_trending", "password")
+        actor2 = create_user_directly("actor2_trending", "password")
+
+        # Posts
+        post_hot = create_post_directly(user_id=actor1.id, title="Super Hot Trending Post", timestamp=datetime.utcnow() - timedelta(days=1))
+        post_warm = create_post_directly(user_id=actor2.id, title="Warmly Trending Post", timestamp=datetime.utcnow() - timedelta(days=2))
+        post_cold = create_post_directly(user_id=actor1.id, title="Cold Old Post", timestamp=datetime.utcnow() - timedelta(days=10))
+        post_by_main_user = create_post_directly(user_id=main_user.id, title="My Own Post Not Trending For Me")
+        post_liked_by_main_user = create_post_directly(user_id=actor1.id, title="Post I Liked, Not For Trending")
+        post_bookmarked_by_main_user_trending = create_post_directly(user_id=actor2.id, title="Bookmarked Trending Candidate", timestamp=datetime.utcnow() - timedelta(hours=6))
+
+        # Interactions for post_hot
+        create_like_directly(user_id=actor1.id, post_id=post_hot.id, timestamp=datetime.utcnow() - timedelta(hours=1))
+        create_like_directly(user_id=actor2.id, post_id=post_hot.id, timestamp=datetime.utcnow() - timedelta(hours=2))
+        create_comment_directly(user_id=actor1.id, post_id=post_hot.id, content="Hot!", timestamp=datetime.utcnow() - timedelta(hours=1))
+        create_share_directly(user_id=actor2.id, post_id=post_hot.id, timestamp=datetime.utcnow() - timedelta(hours=3))
+
+        # Interactions for post_warm
+        create_like_directly(user_id=actor1.id, post_id=post_warm.id, timestamp=datetime.utcnow() - timedelta(days=1))
+
+        # Interactions for post_bookmarked_by_main_user_trending (to make it trend)
+        create_like_directly(user_id=actor1.id, post_id=post_bookmarked_by_main_user_trending.id, timestamp=datetime.utcnow() - timedelta(hours=2))
+        create_comment_directly(user_id=actor2.id, post_id=post_bookmarked_by_main_user_trending.id, content="Good one", timestamp=datetime.utcnow() - timedelta(hours=1))
+
+
+        # Main user specific interactions
+        create_like_directly(user_id=main_user.id, post_id=post_liked_by_main_user.id) # Liked by main user
+        create_bookmark_directly(user_id=main_user.id, post_id=post_bookmarked_by_main_user_trending.id) # Bookmarked by main user
+
+    login_test_user(client, username="main_trending_viewer", password="password")
+    response = client.get('/trending')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert "Trending Posts" in response_data
+    assert post_hot.title in response_data
+    assert post_warm.title in response_data # Should appear if it meets criteria
+    assert post_bookmarked_by_main_user_trending.title in response_data # Should appear
+
+    assert post_cold.title not in response_data # Too old / no recent activity
+    assert post_by_main_user.title not in response_data # Excluded: own post
+    assert post_liked_by_main_user.title not in response_data # Excluded: liked by main user
+
+    # Check bookmark button states
+    # For post_hot (not bookmarked by main_user)
+    assert f'<form action="/bookmark/{post_hot.id}" method="POST"' in response_data
+    assert f'Bookmark</button>' in response_data # Check specifically for "Bookmark" text within the form for this post
+
+    # For post_bookmarked_by_main_user_trending (bookmarked by main_user)
+    assert f'<form action="/bookmark/{post_bookmarked_by_main_user_trending.id}" method="POST"' in response_data
+    assert f'Unbookmark</button>' in response_data # Check specifically for "Unbookmark" text
 
 @patch('app.get_trending_hashtags') # Patch where it's used in app.py's blog route
 def test_blog_route_calls_get_trending_hashtags(mock_get_trending_hashtags, client):

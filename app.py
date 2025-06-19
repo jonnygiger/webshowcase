@@ -642,6 +642,19 @@ def discover_feed():
                            recommended_events=events_with_reasons)
 
 
+@app.route('/trending')
+def trending_posts_page():
+    user_id = session.get('user_id') # Returns None if 'user_id' is not in session
+    trending_posts_list = suggest_trending_posts(user_id=user_id, limit=20, since_days=7)
+
+    bookmarked_post_ids = set()
+    if user_id: # Check if user_id is not None
+        bookmarks = Bookmark.query.filter_by(user_id=user_id).all()
+        bookmarked_post_ids = {bookmark.post_id for bookmark in bookmarks}
+
+    return render_template('trending.html', posts=trending_posts_list, bookmarked_post_ids=bookmarked_post_ids)
+
+
 @app.route('/blog/create', methods=['GET', 'POST'])
 @login_required # This order was already correct
 def create_post():

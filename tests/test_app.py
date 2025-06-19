@@ -159,6 +159,15 @@ def create_poll_vote_directly(user_id, poll_id, poll_option_id):
     db.session.commit()
     return vote
 
+# Helper to create a bookmark directly in DB
+def create_bookmark_directly(user_id, post_id, timestamp=None):
+    if timestamp is None:
+        timestamp = datetime.utcnow()
+    bookmark = Bookmark(user_id=user_id, post_id=post_id, timestamp=timestamp)
+    db.session.add(bookmark)
+    db.session.commit()
+    return bookmark
+
 
 # Test cases will be added below
 def test_todo_access_unauthorized(client):
@@ -2468,6 +2477,528 @@ class TestHashtagRecommendations:
             assert 'cool' in suggestions
             assert 'awesome' in suggestions
             assert len(set(suggestions)) == len(suggestions) # Check all elements are unique
+
+
+# --- Recommendation Logic & Discovery Feed Tests ---
+
+class TestRecommendationsAndDiscovery:
+    # Helper method to create users within this test class context if needed,
+    # though direct calls to global helpers are also fine.
+    def _create_user(self, username_suffix, password="password", role="user"):
+        # client fixture ensures app_context for db operations
+        return create_user_directly(f"rec_user_{username_suffix}", password, role)
+
+    def _create_post(self, user_obj, title_suffix, content="Test content", timestamp=None, hashtags=None):
+        # client fixture ensures app_context
+        if timestamp is None:
+            timestamp = datetime.utcnow()
+        post = Post(user_id=user_obj.id, title=f"Rec Post {title_suffix}", content=content, timestamp=timestamp, hashtags=hashtags)
+        db.session.add(post)
+        db.session.commit()
+        return post
+
+    def _add_like(self, user_obj, post_obj, timestamp=None):
+        return create_like_directly(user_id=user_obj.id, post_id=post_obj.id, timestamp=timestamp)
+
+    def _add_comment(self, user_obj, post_obj, content="Test comment", timestamp=None):
+        return create_comment_directly(user_id=user_obj.id, post_id=post_obj.id, content=content, timestamp=timestamp)
+
+    def _add_friendship(self, user1_obj, user2_obj, status='accepted'):
+        return create_friendship_directly(user1_id=user1_obj.id, friend_id=user2_obj.id, status=status)
+
+    def _add_bookmark(self, user_obj, post_obj, timestamp=None):
+        return create_bookmark_directly(user_id=user_obj.id, post_id=post_obj.id, timestamp=timestamp)
+
+    def _create_group(self, creator_obj, name_suffix, description="Test group"):
+        return create_group_directly(name=f"Rec Group {name_suffix}", creator_id=creator_obj.id, description=description)
+
+    def _add_user_to_group(self, user_obj, group_obj):
+        return add_user_to_group_directly(user_obj, group_obj)
+
+    def _create_event(self, user_obj, title_suffix, date_str=None):
+        return create_event_directly(user_id=user_obj.id, title=f"Rec Event {title_suffix}", date_str=date_str)
+
+    def _add_event_rsvp(self, user_obj, event_obj, status='Attending'):
+        return create_event_rsvp_directly(user_id=user_obj.id, event_id=event_obj.id, status=status)
+
+    # --- Tests for suggest_posts_to_read ---
+
+    def test_spr_basic_friend_interaction(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_basic")
+            friend_b = self._create_user("b_spr_basic")
+            other_user = self._create_user("other_spr_basic")
+            self._add_friendship(user_a, friend_b)
+
+            post_p1 = self._create_post(other_user, "P1_spr_basic")
+            self._add_like(friend_b, post_p1)
+
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+
+            assert len(suggestions) == 1
+            suggested_post, reason = suggestions[0]
+            assert suggested_post.id == post_p1.id
+            assert f"Liked by {friend_b.username}" in reason
+
+    def test_spr_multiple_friend_interactions_same_post(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_multi")
+            friend_b = self._create_user("b_spr_multi")
+            friend_c = self._create_user("c_spr_multi")
+            other_user = self._create_user("other_spr_multi")
+            self._add_friendship(user_a, friend_b)
+            self._add_friendship(user_a, friend_c)
+
+            post_p1 = self._create_post(other_user, "P1_spr_multi")
+            self._add_like(friend_b, post_p1, timestamp=datetime.utcnow() - timedelta(minutes=10))
+            self._add_comment(friend_c, post_p1, content="Nice post!", timestamp=datetime.utcnow() - timedelta(minutes=5)) # More recent
+
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+
+            assert len(suggestions) == 1
+            suggested_post, reason = suggestions[0]
+            assert suggested_post.id == post_p1.id
+            # Exact reason string depends on implementation detail (order of parts)
+            assert f"Liked by {friend_b.username}" in reason
+            assert f"Commented on by {friend_c.username}" in reason
+            # Example: "Liked by rec_user_b_spr_multi. Commented on by rec_user_c_spr_multi."
+
+    def test_spr_scoring_comments_vs_likes(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_score_comm")
+            friend_b = self._create_user("b_spr_score_comm")
+            friend_c = self._create_user("c_spr_score_comm")
+            friend_d = self._create_user("d_spr_score_comm")
+            other_user = self._create_user("other_spr_score_comm")
+            self._add_friendship(user_a, friend_b)
+            self._add_friendship(user_a, friend_c)
+            self._add_friendship(user_a, friend_d)
+
+            # SCORE_FRIEND_LIKE = 2, SCORE_FRIEND_COMMENT = 5
+            post_p1_likes = self._create_post(other_user, "P1_likes_spr_score", timestamp=datetime.utcnow() - timedelta(days=1))
+            self._add_like(friend_b, post_p1_likes, timestamp=datetime.utcnow() - timedelta(hours=2)) # Score: 2 (friend like)
+            self._add_like(friend_d, post_p1_likes, timestamp=datetime.utcnow() - timedelta(hours=1)) # Score: 2 (friend like) -> Total for P1 = 4 from friends
+
+            post_p2_comment = self._create_post(other_user, "P2_comment_spr_score", timestamp=datetime.utcnow() - timedelta(days=1))
+            self._add_comment(friend_c, post_p2_comment, content="Insightful!", timestamp=datetime.utcnow() - timedelta(hours=3)) # Score: 5 (friend comment)
+
+            # To ensure recency of interaction doesn't override the like/comment weight difference for this test,
+            # we make the comment interaction slightly older than one of the likes.
+            # The scoring should prioritize P2 due to higher comment weight.
+            # P1 total friend score = 2+2=4. P2 total friend score = 5.
+            # Add some base recency/popularity to make sure they are non-zero beyond friend scores
+            create_like_directly(other_user.id, post_p1_likes.id) # A general like
+            create_like_directly(other_user.id, post_p2_comment.id) # A general like
+
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+
+            assert len(suggestions) >= 2
+            suggested_titles = [(p.title, r) for p, r in suggestions]
+
+            # P2 should be ranked higher than P1
+            titles_only = [p.title for p,r in suggestions]
+            assert titles_only.index(post_p2_comment.title) < titles_only.index(post_p1_likes.title)
+
+    def test_spr_scoring_post_recency(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_recency")
+            friend_b = self._create_user("b_spr_recency")
+            other_user = self._create_user("other_spr_recency")
+            self._add_friendship(user_a, friend_b)
+
+            # P_old liked by friend_b recently, but post itself is old
+            post_p_old = self._create_post(other_user, "P_old_spr_recency", timestamp=datetime.utcnow() - timedelta(days=10))
+            self._add_like(friend_b, post_p_old, timestamp=datetime.utcnow() - timedelta(hours=1))
+
+            # P_new liked by friend_b, post itself is new
+            post_p_new = self._create_post(other_user, "P_new_spr_recency", timestamp=datetime.utcnow() - timedelta(days=1))
+            self._add_like(friend_b, post_p_new, timestamp=datetime.utcnow() - timedelta(hours=1)) # Same interaction time
+
+            # RECENCY_HALFLIFE_DAYS = 7. New post should have higher recency score component.
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+            assert len(suggestions) >= 2
+            titles_only = [p.title for p,r in suggestions]
+            assert titles_only.index(post_p_new.title) < titles_only.index(post_p_old.title)
+
+    def test_spr_scoring_post_popularity(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_pop")
+            friend_b = self._create_user("b_spr_pop")
+            other_user = self._create_user("other_spr_pop")
+            user_liker1 = self._create_user("liker1_spr_pop")
+            user_liker2 = self._create_user("liker2_spr_pop")
+            self._add_friendship(user_a, friend_b)
+
+            # P_popular: liked by friend_b, also has many other likes
+            post_p_popular = self._create_post(other_user, "P_popular_spr_pop", timestamp=datetime.utcnow() - timedelta(days=1))
+            self._add_like(friend_b, post_p_popular, timestamp=datetime.utcnow() - timedelta(hours=1))
+            self._add_like(user_liker1, post_p_popular, timestamp=datetime.utcnow() - timedelta(hours=2))
+            self._add_like(user_liker2, post_p_popular, timestamp=datetime.utcnow() - timedelta(hours=3)) # 3 total likes
+
+            # P_niche: liked by friend_b, fewer other likes
+            post_p_niche = self._create_post(other_user, "P_niche_spr_pop", timestamp=datetime.utcnow() - timedelta(days=1))
+            self._add_like(friend_b, post_p_niche, timestamp=datetime.utcnow() - timedelta(hours=1)) # 1 total like
+
+            # SCORE_TOTAL_LIKES_FACTOR = 0.1
+            # P_popular friend_score + pop_score = 2 + 0.1*3 = 2.3 (approx, recency also counts)
+            # P_niche friend_score + pop_score = 2 + 0.1*1 = 2.1 (approx)
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+            assert len(suggestions) >= 2
+            titles_only = [p.title for p,r in suggestions]
+            assert titles_only.index(post_p_popular.title) < titles_only.index(post_p_niche.title)
+
+    def test_spr_exclusion_users_own_posts(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_own")
+            friend_b = self._create_user("b_spr_own")
+            self._add_friendship(user_a, friend_b)
+
+            post_p_own = self._create_post(user_a, "P_own_spr_own") # Post by User A
+            self._add_like(friend_b, post_p_own) # Liked by friend B
+
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+            post_titles = [p.title for p, r in suggestions]
+            assert post_p_own.title not in post_titles
+
+    def test_spr_exclusion_already_interacted_posts(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_interacted")
+            friend_b = self._create_user("b_spr_interacted")
+            other_user = self._create_user("other_spr_interacted")
+            self._add_friendship(user_a, friend_b)
+
+            post_p_liked = self._create_post(other_user, "P_liked_spr_interacted")
+            self._add_like(user_a, post_p_liked) # User A likes this post
+            self._add_like(friend_b, post_p_liked) # Friend B also likes it
+
+            post_p_commented = self._create_post(other_user, "P_commented_spr_interacted")
+            self._add_comment(user_a, post_p_commented) # User A comments on this post
+            self._add_like(friend_b, post_p_commented) # Friend B likes it
+
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+            post_titles = [p.title for p, r in suggestions]
+            assert post_p_liked.title not in post_titles
+            assert post_p_commented.title not in post_titles
+
+    def test_spr_exclusion_bookmarked_posts(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_bookmark")
+            friend_b = self._create_user("b_spr_bookmark")
+            other_user = self._create_user("other_spr_bookmark")
+            self._add_friendship(user_a, friend_b)
+
+            post_p_bookmarked = self._create_post(other_user, "P_bookmarked_spr_bookmark")
+            self._add_bookmark(user_a, post_p_bookmarked) # User A bookmarks this post
+            self._add_like(friend_b, post_p_bookmarked) # Friend B likes it
+
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+            post_titles = [p.title for p, r in suggestions]
+            assert post_p_bookmarked.title not in post_titles
+
+    def test_spr_limit_respected(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_limit")
+            other_user = self._create_user("other_spr_limit")
+            # Create 10 friends
+            friends = [self._create_user(f"f{i}_spr_limit") for i in range(10)]
+            for friend in friends:
+                self._add_friendship(user_a, friend)
+
+            # Create 10 posts, each liked by a different friend
+            for i, friend in enumerate(friends):
+                post = self._create_post(other_user, f"P{i}_spr_limit", timestamp=datetime.utcnow() - timedelta(minutes=i)) # Vary timestamps for distinct scores
+                self._add_like(friend, post)
+
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=3)
+            assert len(suggestions) == 3
+
+            suggestions_more = recommendations.suggest_posts_to_read(user_a.id, limit=7)
+            assert len(suggestions_more) == 7
+
+            suggestions_all = recommendations.suggest_posts_to_read(user_a.id, limit=15) # More than available
+            assert len(suggestions_all) == 10
+
+
+    def test_spr_reason_generation_many_friends(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_reason")
+            other_user = self._create_user("other_spr_reason")
+            friends = [self._create_user(f"f{i}_spr_reason") for i in range(5)] # Friend0, Friend1, ... Friend4
+            for friend in friends:
+                self._add_friendship(user_a, friend)
+
+            post_p1 = self._create_post(other_user, "P1_spr_reason")
+            # All 5 friends like this post
+            for friend in friends:
+                self._add_like(friend, post_p1, timestamp=datetime.utcnow() - timedelta(minutes=friends.index(friend)))
+
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=1)
+            assert len(suggestions) == 1
+            _ , reason = suggestions[0]
+
+            # Expected: "Liked by rec_user_f0_spr_reason, rec_user_f1_spr_reason, and 3 others."
+            # The order of names in the reason string depends on how friend_likers_usernames is populated and sorted (if at all)
+            # in recommendations.py. Assuming it's not strictly sorted by name, we check for parts.
+            # Current implementation of reason generation in `suggest_posts_to_read` sorts liker/commenter usernames alphabetically.
+            sorted_friend_usernames = sorted([f.username for f in friends])
+
+            assert f"Liked by {sorted_friend_usernames[0]}, {sorted_friend_usernames[1]}, and 3 others." in reason
+
+    def test_spr_fallback_reason_popular_post(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_spr_fallback")
+            friend_b = self._create_user("b_spr_fallback") # Friend, but their interaction is minor
+            other_user = self._create_user("other_spr_fallback")
+            liker1 = self._create_user("liker1_spr_fallback")
+            liker2 = self._create_user("liker2_spr_fallback")
+            liker3 = self._create_user("liker3_spr_fallback")
+            self._add_friendship(user_a, friend_b)
+
+            # Post that is very popular among non-friends, and very recent
+            # Friend B's like contributes minimally to the score.
+            # SCORE_FRIEND_LIKE = 2
+            # SCORE_TOTAL_LIKES_FACTOR = 0.1
+            # SCORE_RECENCY_FACTOR = 10, RECENCY_HALFLIFE_DAYS = 7
+            # Let post be 1 day old: recency_score = 10 * (0.5**(1/7)) approx 10 * 0.9 = 9
+            # Total likes = 4 (friend_b + 3 others). Popularity_score = 0.1 * 4 = 0.4
+            # Friend_interaction_score = 2
+            # Total score approx = 2 (friend) + 9 (recency) + 0.4 (popularity) = 11.4
+            # Condition for "Popular post.": (SCORE_TOTAL_LIKES_FACTOR * total_likes + SCORE_TOTAL_COMMENTS_FACTOR * total_comments) > (SCORE_FRIEND_LIKE + SCORE_FRIEND_COMMENT)
+            # Condition for "Trending post.": recency_score > (SCORE_FRIEND_LIKE + SCORE_FRIEND_COMMENT)
+            # Here, recency_score (9) > friend_interaction_score (2). So "Trending post." is expected.
+
+            popular_post = self._create_post(other_user, "P_fallback_spr", timestamp=datetime.utcnow() - timedelta(days=1))
+            self._add_like(friend_b, popular_post, timestamp=datetime.utcnow() - timedelta(hours=1)) # Minor friend interaction
+            self._add_like(liker1, popular_post)
+            self._add_like(liker2, popular_post)
+            self._add_like(liker3, popular_post)
+
+            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=1)
+            assert len(suggestions) == 1
+            _ , reason = suggestions[0]
+            assert reason == "Trending post." # Based on current logic and score weightings
+
+    # --- Tests for suggest_trending_posts ---
+
+    def test_stp_basic_trending_post(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_stp_basic")
+            other_user = self._create_user("other_stp_basic")
+            liker1 = self._create_user("liker1_stp_basic")
+            commenter1 = self._create_user("commenter1_stp_basic")
+
+            post_p1 = self._create_post(other_user, "P1_stp_basic", timestamp=datetime.utcnow() - timedelta(days=1))
+
+            # Recent interactions
+            self._add_like(liker1, post_p1, timestamp=datetime.utcnow() - timedelta(hours=5))
+            self._add_comment(commenter1, post_p1, content="Trending now!", timestamp=datetime.utcnow() - timedelta(hours=3))
+
+            suggestions = recommendations.suggest_trending_posts(user_a.id, limit=5, since_days=7)
+            assert len(suggestions) >= 1
+            assert suggestions[0].id == post_p1.id
+
+    def test_stp_effect_of_since_days(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_stp_since")
+            other_user = self._create_user("other_stp_since")
+
+            post_p1_old_interaction = self._create_post(other_user, "P1_stp_old_int", timestamp=datetime.utcnow() - timedelta(days=10))
+            self._add_like(other_user, post_p1_old_interaction, timestamp=datetime.utcnow() - timedelta(days=8)) # Older than 7 days
+
+            post_p2_new_interaction = self._create_post(other_user, "P2_stp_new_int", timestamp=datetime.utcnow() - timedelta(days=10))
+            self._add_like(other_user, post_p2_new_interaction, timestamp=datetime.utcnow() - timedelta(days=1)) # Within 7 days
+
+            suggestions = recommendations.suggest_trending_posts(user_a.id, limit=5, since_days=7)
+            post_titles = [p.title for p in suggestions]
+
+            assert post_p2_new_interaction.title in post_titles
+            assert post_p1_old_interaction.title not in post_titles
+
+    def test_stp_scoring_likes_vs_comments(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_stp_score")
+            other_user = self._create_user("other_stp_score")
+            # WEIGHT_RECENT_LIKE = 1, WEIGHT_RECENT_COMMENT = 3
+
+            # Post P1: 10 recent likes. Score = 10 * 1 = 10 (approx, before age factor)
+            post_p1_likes = self._create_post(other_user, "P1_stp_likes", timestamp=datetime.utcnow() - timedelta(days=1))
+            for i in range(10):
+                liker = self._create_user(f"liker{i}_stp_score")
+                self._add_like(liker, post_p1_likes, timestamp=datetime.utcnow() - timedelta(hours=i+1))
+
+            # Post P2: 5 recent comments. Score = 5 * 3 = 15 (approx, before age factor)
+            post_p2_comments = self._create_post(other_user, "P2_stp_comments", timestamp=datetime.utcnow() - timedelta(days=1))
+            for i in range(5):
+                commenter = self._create_user(f"commenter{i}_stp_score")
+                self._add_comment(commenter, post_p2_comments, content=f"Comment {i}", timestamp=datetime.utcnow() - timedelta(hours=i+1))
+
+            suggestions = recommendations.suggest_trending_posts(user_a.id, limit=5, since_days=7)
+            assert len(suggestions) >= 2
+            titles_only = [p.title for p in suggestions]
+            assert titles_only.index(post_p2_comments.title) < titles_only.index(post_p1_likes.title)
+
+    def test_stp_scoring_post_age_factor(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_stp_agefactor")
+            other_user = self._create_user("other_stp_agefactor")
+            liker = self._create_user("liker_stp_agefactor")
+
+            # TRENDING_POST_AGE_FACTOR_SCALE = 5
+            # P_new created 1 day ago. Age factor bonus = ((7-1)/7)*5 = (6/7)*5 = 4.28
+            post_p_new = self._create_post(other_user, "P_new_stp_age", timestamp=datetime.utcnow() - timedelta(days=1))
+            self._add_like(liker, post_p_new, timestamp=datetime.utcnow() - timedelta(hours=1)) # 1 like = 1 score
+
+            # P_old created 6 days ago. Age factor bonus = ((7-6)/7)*5 = (1/7)*5 = 0.71
+            post_p_old = self._create_post(other_user, "P_old_stp_age", timestamp=datetime.utcnow() - timedelta(days=6))
+            self._add_like(liker, post_p_old, timestamp=datetime.utcnow() - timedelta(hours=1)) # 1 like = 1 score
+
+            # P_new score approx = 1 (like) + 4.28 (age) = 5.28
+            # P_old score approx = 1 (like) + 0.71 (age) = 1.71
+            suggestions = recommendations.suggest_trending_posts(user_a.id, limit=5, since_days=7)
+            assert len(suggestions) >= 2
+            titles_only = [p.title for p in suggestions]
+            assert titles_only.index(post_p_new.title) < titles_only.index(post_p_old.title)
+
+    def test_stp_exclusions(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_stp_exclude")
+            other_user = self._create_user("other_stp_exclude")
+
+            # Post created by User A
+            post_own = self._create_post(user_a, "P_own_stp_exclude", timestamp=datetime.utcnow()-timedelta(days=1))
+            self._add_like(other_user, post_own, timestamp=datetime.utcnow()-timedelta(hours=1)) # Make it trend
+
+            # Post liked by User A
+            post_liked = self._create_post(other_user, "P_liked_stp_exclude", timestamp=datetime.utcnow()-timedelta(days=1))
+            self._add_like(other_user, post_liked, timestamp=datetime.utcnow()-timedelta(hours=2)) # Make it trend
+            self._add_like(user_a, post_liked, timestamp=datetime.utcnow()-timedelta(hours=1))
+
+            # Post commented by User A
+            post_commented = self._create_post(other_user, "P_commented_stp_exclude", timestamp=datetime.utcnow()-timedelta(days=1))
+            self._add_like(other_user, post_commented, timestamp=datetime.utcnow()-timedelta(hours=2)) # Make it trend
+            self._add_comment(user_a, post_commented, timestamp=datetime.utcnow()-timedelta(hours=1))
+
+            # Post bookmarked by User A
+            post_bookmarked = self._create_post(other_user, "P_bookmarked_stp_exclude", timestamp=datetime.utcnow()-timedelta(days=1))
+            self._add_like(other_user, post_bookmarked, timestamp=datetime.utcnow()-timedelta(hours=2)) # Make it trend
+            self._add_bookmark(user_a, post_bookmarked)
+
+            suggestions = recommendations.suggest_trending_posts(user_a.id, limit=5, since_days=7)
+            post_titles = [p.title for p in suggestions]
+
+            assert post_own.title not in post_titles
+            assert post_liked.title not in post_titles
+            assert post_commented.title not in post_titles
+            assert post_bookmarked.title not in post_titles
+
+    def test_stp_limit_respected(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_stp_limit")
+            other_user = self._create_user("other_stp_limit")
+
+            for i in range(10):
+                post = self._create_post(other_user, f"P{i}_stp_limit", timestamp=datetime.utcnow()-timedelta(days=1))
+                # Add varying number of likes to ensure distinct scores and order
+                for j in range(i + 1):
+                    liker = self._create_user(f"liker{i}{j}_stp_limit")
+                    self._add_like(liker, post, timestamp=datetime.utcnow()-timedelta(hours=1))
+
+            suggestions_3 = recommendations.suggest_trending_posts(user_a.id, limit=3, since_days=7)
+            assert len(suggestions_3) == 3
+
+            suggestions_7 = recommendations.suggest_trending_posts(user_a.id, limit=7, since_days=7)
+            assert len(suggestions_7) == 7
+
+            suggestions_15 = recommendations.suggest_trending_posts(user_a.id, limit=15, since_days=7) # More than available
+            assert len(suggestions_15) == 10
+
+
+    # --- Tests for /discover route ---
+
+    def test_discover_route_renders_successfully_and_shows_content(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_discover_render")
+            friend_b = self._create_user("b_discover_render")
+            other_user = self._create_user("other_discover_render")
+            self._add_friendship(user_a, friend_b)
+
+            # Data for suggest_posts_to_read
+            post_spr = self._create_post(other_user, "SPR_Discover")
+            self._add_like(friend_b, post_spr) # Reason: Liked by friend_b
+
+            # Data for suggest_trending_posts
+            post_stp = self._create_post(other_user, "STP_Discover", timestamp=datetime.utcnow() - timedelta(days=1))
+            self._add_like(other_user, post_stp, timestamp=datetime.utcnow() - timedelta(hours=1)) # Make it trend
+
+            # Data for suggest_groups_to_join
+            group_sgj = self._create_group(other_user, "SGJ_Discover")
+            self._add_user_to_group(friend_b, group_sgj) # Friend B is in this group
+
+            # Data for suggest_events_to_attend
+            event_sea = self._create_event(other_user, "SEA_Discover")
+            self._add_event_rsvp(friend_b, event_sea) # Friend B is attending
+
+            login_test_user(client, username=user_a.username, password="password")
+            response = client.get('/discover')
+
+            assert response.status_code == 200
+            response_data = response.data.decode()
+
+            assert "<h1>Discovery Feed</h1>" in response_data
+
+            # Check for personalized post and its specific reason
+            assert post_spr.title in response_data
+            assert f"Liked by {friend_b.username}" in response_data
+
+            # Check for trending post and its generic reason
+            assert post_stp.title in response_data
+            assert "Trending post" in response_data # Default reason for STP posts
+
+            # Check for group
+            assert group_sgj.name in response_data
+            assert "Recommended group" in response_data
+
+            # Check for event
+            assert event_sea.title in response_data
+            assert "Recommended event" in response_data
+
+    def test_discover_route_deduplication_of_posts(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_discover_dedup")
+            friend_b = self._create_user("b_discover_dedup")
+            other_user = self._create_user("other_discover_dedup")
+            self._add_friendship(user_a, friend_b)
+
+            # This post will be recommended by both SPR (due to friend like) and STP (due to recent like by other)
+            common_post = self._create_post(other_user, "Common_Discover_Dedup", timestamp=datetime.utcnow() - timedelta(days=1))
+            self._add_like(friend_b, common_post, timestamp=datetime.utcnow() - timedelta(hours=2)) # For SPR
+            self._add_like(other_user, common_post, timestamp=datetime.utcnow() - timedelta(hours=1)) # For STP (recent like)
+
+            login_test_user(client, username=user_a.username, password="password")
+            response = client.get('/discover')
+            response_data = response.data.decode()
+
+            assert response.status_code == 200
+            # Check that the post title appears only once
+            assert response_data.count(common_post.title) == 1
+            # Check that the reason is the more specific one from SPR
+            assert f"Liked by {friend_b.username}" in response_data
+            assert "Trending post" not in response_data # Generic reason should be overridden
+
+    def test_discover_route_empty_states(self, client):
+        with client.application.app_context():
+            user_a = self._create_user("a_discover_empty")
+            # No relevant data created for any recommendations for user_a
+
+            login_test_user(client, username=user_a.username, password="password")
+            response = client.get('/discover')
+
+            assert response.status_code == 200
+            response_data = response.data.decode()
+
+            assert "No new post recommendations for you at the moment." in response_data
+            assert "No group recommendations for you right now." in response_data
+            assert "No event recommendations for you at the moment." in response_data
 
 
 # --- Content Moderation Test Helpers ---

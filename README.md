@@ -547,7 +547,17 @@ The recommendations feature has been enhanced to also suggest relevant events an
     *   **Discovery**: Allows all users (including those not logged in) to quickly see trending topics and navigate to posts associated with them.
     *   **Accessibility**: Visible in the sidebar of the `/blog` page.
 
-These new recommendations are available on the main `/recommendations` page.
+*   **Discovery Feed**:
+    *   **Functionality**: A centralized feed designed to help users discover a wide range of new and relevant content. It aggregates various types of recommendations into a single, easily accessible page.
+    *   **Content**: The feed includes:
+        *   Personalized post suggestions (based on friend activity and user preferences).
+        *   Trending posts (popular across the platform).
+        *   Recommended groups to join.
+        *   Suggested events to attend.
+    *   **Benefit**: Provides a comprehensive overview of interesting content and activities, tailored to the user, enhancing their engagement and experience on the platform.
+    *   **Access**: Logged-in users can access their Discovery Feed via the "Discovery" link in the main navigation bar.
+
+These new recommendations are available on the main `/recommendations` page. The Discovery Feed provides an alternative, aggregated view.
 
 You can find dedicated recommendations on the `/recommendations` page (accessible when logged in). Additionally, a snippet of user suggestions is displayed on the main blog page to help you connect with others more easily.
 

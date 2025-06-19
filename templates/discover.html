@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Discovery Feed{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Discovery Feed</h1>
+    <hr>
+
+    <!-- Recommended Posts Section -->
+    <section id="recommended-posts" class="mb-5">
+        <h2>Recommended Posts</h2>
+        {% if recommended_posts %}
+            {% for post, reason in recommended_posts %}
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title"><a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a></h5>
+                        <h6 class="card-subtitle mb-2 text-muted">
+                            By: <a href="{{ url_for('user_profile', username=post.author.username) }}">{{ post.author.username }}</a>
+                        </h6>
+                        <p class="card-text">{{ post.content[:200] }}{% if post.content|length > 200 %}...{% endif %}</p>
+                        <p class="card-text"><small class="text-muted"><em>Recommended because: {{ reason }}</em></small></p>
+                        <a href="{{ url_for('view_post', post_id=post.id) }}" class="btn btn-primary btn-sm">Read more</a>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No new post recommendations for you at the moment. Explore existing content or check back later!</p>
+        {% endif %}
+    </section>
+
+    <hr class="my-4">
+
+    <!-- Recommended Groups Section -->
+    <section id="recommended-groups" class="mb-5">
+        <h2>Recommended Groups</h2>
+        {% if recommended_groups %}
+            {% for group, reason in recommended_groups %}
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title"><a href="{{ url_for('view_group', group_id=group.id) }}">{{ group.name }}</a></h5>
+                        {% if group.description %}
+                            <p class="card-text">{{ group.description[:150] }}{% if group.description|length > 150 %}...{% endif %}</p>
+                        {% endif %}
+                        <p class="card-text"><small class="text-muted"><em>{{ reason }}</em></small></p>
+                        <a href="{{ url_for('view_group', group_id=group.id) }}" class="btn btn-secondary btn-sm">View Group</a>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No group recommendations for you right now. Check back later!</p>
+        {% endif %}
+    </section>
+
+    <hr class="my-4">
+
+    <!-- Recommended Events Section -->
+    <section id="recommended-events">
+        <h2>Recommended Events</h2>
+        {% if recommended_events %}
+            {% for event, reason in recommended_events %}
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title"><a href="{{ url_for('view_event', event_id=event.id) }}">{{ event.title }}</a></h5>
+                        <h6 class="card-subtitle mb-2 text-muted">
+                            Date: {{ event.date }} {% if event.time %}| Time: {{ event.time }}{% endif %}
+                        </h6>
+                        {% if event.location %}
+                            <p class="card-text">Location: {{ event.location }}</p>
+                        {% endif %}
+                        <p class="card-text"><small class="text-muted"><em>{{ reason }}</em></small></p>
+                        <a href="{{ url_for('view_event', event_id=event.id) }}" class="btn btn-info btn-sm">View Event</a>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No event recommendations for you at the moment. Keep an eye out for new events!</p>
+        {% endif %}
+    </section>
+
+</div>
+{% endblock %}

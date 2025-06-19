@@ -21,7 +21,11 @@ migrate = Migrate()
 # and definitely before db.init_app
 from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent # Add UserActivity, FlaggedContent
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
-from recommendations import suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join, suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags, get_trending_hashtags # Updated import
+from recommendations import (
+    suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
+    suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags,
+    get_trending_hashtags, suggest_trending_posts # Added suggest_trending_posts
+)
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
@@ -552,6 +556,58 @@ def inject_user():
         user = User.query.get(session.get('user_id'))
         return dict(current_user=user)
     return dict(current_user=None)
+
+@app.route('/discover')
+@login_required
+def discover_feed():
+    user_id = session.get('user_id')
+    if not user_id: # Should be caught by @login_required, but as a safeguard
+        flash('User ID not found in session. Please log in again.', 'danger')
+        return redirect(url_for('login'))
+
+    # 1. Fetch recommendations
+    recommended_posts_personalized = suggest_posts_to_read(user_id, limit=10) # Returns [(Post, "reason_string"), ...]
+    trending_posts_raw = suggest_trending_posts(user_id, limit=10, since_days=7) # Returns [Post, ...]
+    recommended_groups_raw = suggest_groups_to_join(user_id, limit=5) # Returns [Group, ...]
+    recommended_events_raw = suggest_events_to_attend(user_id, limit=5) # Returns [Event, ...]
+
+    # 2. Prepare data for template
+
+    # Posts: Combine and deduplicate, preferring personalized reasons
+    final_posts_map = {} # Using dict for deduplication: post.id -> (Post, "reason")
+
+    # Add personalized posts first
+    for post_obj, reason_str in recommended_posts_personalized:
+        if post_obj: # Ensure post_obj is not None
+            final_posts_map[post_obj.id] = (post_obj, reason_str)
+
+    # Add trending posts, giving a generic reason if not already present with a specific one
+    for post_obj in trending_posts_raw:
+        if post_obj: # Ensure post_obj is not None
+            if post_obj.id not in final_posts_map:
+                final_posts_map[post_obj.id] = (post_obj, "Trending post")
+
+    final_posts_with_reasons = list(final_posts_map.values())
+    # Optionally, sort or limit the final_posts_with_reasons further if needed
+    # For now, order is based on personalized first, then trending. Could shuffle or sort by a combined score later.
+
+    # Groups: Add generic reasons
+    groups_with_reasons = []
+    for group_obj in recommended_groups_raw:
+        if group_obj: # Ensure group_obj is not None
+            groups_with_reasons.append((group_obj, "Recommended group"))
+
+    # Events: Add generic reasons
+    events_with_reasons = []
+    for event_obj in recommended_events_raw:
+        if event_obj: # Ensure event_obj is not None
+            events_with_reasons.append((event_obj, "Recommended event"))
+
+    return render_template('discover.html',
+                           recommended_posts=final_posts_with_reasons,
+                           recommended_groups=groups_with_reasons,
+                           recommended_events=events_with_reasons)
+
 
 @app.route('/blog/create', methods=['GET', 'POST'])
 @login_required # This order was already correct

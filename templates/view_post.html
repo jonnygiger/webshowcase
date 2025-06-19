@@ -30,6 +30,39 @@
         {% endif %}
     </div>
 
+    {# Reaction Buttons and Counts #}
+    <div style="margin-top: 15px; margin-bottom: 15px;">
+        {% if current_user.is_authenticated %}
+            {% set user_reacted_emoji = namespace(value=None) %}
+            {% for r in reactions if r.user_id == current_user.id %}
+                {% set user_reacted_emoji.value = r.emoji %}
+            {% endfor %}
+
+            <form action="{{ url_for('react_to_post', post_id=post.id) }}" method="POST" style="display: inline-block; margin-right: 10px;">
+                {% for emoji_choice in ['👍', '❤️', '😂', '😮', '😢', '🤔'] %}
+                    <button type="submit" name="emoji" value="{{ emoji_choice }}"
+                            class="btn btn-sm {% if emoji_choice == user_reacted_emoji.value %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+                            title="React with {{ emoji_choice }}">
+                        {{ emoji_choice }}
+                    </button>
+                {% endfor %}
+            </form>
+        {% else %}
+            <p><a href="{{ url_for('login') }}">Log in</a> to react.</p>
+        {% endif %}
+
+        <div style="margin-top: 10px;">
+            {% if reaction_counts %}
+                <strong>Reactions:</strong>
+                {% for emoji_char, count in reaction_counts.items() %}
+                    <span style="margin-right: 8px;" title="{{ count }} reaction{{ 's' if count != 1 else '' }} with {{ emoji_char }}">{{ emoji_char }} ({{ count }})</span>
+                {% endfor %}
+            {% else %}
+                <small>No reactions yet.</small>
+            {% endif %}
+        </div>
+    </div>
+
     {# Display Average Rating #}
     <div style="margin-top: 20px; margin-bottom: 20px;">
         <h4>

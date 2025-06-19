@@ -224,6 +224,26 @@ Users can now interact with blog posts by liking or unliking them, providing a s
     *   Conditional rendering in Jinja templates to display different buttons ("Like" or "Unlike") based on application state.
     *   Handling POST requests for actions that modify data.
 
+### Post Reactions
+
+Users can now express a wider range of sentiments on blog posts using emoji reactions.
+
+*   **Functionality**:
+    *   Authenticated users can react to any blog post by selecting an emoji (e.g., 👍, ❤️, 🎉, 😂, 🤔).
+    *   Clicking an emoji button below the post will add that reaction.
+    *   If a user has already reacted to a post:
+        *   Clicking the *same* emoji again will remove their reaction (toggle off).
+        *   Clicking a *different* emoji will change their existing reaction to the new one.
+    *   Users can only have one active emoji reaction per post.
+*   **Display**:
+    *   The individual post page (`/blog/post/<int:post_id>`) displays the available emoji reaction buttons for logged-in users.
+    *   The page also shows a summary of all reactions on the post, displaying each emoji and the count of users who reacted with it (e.g., 👍 (5) ❤️ (3)).
+*   **User Interface**:
+    *   Reaction buttons are clearly visible on the post page.
+    *   The user's currently selected emoji reaction (if any) is highlighted.
+*   **Route for Reactions**:
+    *   `/post/<int:post_id>/react` (POST): Allows a logged-in user to add, change, or remove their reaction to a specific post.
+
 ### Blog Post Rating and Review System
 
 Enhancing user interaction and feedback, users can now rate blog posts (1-5 stars) and write textual reviews.

@@ -44,6 +44,7 @@ class User(db.Model):
     poll_votes = db.relationship('PollVote', backref='voter', lazy=True)
     events = db.relationship('Event', backref='organizer', lazy=True)
     event_rsvps = db.relationship('EventRSVP', backref='attendee', lazy=True)
+    reactions = db.relationship('Reaction', backref='user', lazy=True, cascade="all, delete-orphan")
 
     # Group relationships
     created_groups = db.relationship('Group', back_populates='creator', lazy=True, foreign_keys='Group.creator_id')
@@ -74,6 +75,7 @@ class Post(db.Model):
     comments = db.relationship('Comment', backref='post', lazy=True, cascade="all, delete-orphan")
     likes = db.relationship('Like', backref='post', lazy=True, cascade="all, delete-orphan")
     reviews = db.relationship('Review', backref='post', lazy=True, cascade="all, delete-orphan")
+    reactions = db.relationship('Reaction', backref='post', lazy=True, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f'<Post {self.title}>'
@@ -207,6 +209,18 @@ class EventRSVP(db.Model):
 
     def __repr__(self):
         return f'<EventRSVP User {self.user_id} for Event {self.event_id} status {self.status}>'
+
+class Reaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    emoji = db.Column(db.String(10), nullable=False)  # Emoji character
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+
+    # Relationships are defined in User and Post models via backref
+
+    def __repr__(self):
+        return f'<Reaction {self.emoji} by User {self.user_id} on Post {self.post_id}>'
 
 class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)

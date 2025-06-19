@@ -1,7 +1,7 @@
 import pytest
 import os
 import shutil
-from app import app, db, User, TodoItem # Assuming app structure allows this import
+from app import app, db, User, Post, Reaction, TodoItem # Added Post, Reaction
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 from io import BytesIO # For simulating file uploads
@@ -385,3 +385,139 @@ def test_display_default_picture_in_navbar_no_picture(client):
 # It's good practice to also test that another user cannot see/modify profile pic upload for someone else
 # but that's covered by @login_required on the upload route itself.
 # The user_profile page visibility is public by design.
+
+
+# --- Reaction Tests ---
+
+# Helper to create a user directly in DB (if different from 'testuser' or for specific test users)
+def create_user_directly(username, password="password"):
+    hashed_password = generate_password_hash(password)
+    user = User(username=username, password_hash=hashed_password)
+    db.session.add(user)
+    db.session.commit()
+    return user
+
+# Helper to create a post directly in DB
+def create_post_directly(user_id, title="Test Post for Reactions", content="Content for reaction testing"):
+    post = Post(title=title, content=content, user_id=user_id)
+    db.session.add(post)
+    db.session.commit()
+    return post
+
+def test_reaction_add_new(client):
+    """Test adding a new reaction to a post."""
+    login_test_user(client, username="testuser", password="testpassword")
+    user = get_test_user_obj()
+    post = create_post_directly(user_id=user.id, title="Post for Adding Reaction")
+
+    response = client.post(f'/post/{post.id}/react', data={'emoji': '👍'}, follow_redirects=True)
+    assert response.status_code == 200 # Redirects to view_post
+    assert b"Reaction added." in response.data # Flash message
+
+    reaction_in_db = Reaction.query.filter_by(user_id=user.id, post_id=post.id, emoji='👍').first()
+    assert reaction_in_db is not None
+    assert reaction_in_db.user_id == user.id
+    assert reaction_in_db.post_id == post.id
+    assert reaction_in_db.emoji == '👍'
+
+def test_reaction_change_existing(client):
+    """Test changing an existing reaction on a post."""
+    login_test_user(client, username="testuser", password="testpassword")
+    user = get_test_user_obj()
+    post = create_post_directly(user_id=user.id, title="Post for Changing Reaction")
+
+    # Add initial reaction
+    client.post(f'/post/{post.id}/react', data={'emoji': '👍'}, follow_redirects=True)
+
+    # Change reaction
+    response = client.post(f'/post/{post.id}/react', data={'emoji': '❤️'}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Reaction updated." in response.data
+
+    reaction_in_db = Reaction.query.filter_by(user_id=user.id, post_id=post.id).first()
+    assert reaction_in_db is not None
+    assert reaction_in_db.emoji == '❤️'
+    assert Reaction.query.filter_by(user_id=user.id, post_id=post.id).count() == 1
+
+def test_reaction_remove_toggle_off(client):
+    """Test removing a reaction by submitting the same emoji again."""
+    login_test_user(client, username="testuser", password="testpassword")
+    user = get_test_user_obj()
+    post = create_post_directly(user_id=user.id, title="Post for Removing Reaction")
+
+    # Add initial reaction
+    client.post(f'/post/{post.id}/react', data={'emoji': '🎉'}, follow_redirects=True)
+
+    # Remove reaction
+    response = client.post(f'/post/{post.id}/react', data={'emoji': '🎉'}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Reaction removed." in response.data
+
+    reaction_in_db = Reaction.query.filter_by(user_id=user.id, post_id=post.id).first()
+    assert reaction_in_db is None
+
+def test_reaction_counts_on_post_view(client):
+    """Test that reaction counts are correctly displayed on the post view page."""
+    user1 = create_user_directly("user1_react")
+    user2 = create_user_directly("user2_react")
+    # 'testuser' is also available from fixture. Let's use it as user3.
+    user3 = get_test_user_obj() # This is 'testuser'
+
+    post = create_post_directly(user_id=user1.id, title="Post for Reaction Counts")
+
+    # User1 reacts with 👍
+    login_test_user(client, username="user1_react", password="password")
+    client.post(f'/post/{post.id}/react', data={'emoji': '👍'}, follow_redirects=True)
+
+    # User2 reacts with 👍
+    login_test_user(client, username="user2_react", password="password")
+    client.post(f'/post/{post.id}/react', data={'emoji': '👍'}, follow_redirects=True)
+
+    # User3 (testuser) reacts with ❤️
+    login_test_user(client, username="testuser", password="testpassword")
+    client.post(f'/post/{post.id}/react', data={'emoji': '❤️'}, follow_redirects=True)
+
+    # User1 changes their reaction to 🎉 (original 👍 from user1 is gone)
+    login_test_user(client, username="user1_react", password="password")
+    client.post(f'/post/{post.id}/react', data={'emoji': '🎉'}, follow_redirects=True)
+
+    # Expected counts: 👍 (1 from user2), ❤️ (1 from user3), 🎉 (1 from user1)
+    response = client.get(f'/blog/post/{post.id}')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert "👍 (1)" in response_data
+    assert "❤️ (1)" in response_data
+    assert "🎉 (1)" in response_data
+    # Check for a non-reacted emoji to ensure it's not shown or shown as 0 (current template doesn't show 0)
+    assert "😂" not in response_data # Assuming 😂 wasn't used and template doesn't list emojis with 0 count
+
+def test_reaction_unauthenticated_attempt(client):
+    """Test attempting to react without being logged in."""
+    user = create_user_directly("owner_user_react") # Some user to own the post
+    post = create_post_directly(user_id=user.id, title="Post for Unauth Reaction Test")
+
+    # client is not logged in here
+    response = client.post(f'/post/{post.id}/react', data={'emoji': '👍'}, follow_redirects=False) # Check redirect
+    assert response.status_code == 302
+    assert '/login' in response.location
+
+    assert Reaction.query.filter_by(post_id=post.id).count() == 0
+
+def test_reaction_to_non_existent_post(client):
+    """Test reacting to a post that does not exist."""
+    login_test_user(client, username="testuser", password="testpassword")
+
+    response = client.post('/post/99999/react', data={'emoji': '👍'}, follow_redirects=False)
+    assert response.status_code == 404 # Post.query.get_or_404 should trigger this
+
+def test_reaction_no_emoji_provided(client):
+    """Test submitting a reaction without an emoji."""
+    login_test_user(client, username="testuser", password="testpassword")
+    user = get_test_user_obj()
+    post = create_post_directly(user_id=user.id, title="Post for No Emoji Test")
+
+    response = client.post(f'/post/{post.id}/react', data={}, follow_redirects=True) # No emoji in data
+    assert response.status_code == 200 # Redirects to view_post
+    assert b"No emoji provided for reaction." in response.data # Flash message
+    assert Reaction.query.filter_by(post_id=post.id).count() == 0

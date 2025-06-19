@@ -4,6 +4,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from datetime import datetime
+from collections import Counter # Added for reaction counts
 from flask_socketio import SocketIO, emit, join_room
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_sqlalchemy import SQLAlchemy
@@ -18,7 +19,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group # Add Group
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction # Add Reaction
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
 
 app = Flask(__name__)
@@ -478,6 +479,11 @@ def view_post(post_id):
     # Use relationship for comments, ensure ordering if not default in model
     post_comments = Comment.query.with_parent(post).order_by(Comment.timestamp.asc()).all()
 
+    # Reaction data
+    post_reactions = Reaction.query.filter_by(post_id=post_id).all()
+    reaction_counts = Counter(r.emoji for r in post_reactions)
+    # Example: reaction_counts will be {'👍': 2, '❤️': 1}
+
     user_has_liked = False
     current_user_id = session.get('user_id')
     if current_user_id:
@@ -506,7 +512,9 @@ def view_post(post_id):
                            user_has_liked=user_has_liked,
                            post_reviews=post_reviews,
                            average_rating=average_rating,
-                           can_submit_review=can_submit_review)
+                           can_submit_review=can_submit_review,
+                           reactions=post_reactions, # Pass all reactions for detailed display if needed
+                           reaction_counts=dict(reaction_counts)) # Pass emoji counts
 
 @app.route('/blog/edit/<int:post_id>', methods=['GET', 'POST'])
 @login_required
@@ -659,6 +667,50 @@ def add_review(post_id):
     db.session.add(new_review_db)
     db.session.commit()
     flash('Review submitted successfully!', 'success')
+    return redirect(url_for('view_post', post_id=post_id))
+
+@app.route('/post/<int:post_id>/react', methods=['POST'])
+@login_required
+def react_to_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    user_id = session.get('user_id') # Assuming current_user.id from session
+    emoji = request.form.get('emoji')
+
+    if not emoji:
+        flash('No emoji provided for reaction.', 'danger')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    # Check if user has already reacted with this specific emoji
+    existing_reaction_same_emoji = Reaction.query.filter_by(
+        user_id=user_id,
+        post_id=post_id,
+        emoji=emoji
+    ).first()
+
+    if existing_reaction_same_emoji:
+        # User clicked the same emoji again - remove reaction (toggle off)
+        db.session.delete(existing_reaction_same_emoji)
+        flash('Reaction removed.', 'success')
+    else:
+        # User clicked a new emoji or has no reaction yet.
+        # Check if the user has reacted with any other emoji on this post
+        existing_reaction_any_emoji = Reaction.query.filter_by(
+            user_id=user_id,
+            post_id=post_id
+        ).first()
+
+        if existing_reaction_any_emoji:
+            # User is changing their reaction
+            existing_reaction_any_emoji.emoji = emoji
+            existing_reaction_any_emoji.timestamp = datetime.utcnow() # Update timestamp
+            flash('Reaction updated.', 'success')
+        else:
+            # New reaction
+            new_reaction = Reaction(user_id=user_id, post_id=post_id, emoji=emoji)
+            db.session.add(new_reaction)
+            flash('Reaction added.', 'success')
+
+    db.session.commit()
     return redirect(url_for('view_post', post_id=post_id))
 
 @app.route('/register', methods=['GET', 'POST'])

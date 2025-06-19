@@ -775,8 +775,40 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
             }
             ```
 
+*   **GET /api/users/<user_id>/feed**
+    *   **Description:** Retrieves a personalized feed of posts for the specified user. The feed is curated based on the user's activity, connections (friends, groups), and trending content.
+    *   **Authentication:** Not required.
+    *   **Path Parameters:**
+        *   `user_id` (integer): The ID of the user for whom to retrieve the feed.
+    *   **Success Response (200 OK):**
+        *   **Content-Type:** `application/json`
+        *   **Body:** A JSON array of post objects. Each post object typically includes `id`, `title`, `content`, `author_username`, and `timestamp`.
+        *   **Example:**
+            ```json
+            {
+                "feed_posts": [
+                    {
+                        "id": 123,
+                        "title": "A Great Post",
+                        "content": "This is the content of the post...",
+                        "author_username": "friend_user",
+                        "timestamp": "YYYY-MM-DDTHH:MM:SS"
+                    }
+                    // ... more post objects
+                ]
+            }
+            ```
+    *   **Error Responses:**
+        *   **404 Not Found:** If the specified `user_id` does not exist.
+            ```json
+            {
+                "message": "User <user_id> not found"
+            }
+            ```
+            *(The exact message might vary slightly based on Flask-RESTful's error handling for `get_or_404`)*
+
 *   **GET /api/personalized-feed**
-    *   **Description:** Provides a personalized feed of content (posts, events, polls) for the authenticated user, sorted by recency.
+    *   **Description:** Provides a personalized feed of content (posts, events, polls) for the authenticated user, sorted by recency. (This is a more general feed, typically for the logged-in user identified by JWT).
     *   **Authentication:** Required. Expects a JWT Bearer token in the `Authorization` header.
         *   Example: `Authorization: Bearer <your_jwt_access_token>`
     *   **Success Response (200 OK):**

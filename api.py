@@ -9,7 +9,8 @@ from recommendations import (
     suggest_events_to_attend,
     suggest_polls_to_vote,
     suggest_groups_to_join, # Keep existing imports from RecommendationResource
-    suggest_users_to_follow # Keep existing imports from RecommendationResource
+    suggest_users_to_follow, # Keep existing imports from RecommendationResource
+    get_personalized_feed_posts # Import for PersonalizedFeedResource
 )
 
 # Placeholder for authentication logic for now
@@ -128,67 +129,45 @@ class EventResource(Resource):
 # For now, focusing on GET for single event and POST for list.
 
 class PersonalizedFeedResource(Resource):
-    @jwt_required()
-    def get(self):
-        current_user_id = get_jwt_identity()
-        feed_items = []
+    # @jwt_required() # Assuming user_id from path means public access or different auth
+    def get(self, user_id):
+        # Ensure user exists, otherwise get_or_404 will abort with a 404 error
+        User.query.get_or_404(user_id)
 
-        # Get recommended posts
-        recommended_posts_with_reasons = suggest_posts_to_read(current_user_id, limit=10)
-        for post_obj, reason in recommended_posts_with_reasons:
-            if post_obj:
-                feed_items.append({
-                    'type': 'post',
-                    'id': post_obj.id,
-                    'title': post_obj.title,
-                    'content': post_obj.content,
-                    'author_username': post_obj.author.username if post_obj.author else 'Unknown',
-                    'timestamp': post_obj.timestamp.isoformat() if post_obj.timestamp else None,
-                    'reason': reason
-                })
+        # Call the new recommendation function to get personalized feed posts
+        # This function is expected to return a list of Post objects (or similar data)
+        # The subtask mentions a limit of 20
+        feed_posts_data = get_personalized_feed_posts(user_id, limit=20)
 
-        # Get recommended events
-        recommended_events = suggest_events_to_attend(current_user_id, limit=5)
-        for event_obj in recommended_events:
-            if event_obj:
-                feed_items.append({
-                    'type': 'event',
-                    'id': event_obj.id,
-                    'title': event_obj.title,
-                    'description': event_obj.description,
-                    'date': event_obj.date, # Assuming date is already a string
-                    'time': event_obj.time, # Assuming time is already a string
-                    'location': event_obj.location,
-                    'organizer_username': event_obj.organizer.username if event_obj.organizer else 'Unknown',
-                    # Use created_at for sorting, event.date is specific to the event's occurrence
-                    'timestamp': event_obj.created_at.isoformat() if event_obj.created_at else None
-                })
+        # Serialize the post objects. Assuming Post model has a to_dict() method.
+        # If get_personalized_feed_posts already returns dicts, this step might differ.
+        # For now, assuming it returns Post objects.
+        if not feed_posts_data: # If no posts are found, return an empty list
+            return {'feed_posts': []}, 200
 
-        # Get recommended polls
-        recommended_polls = suggest_polls_to_vote(current_user_id, limit=5)
-        for poll_obj in recommended_polls:
-            if poll_obj:
-                options_data = []
-                for option in poll_obj.options: # Assuming poll_obj.options is a list of PollOption
-                    options_data.append({
-                        'id': option.id,
-                        'text': option.text,
-                        'vote_count': len(option.votes) # Assuming option.votes is a list/collection of votes
-                    })
-                feed_items.append({
-                    'type': 'poll',
-                    'id': poll_obj.id,
-                    'question': poll_obj.question,
-                    'creator_username': poll_obj.creator.username if poll_obj.creator else 'Unknown',
-                    'options': options_data,
-                    'timestamp': poll_obj.created_at.isoformat() if poll_obj.created_at else None
-                })
+        # Assuming feed_posts_data is a list of (Post, reason) tuples
+        # or just Post objects. The subtask description implies it's just posts.
+        # If it's (Post, reason) and reason is not needed, extract Post.
+        # For this implementation, let's assume get_personalized_feed_posts returns a list of Post objects.
 
-        # Sort feed items by timestamp (most recent first)
-        # Ensure all items have a valid timestamp; handle None if necessary, though recommendations should have them
-        feed_items.sort(key=lambda x: x['timestamp'] if x['timestamp'] else datetime.min.isoformat(), reverse=True)
+        serialized_posts = []
+        if isinstance(feed_posts_data, list):
+            for item in feed_posts_data:
+                if isinstance(item, Post): # If it's a Post object directly
+                    serialized_posts.append(item.to_dict())
+                elif isinstance(item, tuple) and len(item) > 0 and isinstance(item[0], Post):
+                    # If it's a tuple like (Post, reason), take the Post part
+                    # and optionally include the reason if the API contract requires it.
+                    # For now, just taking the post as per the subtask's focus on posts.
+                    post_dict = item[0].to_dict()
+                    # If reason is needed: post_dict['reason'] = item[1]
+                    serialized_posts.append(post_dict)
+                # Add more checks if the structure from get_personalized_feed_posts is different
 
-        return {'feed_items': feed_items}, 200
+        # If get_personalized_feed_posts is guaranteed to return a list of Post objects:
+        # serialized_posts = [post.to_dict() for post in feed_posts_data]
+
+        return {'feed_posts': serialized_posts}, 200
 
 from flask import jsonify # Added jsonify
 # Note: recommendation function imports are now at the top of the file

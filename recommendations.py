@@ -124,28 +124,134 @@ def suggest_posts_to_read(user_id, limit=5):
     # 5. Sort and Limit
     # Sort by the interaction timestamp stored in recommended_posts_with_ts
     # We need to sort the valid_post_ids based on their timestamps from recommended_posts_with_ts
-    # Then fetch the Post objects in that order.
+    # NEW IMPLEMENTATION STARTS HERE
 
-    sorted_post_ids = sorted(
-        valid_post_ids,
-        key=lambda pid: recommended_posts_with_ts[pid],
-        reverse=True
-    )
+    # Scoring constants
+    SCORE_FRIEND_LIKE = 2
+    SCORE_FRIEND_COMMENT = 5
+    SCORE_RECENCY_FACTOR = 10  # Adjust based on desired impact
+    RECENCY_HALFLIFE_DAYS = 7 # For calculating recency score, e.g. score halves every 7 days
+    SCORE_TOTAL_LIKES_FACTOR = 0.1  # Adjust
+    SCORE_TOTAL_COMMENTS_FACTOR = 0.2  # Adjust
 
-    # Fetch Post objects in the sorted order
-    # This can be inefficient if sorted_post_ids is very large.
-    # A better way might be to fetch all relevant Post objects first, then sort them in Python.
+    # 2. Exclude posts by the current user, already interacted with, or bookmarked
+    user_liked_post_ids = {like.post_id for like in Like.query.filter_by(user_id=user_id).all()}
+    user_commented_post_ids = {comment.post_id for comment in Comment.query.filter_by(user_id=user_id).all()}
+    user_bookmarked_post_ids = {bookmark.post_id for bookmark in current_user.bookmarks} # Assumes Bookmark model is imported and User.bookmarks relationship exists
 
-    # Fetch all relevant Post objects first
-    posts_to_consider = Post.query.filter(Post.id.in_(sorted_post_ids)).all()
+    # Fetch all posts initially - this could be optimized for very large datasets
+    all_posts = Post.query.all()
 
-    # Create a dictionary for quick lookup
-    post_map = {post.id: post for post in posts_to_consider}
+    potential_posts = []
+    for post in all_posts:
+        if post.user_id == user_id:
+            continue
+        if post.id in user_liked_post_ids:
+            continue
+        if post.id in user_commented_post_ids:
+            continue
+        if post.id in user_bookmarked_post_ids:
+            continue
+        potential_posts.append(post)
 
-    # Reconstruct the sorted list of Post objects
-    final_suggested_posts = [post_map[pid] for pid in sorted_post_ids if pid in post_map]
+    if not potential_posts:
+        return []
 
-    return final_suggested_posts[:limit]
+    # 3. Calculate scores and generate reasons
+    scored_posts = []
+
+    # Pre-fetch all likes and comments for efficiency if dealing with many posts
+    # This avoids N+1 queries within the loop when accessing post.likes or post.comments
+    all_likes_query = db.session.query(Like.post_id, Like.user_id).all()
+    post_likes_map = defaultdict(list)
+    for post_id, liker_id in all_likes_query:
+        post_likes_map[post_id].append(liker_id)
+
+    all_comments_query = db.session.query(Comment.post_id, Comment.user_id).all()
+    post_comments_map = defaultdict(list)
+    for post_id, commenter_id in all_comments_query:
+        post_comments_map[post_id].append(commenter_id)
+
+    # Pre-fetch friend usernames if needed for reason strings to avoid DB calls in loop
+    friend_usernames = {friend.id: friend.username for friend in User.query.filter(User.id.in_(friend_ids)).all()}
+
+
+    for post in potential_posts:
+        score = 0
+        reason_parts = []
+
+        # Friend Interaction Score
+        friend_likers_usernames = []
+        friend_commenters_usernames = []
+
+        # Likes by friends
+        for liker_id in post_likes_map.get(post.id, []):
+            if liker_id in friend_ids:
+                score += SCORE_FRIEND_LIKE
+                if friend_usernames.get(liker_id): # Add username if available
+                    friend_likers_usernames.append(friend_usernames[liker_id])
+
+        # Comments by friends
+        for commenter_id in post_comments_map.get(post.id, []):
+            if commenter_id in friend_ids:
+                score += SCORE_FRIEND_COMMENT
+                if friend_usernames.get(commenter_id): # Add username if available
+                    friend_commenters_usernames.append(friend_usernames[commenter_id])
+
+        # Post Recency Score
+        # Using a simple decay: score = factor / (days_old + 1)
+        # More sophisticated decay: factor * (0.5 ^ (days_old / half_life_days))
+        days_old = (datetime.utcnow() - post.timestamp).days
+        if days_old < 0: days_old = 0 # Handle potential future timestamps gracefully, though unlikely
+
+        # recency_score = SCORE_RECENCY_FACTOR / (days_old + 1)
+        # Using exponential decay:
+        recency_score = SCORE_RECENCY_FACTOR * (0.5 ** (days_old / RECENCY_HALFLIFE_DAYS))
+        score += recency_score
+
+        # Post Popularity Score
+        total_likes = len(post_likes_map.get(post.id, []))
+        total_comments = len(post_comments_map.get(post.id, []))
+
+        score += SCORE_TOTAL_LIKES_FACTOR * total_likes
+        score += SCORE_TOTAL_COMMENTS_FACTOR * total_comments
+
+        # Reason Generation
+        if friend_likers_usernames:
+            if len(friend_likers_usernames) > 2:
+                reason_parts.append(f"Liked by {friend_likers_usernames[0]}, {friend_likers_usernames[1]}, and {len(friend_likers_usernames)-2} others")
+            else:
+                reason_parts.append(f"Liked by {', '.join(friend_likers_usernames)}")
+
+        if friend_commenters_usernames:
+            if len(friend_commenters_usernames) > 2:
+                reason_parts.append(f"Commented on by {friend_commenters_usernames[0]}, {friend_commenters_usernames[1]}, and {len(friend_commenters_usernames)-2} others")
+            else:
+                reason_parts.append(f"Commented on by {', '.join(friend_commenters_usernames)}")
+
+        reason_string = ""
+        if reason_parts:
+            reason_string = ". ".join(reason_parts) + "."
+        else:
+            # Fallback reason if no specific friend interactions drove the recommendation strongly
+            # We can make this smarter based on which score component was highest
+            if recency_score > (SCORE_FRIEND_LIKE + SCORE_FRIEND_COMMENT): # Example condition
+                 reason_string = "Trending post."
+            elif (SCORE_TOTAL_LIKES_FACTOR * total_likes + SCORE_TOTAL_COMMENTS_FACTOR * total_comments) > (SCORE_FRIEND_LIKE + SCORE_FRIEND_COMMENT): # Example condition
+                 reason_string = "Popular post."
+            else:
+                 reason_string = "Suggested for you."
+
+
+        scored_posts.append({'post': post, 'score': score, 'reason': reason_string})
+
+    # 4. Sort and Limit
+    scored_posts.sort(key=lambda x: x['score'], reverse=True)
+
+    # Prepare final list of (Post, reason_string) tuples
+    final_recommendations = [(item['post'], item['reason']) for item in scored_posts[:limit]]
+
+    return final_recommendations
 
 def suggest_groups_to_join(user_id, limit=5):
     """Suggest groups that the current user's friends are members of."""
@@ -419,3 +525,127 @@ def get_trending_hashtags(top_n=10):
     trending_hashtags = [tag for tag, count in top_hashtags_with_counts]
 
     return trending_hashtags
+
+
+# Define constants for suggest_trending_posts
+WEIGHT_RECENT_LIKE = 1
+WEIGHT_RECENT_COMMENT = 3
+TRENDING_POST_AGE_FACTOR_SCALE = 5 # Scales the impact of post age
+
+def suggest_trending_posts(user_id, limit=5, since_days=7):
+    """
+    Suggests trending posts based on recent activity (likes, comments) and post recency.
+    Excludes posts by the user, or already interacted with/bookmarked by the user.
+    """
+    current_user = User.query.get(user_id)
+    if not current_user:
+        return []
+
+    cutoff_date = datetime.utcnow() - timedelta(days=since_days)
+
+    # 1. Exclusions: Posts by the user, liked, commented, or bookmarked by the user
+    user_liked_post_ids = {like.post_id for like in Like.query.filter_by(user_id=user_id).all()}
+    user_commented_post_ids = {comment.post_id for comment in Comment.query.filter_by(user_id=user_id).all()}
+    user_bookmarked_post_ids = {bookmark.post_id for bookmark in current_user.bookmarks}
+
+    excluded_post_ids = user_liked_post_ids.union(user_commented_post_ids).union(user_bookmarked_post_ids)
+
+    # 2. Identify candidate posts:
+    #    - Created within since_days OR
+    #    - Having likes within since_days OR
+    #    - Having comments within since_days
+
+    # Posts created recently
+    recent_posts_query = Post.query.filter(Post.timestamp >= cutoff_date)
+
+    # Posts with recent likes
+    posts_with_recent_likes_ids = db.session.query(Like.post_id).filter(Like.timestamp >= cutoff_date).distinct()
+
+    # Posts with recent comments
+    posts_with_recent_comments_ids = db.session.query(Comment.post_id).filter(Comment.timestamp >= cutoff_date).distinct()
+
+    # Combine IDs of all potentially relevant posts
+    candidate_post_ids = set()
+    for post in recent_posts_query.all():
+        candidate_post_ids.add(post.id)
+    for r_like_id in posts_with_recent_likes_ids:
+        candidate_post_ids.add(r_like_id[0]) # query returns tuples
+    for r_comment_id in posts_with_recent_comments_ids:
+        candidate_post_ids.add(r_comment_id[0]) # query returns tuples
+
+    # Filter out posts by the current user and other exclusions upfront
+    # Also filter out posts that are older than since_days if they have no recent activity (implicit in how candidate_post_ids is built)
+    valid_candidate_post_ids = []
+    if candidate_post_ids:
+        # Fetch actual post objects to check author
+        candidate_posts_q = Post.query.filter(Post.id.in_(list(candidate_post_ids)))
+        for post in candidate_posts_q:
+            if post.user_id == user_id:
+                continue
+            if post.id in excluded_post_ids:
+                continue
+            valid_candidate_post_ids.append(post.id)
+
+    if not valid_candidate_post_ids:
+        return []
+
+    # 3. Fetch recent interaction counts for valid candidate posts
+    recent_likes_counts = db.session.query(
+        Like.post_id, func.count(Like.id).label('like_count')
+    ).filter(
+        Like.post_id.in_(valid_candidate_post_ids),
+        Like.timestamp >= cutoff_date
+    ).group_by(Like.post_id).all()
+    likes_map = {post_id: count for post_id, count in recent_likes_counts}
+
+    recent_comments_counts = db.session.query(
+        Comment.post_id, func.count(Comment.id).label('comment_count')
+    ).filter(
+        Comment.post_id.in_(valid_candidate_post_ids),
+        Comment.timestamp >= cutoff_date
+    ).group_by(Comment.post_id).all()
+    comments_map = {post_id: count for post_id, count in recent_comments_counts}
+
+    # 4. Calculate scores for each valid candidate post
+    scored_posts = []
+    # Fetch the post objects we will score
+    posts_to_score = Post.query.filter(Post.id.in_(valid_candidate_post_ids)).all()
+
+    for post in posts_to_score:
+        score = 0
+
+        # Interaction score
+        score += likes_map.get(post.id, 0) * WEIGHT_RECENT_LIKE
+        score += comments_map.get(post.id, 0) * WEIGHT_RECENT_COMMENT
+
+        # Post age factor: higher for newer posts within the window
+        # This gives a small bonus to newer posts.
+        # The score is higher if the post is more recent (smaller age_in_days_within_window)
+        # We consider the age from the start of the window (cutoff_date) or its actual creation if newer.
+        # Or simply its age from now, normalized by since_days.
+
+        post_age_days = (datetime.utcnow() - post.timestamp).days
+        if post_age_days < 0: post_age_days = 0 # Should not happen
+
+        # Simple recency bonus: more points if post_age_days is small.
+        # Max score if post_age_days = 0, min score if post_age_days = since_days
+        # We want factor to be higher for newer posts.
+        if post_age_days <= since_days: # Only apply strong recency if within the window
+             # Normalized age factor: (since_days - post_age_days) / since_days
+             # This gives 1 for brand new, 0 for post at the edge of since_days
+             # Multiplied by a scaling factor
+            age_factor_bonus = ((since_days - post_age_days) / float(since_days)) * TRENDING_POST_AGE_FACTOR_SCALE if since_days > 0 else 0
+            score += age_factor_bonus
+        # else: older posts get no specific "newness" bonus from this factor,
+        # but can still trend if they have many recent likes/comments.
+
+        # Only consider posts that have some activity or are recent enough
+        # A post older than `since_days` must have recent likes/comments to have a score > 0 here (already filtered by candidate_post_ids logic)
+        if score > 0 :
+             scored_posts.append({'post': post, 'score': score})
+
+    # 5. Sort and Limit
+    scored_posts.sort(key=lambda x: x['score'], reverse=True)
+
+    final_posts = [item['post'] for item in scored_posts[:limit]]
+    return final_posts

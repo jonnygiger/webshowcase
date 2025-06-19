@@ -36,6 +36,7 @@
                       <a class="nav-link" href="{{ url_for('view_notifications') }}">Notifications</a>
                   </li>
                   <li><a href="{{ url_for('inbox') }}">Inbox</a></li>
+                  <li><a href="{{ url_for('discover_feed') }}">Discovery</a></li> {# New Discovery Link #}
                   {# Link to Friend Requests #}
                   {% if current_user %} {# Or session['logged_in'] as per existing structure #}
                   <li class="nav-item">

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Recommendations - My Flask App{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Recommendations For You</h1>
+
+    <!-- Suggested Users -->
+    <section class="mb-5">
+        <h2>Suggested Users to Follow</h2>
+        {% if suggested_users %}
+            <div class="list-group">
+                {% for user in suggested_users %}
+                    <a href="{{ url_for('user_profile', username=user.username) }}" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h5 class="mb-1">
+                                <img src="{{ user.profile_picture or url_for('static', filename='profile_pics/default.png') }}" alt="{{ user.username }}'s profile picture" class="rounded-circle me-2" style="width: 30px; height: 30px;">
+                                {{ user.username }}
+                            </h5>
+                            <!-- Optional: Add a reason for suggestion, e.g., "X mutual friends" -->
+                        </div>
+                        {% if user.bio %}
+                            <p class="mb-1">{{ user.bio[:100] }}{% if user.bio|length > 100 %}...{% endif %}</p>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No new user suggestions at the moment. Expand your network!</p>
+        {% endif %}
+    </section>
+
+    <!-- Suggested Posts -->
+    <section class="mb-5">
+        <h2>Suggested Posts to Read</h2>
+        {% if suggested_posts %}
+            <div class="list-group">
+                {% for post in suggested_posts %}
+                    <a href="{{ url_for('view_post', post_id=post.id) }}" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h5 class="mb-1">{{ post.title }}</h5>
+                            <small>By: {{ post.author.username }}</small>
+                        </div>
+                        <p class="mb-1">{{ post.content[:150] }}{% if post.content|length > 150 %}...{% endif %}</p>
+                        <!-- Optional: Add reason, e.g., "Liked by X friends" -->
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No new post suggestions right now. Check back later!</p>
+        {% endif %}
+    </section>
+
+    <!-- Suggested Groups -->
+    <section>
+        <h2>Suggested Groups to Join</h2>
+        {% if suggested_groups %}
+            <div class="list-group">
+                {% for group in suggested_groups %}
+                    <a href="{{ url_for('view_group', group_id=group.id) }}" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h5 class="mb-1">{{ group.name }}</h5>
+                            <!-- Optional: Add reason, e.g., "X friends are members" -->
+                        </div>
+                        {% if group.description %}
+                            <p class="mb-1">{{ group.description[:100] }}{% if group.description|length > 100 %}...{% endif %}</p>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No new group suggestions available at this time.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

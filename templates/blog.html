@@ -1,70 +1,97 @@
 {% extends "base.html" %}
-{% block title %}Blog{% endblock %}
+
+{% block title %}Blog - My Flask App{% endblock %}
 
 {% block content %}
-  <h2>Blog Posts</h2>
+<div class="container mt-4">
+    <div class="row">
+        <!-- Main Blog Content -->
+        <div class="col-md-9">
+            <h1 class="mb-4">Blog Posts</h1>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, message in messages %}
-        <div class="alert alert-{{ category }}">{{ message }}</div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
-
-  {% if posts %}
-    {% for post in posts %}
-      <article>
-        <h3><a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a></h3>
-        <p><small>By <a href="{{ url_for('user_profile', username=post.author_username) }}">{{ post.author_username }}</a> on {{ post.timestamp }}
-          {% if post.last_edited %}
-            (Edited: {{ post.last_edited }})
-          {% endif %}
-          | {{ post.likes }} like(s) | {{ post.shares.count() if post.shares else 0 }} Share(s) {# Display Share Count #}
-          <br> {# Add a line break for better spacing of review info #}
-          Average Rating:
-            {% if post.review_count > 0 %}
-                {{ "%.1f" | format(post.average_rating) }}/5 ({{ post.review_count }} review{% if post.review_count != 1 %}s{% endif %})
-            {% else %}
-                No reviews yet.
-            {% endif %}
-        </small></p>
-        <p>{{ post.content[:200] }}...</p>
-        {% if post.hashtags %}
-            <p>
-                {% for tag in post.hashtags.split(',') %}
-                    {% set cleaned_tag = tag.strip() %}
-                    {% if cleaned_tag %}
-                        <a href="{{ url_for('view_hashtag_posts', tag=cleaned_tag) }}">#{{ cleaned_tag }}</a>
-                    {% endif %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="alert alert-{{ category }}">{{ message }}</div>
                 {% endfor %}
-            </p>
-        {% endif %}
-        <p><a href="{{ url_for('view_post', post_id=post.id) }}">Read More</a>
-        {% if session.logged_in and session.username == post.author_username %}
-          <a href="{{ url_for('edit_post', post_id=post.id) }}" class="btn btn-sm btn-outline-secondary" style="margin-left: 10px;">Edit</a>
-        {% endif %}
-        {% if current_user.is_authenticated %}
-          <form action="{{ url_for('bookmark_post', post_id=post.id) }}" method="POST" style="display: inline; margin-left: 10px;">
-              <button type="submit" class="btn btn-sm {% if post.id in bookmarked_post_ids %}btn-primary{% else %}btn-outline-primary{% endif %}">
-                  {% if post.id in bookmarked_post_ids %}
-                      Unbookmark
-                  {% else %}
-                      Bookmark
-                  {% endif %}
-              </button>
-          </form>
-        {% endif %}
-        {% if current_user.is_authenticated %}
-          <form action="{{ url_for('share_post', post_id=post.id) }}" method="POST" style="display: inline; margin-left: 10px;">
-              <button type="submit" class="btn btn-sm btn-outline-success">Share</button> {# Simple Share Button #}
-          </form>
-        {% endif %}
-        </p>
-      </article>
-      <hr>
-    {% endfor %}
-  {% else %}
-    <p>No blog posts yet. <a href="{{ url_for('create_post') }}">Create one?</a></p>
-  {% endif %}
+              {% endif %}
+            {% endwith %}
+
+            {% if posts %}
+              {% for post_item in posts %} {# Renamed post to post_item to match variable from instructions #}
+                <div class="card mb-3"> {# Using card styling from instructions #}
+                    <div class="card-body">
+                        <h5 class="card-title"><a href="{{ url_for('view_post', post_id=post_item.id) }}">{{ post_item.title }}</a></h5>
+                        <p><small>By <a href="{{ url_for('user_profile', username=post_item.author.username) }}">{{ post_item.author.username }}</a> on {{ post_item.timestamp.strftime('%Y-%m-%d %H:%M') }}
+                          {% if post_item.last_edited %}
+                            (Edited: {{ post_item.last_edited.strftime('%Y-%m-%d %H:%M') }})
+                          {% endif %}
+                          | {{ post_item.likes|length }} like(s) | {{ post_item.shares.count() if post_item.shares else 0 }} Share(s)
+                          <br>
+                          Average Rating:
+                            {% if post_item.review_count > 0 %}
+                                {{ "%.1f" | format(post_item.average_rating) }}/5 ({{ post_item.review_count }} review{% if post_item.review_count != 1 %}s{% endif %})
+                            {% else %}
+                                No reviews yet.
+                            {% endif %}
+                        </small></p>
+                        <p class="card-text">{{ post_item.content[:200] }}{% if post_item.content|length > 200 %}...{% endif %}</p>
+                        {% if post_item.hashtags %}
+                            <p>
+                                {% for tag in post_item.hashtags.split(',') %}
+                                    {% set cleaned_tag = tag.strip() %}
+                                    {% if cleaned_tag %}
+                                        <a href="{{ url_for('view_hashtag_posts', tag=cleaned_tag) }}">#{{ cleaned_tag }}</a>
+                                    {% endif %}
+                                {% endfor %}
+                            </p>
+                        {% endif %}
+                        <p><a href="{{ url_for('view_post', post_id=post_item.id) }}" class="btn btn-primary btn-sm">Read More</a>
+                        {% if current_user and current_user.id == post_item.user_id %}
+                          <a href="{{ url_for('edit_post', post_id=post_item.id) }}" class="btn btn-sm btn-outline-secondary" style="margin-left: 10px;">Edit</a>
+                        {% endif %}
+                        {% if current_user %} {# Assuming current_user is available from context_processor #}
+                          <form action="{{ url_for('bookmark_post', post_id=post_item.id) }}" method="POST" style="display: inline; margin-left: 10px;">
+                              <button type="submit" class="btn btn-sm {% if post_item.id in bookmarked_post_ids %}btn-info{% else %}btn-outline-info{% endif %}">
+                                  {% if post_item.id in bookmarked_post_ids %}
+                                      Unbookmark
+                                  {% else %}
+                                      Bookmark
+                                  {% endif %}
+                              </button>
+                          </form>
+                          <form action="{{ url_for('share_post', post_id=post_item.id) }}" method="POST" style="display: inline; margin-left: 10px;">
+                              <button type="submit" class="btn btn-sm btn-outline-success">Share</button>
+                          </form>
+                        {% endif %}
+                        </p>
+                    </div>
+                </div>
+              {% endfor %}
+            {% else %}
+              <p>No blog posts yet. <a href="{{ url_for('create_post') }}">Be the first to create one!</a></p>
+            {% endif %}
+        </div>
+
+        <!-- Sidebar for Recommendations Snippet -->
+        <div class="col-md-3">
+            {% if current_user and suggested_users_snippet %}
+            <div class="card sticky-top" style="top: 20px;"> <!-- sticky-top for sidebar effect -->
+                <div class="card-body">
+                    <h5 class="card-title">Suggested Users</h5>
+                    <div class="list-group list-group-flush">
+                        {% for user_suggestion in suggested_users_snippet %}
+                        <a href="{{ url_for('user_profile', username=user_suggestion.username) }}" class="list-group-item list-group-item-action">
+                            <img src="{{ user_suggestion.profile_picture or url_for('static', filename='profile_pics/default.png') }}" alt="{{ user_suggestion.username }}'s profile picture" class="rounded-circle me-2" style="width: 25px; height: 25px;">
+                            {{ user_suggestion.username }}
+                        </a>
+                        {% endfor %}
+                    </div>
+                    <a href="{{ url_for('recommendations_view') }}" class="btn btn-sm btn-outline-primary mt-2">See More Recommendations</a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
 {% endblock %}

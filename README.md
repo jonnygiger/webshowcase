@@ -517,6 +517,16 @@ To keep users informed about recent activity on the platform, an in-app notifica
     *   Dynamic generation of user-facing alerts based on application events.
     *   New routes and templates for displaying notifications.
 
+### Recommendations Feature
+
+To enhance user engagement and content discovery, this application now includes a recommendations feature. Users can discover:
+
+*   **Suggested Users to Follow**: Based on mutual connections (friends of friends) and other social interactions.
+*   **Suggested Posts to Read**: Highlighting posts liked by a user's friends or related to their interests.
+*   **Suggested Groups to Join**: Pointing out groups that friends are part of or that align with a user's activity.
+
+You can find dedicated recommendations on the `/recommendations` page (accessible when logged in). Additionally, a snippet of user suggestions is displayed on the main blog page to help you connect with others more easily.
+
 ## RESTful API
 
 This application provides a RESTful API for interacting with its core resources: Users, Posts, and Events.

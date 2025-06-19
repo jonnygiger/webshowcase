@@ -21,6 +21,7 @@ migrate = Migrate()
 # and definitely before db.init_app
 from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity # Add UserActivity
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
+from recommendations import suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
@@ -575,10 +576,15 @@ def blog():
     all_posts = all_posts_query.all()
 
     bookmarked_post_ids = set()
+    suggested_users_snippet = [] # Initialize as empty list
+
     if 'user_id' in session:
         user_id = session['user_id']
         bookmarks = Bookmark.query.filter_by(user_id=user_id).all()
         bookmarked_post_ids = {bookmark.post_id for bookmark in bookmarks}
+
+        # Fetch user suggestions for the snippet
+        suggested_users_snippet = suggest_users_to_follow(user_id, limit=3) # Get 3 suggestions
 
     for post_item in all_posts:
         post_item.review_count = len(post_item.reviews)
@@ -588,7 +594,10 @@ def blog():
             post_item.average_rating = 0
         # The number of likes will be len(post_item.likes) in the template
 
-    return render_template('blog.html', posts=all_posts, bookmarked_post_ids=bookmarked_post_ids)
+    return render_template('blog.html',
+                           posts=all_posts,
+                           bookmarked_post_ids=bookmarked_post_ids,
+                           suggested_users_snippet=suggested_users_snippet) # Pass snippet to template
 
 @app.route('/blog/post/<int:post_id>')
 def view_post(post_id):
@@ -1818,3 +1827,22 @@ def user_activity_feed(username):
                                    .order_by(UserActivity.timestamp.desc())\
                                    .all()
     return render_template('user_activity.html', user=user, activities=activities)
+
+
+@app.route('/recommendations')
+@login_required
+def recommendations_view():
+    user_id = session.get('user_id')
+    # user_id will exist due to @login_required, but defensive check is good practice
+    if not user_id:
+        flash('Please log in to see recommendations.', 'info')
+        return redirect(url_for('login'))
+
+    suggested_users = suggest_users_to_follow(user_id, limit=5)
+    suggested_posts = suggest_posts_to_read(user_id, limit=5)
+    suggested_groups = suggest_groups_to_join(user_id, limit=5)
+
+    return render_template('recommendations.html',
+                           suggested_users=suggested_users,
+                           suggested_posts=suggested_posts,
+                           suggested_groups=suggested_groups)

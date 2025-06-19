@@ -1,7 +1,7 @@
 import pytest
 import os
 import shutil
-from app import app, db, User, Post, Reaction, TodoItem, Bookmark, Friendship # Added Post, Reaction, Bookmark, Friendship
+from app import app, db, User, Post, Reaction, TodoItem, Bookmark, Friendship, SharedPost # Added Post, Reaction, Bookmark, Friendship, SharedPost
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 from io import BytesIO # For simulating file uploads
@@ -848,3 +848,251 @@ def test_profile_page_friendship_actions(client):
     assert b"Remove Friend" in response.data
     assert b"Send Friend Request" not in response.data
     assert b"Accept Friend Request" not in response.data
+
+
+# --- SharedPost Model Tests ---
+
+def test_shared_post_model_creation(client):
+    """Test creating a SharedPost instance and its relationships."""
+    # client fixture provides app_context
+    user_sharer = create_user_directly("sharer", "password")
+    user_original_author = create_user_directly("originalauthor", "password")
+    original_post_obj = create_post_directly(user_id=user_original_author.id, title="Original Post for Sharing")
+
+    comment_text = "This is a great post!"
+    shared_post_entry = SharedPost(
+        original_post_id=original_post_obj.id,
+        shared_by_user_id=user_sharer.id,
+        sharing_user_comment=comment_text
+    )
+    db.session.add(shared_post_entry)
+    db.session.commit()
+
+    assert shared_post_entry.id is not None
+    assert shared_post_entry.original_post_id == original_post_obj.id
+    assert shared_post_entry.shared_by_user_id == user_sharer.id
+    assert shared_post_entry.sharing_user_comment == comment_text
+    assert shared_post_entry.shared_at is not None
+
+    # Test relationships
+    assert shared_post_entry.original_post == original_post_obj
+    assert shared_post_entry.sharing_user == user_sharer
+
+    # Test backrefs
+    assert shared_post_entry in user_sharer.shared_posts
+    assert shared_post_entry in original_post_obj.shares
+
+
+# --- Share Post Route Tests (/post/<int:post_id>/share) ---
+
+def test_share_post_successful_with_comment(client):
+    """Test successfully sharing a post with a comment."""
+    sharer = create_user_directly("sharer1", "password")
+    author = create_user_directly("author1", "password")
+    post_to_share = create_post_directly(user_id=author.id, title="Post to be Shared with Comment")
+
+    login_test_user(client, username="sharer1", password="password")
+
+    share_comment = "My insightful comment on this share."
+    response = client.post(f'/post/{post_to_share.id}/share', data={
+        'sharing_comment': share_comment
+    }, follow_redirects=True)
+
+    assert response.status_code == 200 # Redirects to view_post
+    assert f'/blog/post/{post_to_share.id}' in response.request.path
+    assert b"Post shared successfully!" in response.data
+
+    shared_entry = SharedPost.query.filter_by(original_post_id=post_to_share.id, shared_by_user_id=sharer.id).first()
+    assert shared_entry is not None
+    assert shared_entry.sharing_user_comment == share_comment
+
+def test_share_post_successful_without_comment(client):
+    """Test successfully sharing a post without a comment."""
+    sharer = create_user_directly("sharer2", "password")
+    author = create_user_directly("author2", "password")
+    post_to_share = create_post_directly(user_id=author.id, title="Post to be Shared without Comment")
+
+    login_test_user(client, username="sharer2", password="password")
+
+    response = client.post(f'/post/{post_to_share.id}/share', data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f'/blog/post/{post_to_share.id}' in response.request.path
+    assert b"Post shared successfully!" in response.data
+
+    shared_entry = SharedPost.query.filter_by(original_post_id=post_to_share.id, shared_by_user_id=sharer.id).first()
+    assert shared_entry is not None
+    assert shared_entry.sharing_user_comment is None or shared_entry.sharing_user_comment == ""
+
+def test_share_post_not_logged_in(client):
+    """Test trying to share a post without being logged in."""
+    author = create_user_directly("author3", "password")
+    post_to_share = create_post_directly(user_id=author.id, title="Post for Unauth Share")
+
+    response = client.post(f'/post/{post_to_share.id}/share', data={'sharing_comment': 'test'}, follow_redirects=False)
+
+    assert response.status_code == 302
+    assert '/login' in response.location
+    # Check flash message on the login page
+    login_page_response = client.get(response.location)
+    assert b"You need to be logged in to access this page." in login_page_response.data
+
+    assert SharedPost.query.filter_by(original_post_id=post_to_share.id).count() == 0
+
+def test_share_non_existent_post(client):
+    """Test trying to share a post that does not exist."""
+    sharer = create_user_directly("sharer4", "password")
+    login_test_user(client, username="sharer4", password="password")
+
+    response = client.post('/post/99999/share', data={'sharing_comment': 'test'}, follow_redirects=False)
+    assert response.status_code == 404
+
+def test_share_post_twice_by_same_user(client):
+    """Test sharing the same post twice by the same user."""
+    sharer = create_user_directly("sharer5", "password")
+    author = create_user_directly("author5", "password")
+    post_to_share = create_post_directly(user_id=author.id, title="Post to be Shared Twice")
+
+    login_test_user(client, username="sharer5", password="password")
+
+    # First share
+    client.post(f'/post/{post_to_share.id}/share', data={'sharing_comment': 'First share'}, follow_redirects=True)
+    assert SharedPost.query.filter_by(original_post_id=post_to_share.id, shared_by_user_id=sharer.id).count() == 1
+
+    # Attempt second share
+    response = client.post(f'/post/{post_to_share.id}/share', data={'sharing_comment': 'Second attempt'}, follow_redirects=True)
+
+    assert response.status_code == 200 # Redirects to view_post
+    assert b"You have already shared this post." in response.data
+    assert SharedPost.query.filter_by(original_post_id=post_to_share.id, shared_by_user_id=sharer.id).count() == 1 # Count remains 1
+
+
+# --- Test Display of Share Counts ---
+
+def test_share_count_on_view_post_page(client):
+    """Test share count is displayed correctly on the view_post page."""
+    author = create_user_directly("author_view_count", "password")
+    sharer1 = create_user_directly("sharer_vc1", "password")
+    sharer2 = create_user_directly("sharer_vc2", "password")
+    post_obj = create_post_directly(user_id=author.id, title="Post for View Count")
+
+    # sharer1 shares the post
+    SharedPost.query.session.add(SharedPost(original_post_id=post_obj.id, shared_by_user_id=sharer1.id))
+    # sharer2 shares the post
+    SharedPost.query.session.add(SharedPost(original_post_id=post_obj.id, shared_by_user_id=sharer2.id))
+    db.session.commit()
+
+    response = client.get(f'/blog/post/{post_obj.id}')
+    assert response.status_code == 200
+    # Based on the template: <p>{{ post.shares.count() if post.shares else 0 }} Share(s)</p>
+    assert b"2 Share(s)" in response.data
+
+    # Test with zero shares
+    post_no_shares = create_post_directly(user_id=author.id, title="Post with No Shares for View Count")
+    response_no_shares = client.get(f'/blog/post/{post_no_shares.id}')
+    assert response_no_shares.status_code == 200
+    assert b"0 Share(s)" in response_no_shares.data
+
+
+def test_share_count_on_blog_page(client):
+    """Test share count is displayed correctly on the main blog page."""
+    author = create_user_directly("author_blog_count", "password")
+    sharer1 = create_user_directly("sharer_bc1", "password")
+    post_obj = create_post_directly(user_id=author.id, title="Post for Blog Page Count")
+
+    SharedPost.query.session.add(SharedPost(original_post_id=post_obj.id, shared_by_user_id=sharer1.id))
+    db.session.commit()
+
+    response = client.get('/blog')
+    assert response.status_code == 200
+    # Based on template: | {{ post.shares.count() if post.shares else 0 }} Share(s)
+    # Need to be careful with exact string matching due to surrounding HTML and whitespace.
+    # We'll check for the post title and then the share count in its vicinity.
+    expected_text = f"{post_obj.title}</a></h3>"
+    expected_share_text = f"| 1 Share(s)" # Assuming one share for this test
+
+    response_data_str = response.data.decode()
+    post_html_snippet_start = response_data_str.find(expected_text)
+    assert post_html_snippet_start != -1
+
+    # Search for share count within a reasonable range after the title
+    search_range = response_data_str[post_html_snippet_start : post_html_snippet_start + 500] # Adjust range as needed
+    assert expected_share_text in search_range
+
+    # Test with zero shares
+    post_no_shares = create_post_directly(user_id=author.id, title="Post No Shares Blog Page")
+    response_no_shares_blog = client.get('/blog')
+    assert response_no_shares_blog.status_code == 200
+    response_no_shares_data_str = response_no_shares_blog.data.decode()
+    post_no_shares_html_snippet_start = response_no_shares_data_str.find(f"{post_no_shares.title}</a></h3>")
+    assert post_no_shares_html_snippet_start != -1
+    search_range_no_shares = response_no_shares_data_str[post_no_shares_html_snippet_start : post_no_shares_html_snippet_start + 500]
+    assert f"| 0 Share(s)" in search_range_no_shares
+
+
+# --- Test Display of Shared Posts on User Profile ---
+
+def test_display_shared_posts_on_user_profile(client):
+    """Test that shared posts by a user are displayed on their profile page."""
+    sharer_user = create_user_directly("profile_sharer", "password")
+    original_author = create_user_directly("profile_original_author", "password")
+
+    post1_by_author = create_post_directly(user_id=original_author.id, title="Original Post One", content="Content of post one.")
+    post2_by_author = create_post_directly(user_id=original_author.id, title="Original Post Two", content="Content of post two.")
+
+    share_comment1 = "My thoughts on post one."
+    share_comment2 = "Another great read!"
+
+    # sharer_user shares post1
+    SharedPost.query.session.add(SharedPost(
+        original_post_id=post1_by_author.id,
+        shared_by_user_id=sharer_user.id,
+        sharing_user_comment=share_comment1
+    ))
+    # sharer_user shares post2 (simulating a bit later)
+    shared_at_later = datetime.utcnow() - timedelta(seconds=60) # Ensure different timestamp for ordering test
+    SharedPost.query.session.add(SharedPost(
+        original_post_id=post2_by_author.id,
+        shared_by_user_id=sharer_user.id,
+        sharing_user_comment=share_comment2,
+        shared_at=shared_at_later
+    ))
+    db.session.commit()
+
+    # Log in (optional, as profiles are public, but good for full context)
+    login_test_user(client, username="profile_sharer", password="password")
+
+    response = client.get(f'/user/{sharer_user.username}')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert "<h3>Shared Posts</h3>" in response_data
+
+    # Check for details of shared post 1 (should appear first due to default timestamp order)
+    assert f"Shared by {sharer_user.username}" in response_data # Check header of the share block
+    assert share_comment1 in response_data
+    assert f">{post1_by_author.title}</a>" in response_data # Title linked
+    assert f"Originally posted by {original_author.username}" in response_data
+    assert "Content of post one."[:50] in response_data # Check snippet of original content
+
+    # Check for details of shared post 2
+    assert share_comment2 in response_data
+    assert f">{post2_by_author.title}</a>" in response_data
+    # Timestamps are also good to check if formatting is consistent.
+
+    # Ensure the order is descending by shared_at (post1 shared more recently than post2 in this setup if default now() is used)
+    # If shared_at for post1 is later (default now()), it should appear before post2 (shared_at_later)
+    position_post1_share = response_data.find(post1_by_author.title)
+    position_post2_share = response_data.find(post2_by_author.title)
+    assert position_post1_share != -1 and position_post2_share != -1
+    assert position_post1_share < position_post2_share # Post1 shared more recently by default
+
+def test_display_no_shared_posts_on_user_profile(client):
+    """Test profile page shows appropriate message if user has no shared posts."""
+    user_no_shares = create_user_directly("user_with_no_shares", "password")
+    login_test_user(client, username="user_with_no_shares", password="password")
+
+    response = client.get(f'/user/{user_no_shares.username}')
+    assert response.status_code == 200
+    assert "<h3>Shared Posts</h3>" in response.data.decode()
+    assert f"{user_no_shares.username} has not shared any posts yet." in response.data.decode()

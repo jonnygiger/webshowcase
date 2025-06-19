@@ -17,6 +17,7 @@
 
     <div style="margin-top: 15px; margin-bottom: 15px;">
         <p>{{ post.likes }} like(s)</p>
+    <p>{{ post.shares.count() if post.shares else 0 }} Share(s)</p> {# Display Share Count #}
         {% if session.logged_in %}
             {% if user_has_liked %}
                 <form action="{{ url_for('unlike_post', post_id=post.id) }}" method="POST" style="display: inline;">
@@ -41,6 +42,18 @@
                     Bookmark
                 {% endif %}
             </button>
+        </form>
+    </div>
+    {% endif %}
+
+    {# Share Post Form #}
+    {% if current_user.is_authenticated %}
+    <div style="margin-top: 15px; margin-bottom: 15px;">
+        <form action="{{ url_for('share_post', post_id=post.id) }}" method="POST">
+            <div class="form-group" style="margin-bottom: 5px;">
+                <textarea name="sharing_comment" class="form-control form-control-sm" placeholder="Add a comment (optional)" rows="2"></textarea>
+            </div>
+            <button type="submit" class="btn btn-success btn-sm">Share</button>
         </form>
     </div>
     {% endif %}

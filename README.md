@@ -377,6 +377,27 @@ Users can now bookmark their favorite posts to easily find them later.
     *   Only logged-in users can bookmark posts and view their personal bookmark list.
     *   The bookmark status is specific to each user.
 
+### Share Posts
+
+Users can share posts made by other users (or their own posts) to their profile, optionally adding a personal comment. This helps users highlight content they find interesting to their followers or visitors of their profile page.
+
+*   **Functionality**:
+    *   Users can share any existing blog post.
+    *   When sharing, users can add an optional comment to provide context or their thoughts on the shared content.
+    *   Shared posts, along with any user comments, are displayed on the sharing user's profile page, ordered by when they were shared (most recent first).
+    *   Original posts display a count of how many times they have been shared.
+    *   Users cannot share the same post multiple times; if attempted, an informational message is shown.
+
+*   **How to Use**:
+    *   **Sharing a Post**:
+        *   Navigate to a post's individual page (`/blog/post/<id>`) or find a post snippet on the main blog page (`/blog`).
+        *   Click the "Share" button associated with the post.
+        *   If sharing from the individual post page, a text area will be available to add an optional comment.
+        *   If sharing from the main blog page, the post will be shared immediately without a comment field (for quick sharing).
+    *   **Viewing Shared Posts**:
+        *   Shared posts by a specific user can be viewed on their profile page (`/user/<username>`) under the "Shared Posts" section. Each entry will show the sharer's comment (if any), details of the original post (title, author, snippet), and a link to the original post.
+    *   **Share Counts**: The number of times a post has been shared is visible on its individual page and on the main blog listing.
+
 ### Event Management
 
 The application now includes an Event Management system, allowing users to organize and participate in events.

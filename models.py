@@ -395,3 +395,20 @@ class FlaggedContent(db.Model):
 
     def __repr__(self):
         return f'<FlaggedContent {self.id} ({self.content_type} {self.content_id}) by User {self.flagged_by_user_id} - Status: {self.status}>'
+
+
+class FriendPostNotification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # User receiving the notification
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)  # The post that was created
+    poster_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # User who created the post
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    is_read = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Relationships
+    user = db.relationship('User', foreign_keys=[user_id], backref=db.backref('friend_post_notifications', lazy=True))
+    post = db.relationship('Post', foreign_keys=[post_id], backref=db.backref('related_friend_notifications', lazy=True))
+    poster = db.relationship('User', foreign_keys=[poster_id], backref=db.backref('triggered_friend_post_notifications', lazy=True))
+
+    def __repr__(self):
+        return f'<FriendPostNotification id={self.id} user_id={self.user_id} post_id={self.post_id} poster_id={self.poster_id} is_read={self.is_read}>'

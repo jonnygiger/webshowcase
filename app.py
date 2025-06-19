@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, session, redirect, url_for, flash, send_from_directory
+from flask import Flask, render_template, request, session, redirect, url_for, flash, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
@@ -20,7 +20,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent # Add UserActivity, FlaggedContent, GroupMessage
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
@@ -689,6 +689,51 @@ def create_post():
             # Decide if you want to flash a message to the user or just log
             # flash('Could not log activity due to an internal error.', 'warning')
             db.session.rollback() # Rollback activity commit if it fails
+
+        # Friend post notification logic
+        post_author = new_post_db.author
+        if post_author:
+            friends = post_author.get_friends() # Assumes User model has get_friends()
+
+            if friends:
+                notifications_to_send = []
+                for friend in friends:
+                    if friend.id == post_author.id: # Avoid notifying self if self is in friends list
+                        continue
+
+                    new_friend_notification = FriendPostNotification(
+                        user_id=friend.id,
+                        post_id=new_post_db.id,
+                        poster_id=post_author.id
+                    )
+                    db.session.add(new_friend_notification)
+                    # Store the notification object itself to get its ID after commit
+                    notifications_to_send.append(new_friend_notification)
+
+                if notifications_to_send:
+                    try:
+                        db.session.commit() # Commit all new notifications together
+
+                        # Now iterate through the committed notifications to send SocketIO events
+                        for notification_instance in notifications_to_send:
+                            # Ensure the notification has an ID and valid timestamp after commit
+                            if notification_instance.id and notification_instance.timestamp:
+                                socketio.emit('new_friend_post', {
+                                    'notification_id': notification_instance.id,
+                                    'post_id': new_post_db.id,
+                                    'post_title': new_post_db.title,
+                                    'poster_username': post_author.username,
+                                    'timestamp': notification_instance.timestamp.isoformat()
+                                }, room=f'user_{notification_instance.user_id}')
+                                app.logger.info(f"Sent new_friend_post notification to user_{notification_instance.user_id} for post {new_post_db.id}")
+                            else:
+                                app.logger.error(f"FriendPostNotification instance {notification_instance.id if notification_instance else 'None'} missing ID or timestamp after commit.")
+
+                    except Exception as e:
+                        db.session.rollback()
+                        app.logger.error(f"Error creating/sending friend post notifications: {e}")
+                        # Flash a specific warning, but the post itself was created.
+                        flash('Post created, but could not send friend notifications due to an internal error.', 'warning')
 
         flash('Blog post created successfully!', 'success')
         return redirect(url_for('blog'))
@@ -2323,3 +2368,69 @@ def remove_content_and_reject_flag(flag_id):
     db.session.commit()
     flash(flash_message, 'success')
     return redirect(url_for('moderation_dashboard'))
+
+
+@app.route('/friend_post_notifications', methods=['GET'])
+@login_required
+def view_friend_post_notifications():
+    user_id = session['user_id']
+    notifications = FriendPostNotification.query.filter_by(user_id=user_id)\
+                                               .order_by(FriendPostNotification.timestamp.desc())\
+                                               .all()
+    # The template 'friend_post_notifications.html' will need to be created.
+    return render_template('friend_post_notifications.html', notifications=notifications)
+
+
+@app.route('/friend_post_notifications/mark_as_read/<int:notification_id>', methods=['POST'])
+@login_required
+def mark_friend_post_notification_as_read(notification_id):
+    user_id = session['user_id']
+    notification = FriendPostNotification.query.get(notification_id)
+
+    if not notification:
+        return jsonify({'status': 'error', 'message': 'Notification not found.'}), 404
+
+    if notification.user_id != user_id:
+        return jsonify({'status': 'error', 'message': 'Unauthorized.'}), 403
+
+    try:
+        notification.is_read = True
+        db.session.commit()
+        return jsonify({'status': 'success', 'message': 'Notification marked as read.'})
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error marking friend post notification as read: {e}")
+        return jsonify({'status': 'error', 'message': 'Could not mark notification as read.'}), 500
+
+
+@app.route('/friend_post_notifications/mark_all_as_read', methods=['POST'])
+@login_required
+def mark_all_friend_post_notifications_as_read():
+    user_id = session['user_id']
+    try:
+        unread_notifications = FriendPostNotification.query.filter_by(user_id=user_id, is_read=False).all()
+        if not unread_notifications:
+            # It's not an error if there are no unread notifications.
+            # For redirect behavior:
+            # flash('No unread friend post notifications to mark as read.', 'info')
+            # return redirect(url_for('view_friend_post_notifications'))
+            # For JSON response:
+            return jsonify({'status': 'success', 'message': 'No unread friend post notifications.'})
+
+        for notification in unread_notifications:
+            notification.is_read = True
+        db.session.commit()
+
+        # For redirect behavior:
+        # flash('All friend post notifications marked as read.', 'success')
+        # return redirect(url_for('view_friend_post_notifications'))
+        # For JSON response:
+        return jsonify({'status': 'success', 'message': 'All friend post notifications marked as read.'})
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error marking all friend post notifications as read: {e}")
+        # For redirect behavior:
+        # flash('Could not mark all notifications as read due to an error.', 'danger')
+        # return redirect(url_for('view_friend_post_notifications'))
+        # For JSON response:
+        return jsonify({'status': 'error', 'message': 'Could not mark all notifications as read.'}), 500

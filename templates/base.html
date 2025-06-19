@@ -35,6 +35,9 @@
                   <li class="nav-item">
                       <a class="nav-link" href="{{ url_for('view_notifications') }}">Notifications</a>
                   </li>
+                  <li class="nav-item"> {# New link for Friend Post Notifications #}
+                      <a class="nav-link" href="{{ url_for('view_friend_post_notifications') }}">Friend Activity</a>
+                  </li>
                   <li><a href="{{ url_for('inbox') }}">Inbox</a></li>
                   <li><a href="{{ url_for('discover_feed') }}">Discovery</a></li> {# New Discovery Link #}
                   <li><a href="{{ url_for('trending_posts_page') }}">Trending</a></li>
@@ -68,7 +71,40 @@
         <p>&copy; 2023 My Flask App</p>
     </footer>
 
+    {# Real-time friend post notification toast container #}
+    <div id="friend-post-toast-container" style="position: fixed; top: 70px; right: 20px; z-index: 1050; width: 300px;">
+        {# Toasts will be appended here by JavaScript #}
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        .friend-toast {
+            background-color: #f8f9fa;
+            border: 1px solid #ced4da;
+            border-radius: .25rem;
+            padding: 10px;
+            margin-bottom: 10px;
+            box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, .1);
+            opacity: 0.95;
+        }
+        .friend-toast .toast-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e9ecef;
+            padding-bottom: 5px;
+            margin-bottom: 5px;
+        }
+        .friend-toast .toast-header strong {
+            margin-right: auto;
+        }
+        .friend-toast .close-toast {
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+    </style>
     <script type="text/javascript">
         document.addEventListener('DOMContentLoaded', (event) => {
             var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
@@ -80,6 +116,52 @@
                 socket.emit('join_room', {room: userRoom});
                 console.log('Joined room: ' + userRoom);
                 {% endif %}
+            });
+
+            function createFriendPostToast(data) {
+                const toastId = 'toast-' + Date.now(); // Unique ID for the toast
+                const toastContainer = document.getElementById('friend-post-toast-container');
+                if (!toastContainer) return;
+
+                const toastElement = document.createElement('div');
+                toastElement.id = toastId;
+                toastElement.className = 'friend-toast';
+
+                // Constructing post URL using url_for would be ideal but tricky in static JS.
+                // Building URL manually. Ensure this matches your route structure.
+                const postUrl = `/blog/post/${data.post_id}`;
+
+                toastElement.innerHTML = `
+                    <div class="toast-header">
+                        <strong>New Friend Post!</strong>
+                        <button type="button" class="close-toast" data-dismiss-toast-id="${toastId}">&times;</button>
+                    </div>
+                    <div class="toast-body">
+                        <strong>${data.poster_username}</strong> posted:
+                        <a href="${postUrl}">${data.post_title}</a>
+                        <br>
+                        <small>At: ${new Date(data.timestamp).toLocaleTimeString()}</small>
+                    </div>
+                `;
+
+                // Add to container (newest on top)
+                toastContainer.insertBefore(toastElement, toastContainer.firstChild);
+
+                // Auto-dismiss
+                const autoDismissTimeout = setTimeout(() => {
+                    toastElement.remove();
+                }, 10000); // 10 seconds
+
+                // Manual dismiss
+                toastElement.querySelector('.close-toast').addEventListener('click', function() {
+                    clearTimeout(autoDismissTimeout); // Clear auto-dismiss if manually closed
+                    toastElement.remove();
+                });
+            }
+
+            socket.on('new_friend_post', function(data) {
+                console.log('Received new_friend_post event:', data);
+                createFriendPostToast(data);
             });
 
             // Optional: For debugging, listen to all events

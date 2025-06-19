@@ -25,7 +25,7 @@ from api import UserListResource, UserResource, PostListResource, PostResource, 
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
     suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags,
-    get_trending_hashtags, suggest_trending_posts, update_trending_hashtags # Added suggest_trending_posts and update_trending_hashtags
+    get_trending_hashtags, suggest_trending_posts, update_trending_hashtags, get_personalized_feed_posts
 )
 
 app = Flask(__name__)
@@ -602,30 +602,14 @@ def discover_feed():
         return redirect(url_for('login'))
 
     # 1. Fetch recommendations
-    recommended_posts_personalized = suggest_posts_to_read(user_id, limit=10) # Returns [(Post, "reason_string"), ...]
-    trending_posts_raw = suggest_trending_posts(user_id, limit=10, since_days=7) # Returns [Post, ...]
+    # Call get_personalized_feed_posts to get the main list of recommended posts with reasons.
+    # This function returns a list of (Post, reason_string) tuples.
+    final_posts_with_reasons = get_personalized_feed_posts(user_id, limit=15)
+
     recommended_groups_raw = suggest_groups_to_join(user_id, limit=5) # Returns [Group, ...]
     recommended_events_raw = suggest_events_to_attend(user_id, limit=5) # Returns [Event, ...]
 
     # 2. Prepare data for template
-
-    # Posts: Combine and deduplicate, preferring personalized reasons
-    final_posts_map = {} # Using dict for deduplication: post.id -> (Post, "reason")
-
-    # Add personalized posts first
-    for post_obj, reason_str in recommended_posts_personalized:
-        if post_obj: # Ensure post_obj is not None
-            final_posts_map[post_obj.id] = (post_obj, reason_str)
-
-    # Add trending posts, giving a generic reason if not already present with a specific one
-    for post_obj in trending_posts_raw:
-        if post_obj: # Ensure post_obj is not None
-            if post_obj.id not in final_posts_map:
-                final_posts_map[post_obj.id] = (post_obj, "Trending post")
-
-    final_posts_with_reasons = list(final_posts_map.values())
-    # Optionally, sort or limit the final_posts_with_reasons further if needed
-    # For now, order is based on personalized first, then trending. Could shuffle or sort by a combined score later.
 
     # Groups: Add generic reasons
     groups_with_reasons = []

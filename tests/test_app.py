@@ -419,6 +419,171 @@ class TestRecommendationAPI(AppTestCase):
             self.assertIsInstance(data['suggested_users_to_follow'], list)
             self.assertEqual(data['suggested_polls_to_vote'], [])
 
+    # Helper to get JWT token
+    def _get_jwt_token(self, username, password):
+        response = self.client.post('/api/login', json={'username': username, 'password': password})
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('access_token', data)
+        return data['access_token']
+
+    # Helpers for creating likes, comments, RSVPs, votes
+    def _create_db_like(self, user_id, post_id, timestamp=None):
+        from models import Like # Import here to avoid circular dependency if models import app
+        like = Like(user_id=user_id, post_id=post_id, timestamp=timestamp or datetime.utcnow())
+        db.session.add(like)
+        db.session.commit()
+        return like
+
+    def _create_db_comment(self, user_id, post_id, content="Test comment", timestamp=None):
+        from models import Comment # Import here
+        comment = Comment(user_id=user_id, post_id=post_id, content=content, timestamp=timestamp or datetime.utcnow())
+        db.session.add(comment)
+        db.session.commit()
+        return comment
+
+    def _create_db_event_rsvp(self, user_id, event_id, status="Attending", timestamp=None):
+        from models import EventRSVP # Import here
+        rsvp = EventRSVP(user_id=user_id, event_id=event_id, status=status, timestamp=timestamp or datetime.utcnow())
+        db.session.add(rsvp)
+        db.session.commit()
+        return rsvp
+
+    def _create_db_poll_vote(self, user_id, poll_id, poll_option_id, timestamp=None):
+        from models import PollVote # Import here
+        vote = PollVote(user_id=user_id, poll_id=poll_id, poll_option_id=poll_option_id, timestamp=timestamp or datetime.utcnow())
+        db.session.add(vote)
+        db.session.commit()
+        return vote
+
+
+class TestPersonalizedFeedAPI(AppTestCase):
+
+    def setUp(self):
+        super().setUp()
+        # Users are created by AppTestCase's _setup_base_users: self.user1, self.user2, self.user3
+        # self.user1_id, self.user2_id, self.user3_id
+
+    def test_personalized_feed_unauthorized(self):
+        with app.app_context():
+            response = self.client.get('/api/personalized-feed')
+            self.assertEqual(response.status_code, 401) # JWT errors are usually 401 or 422 if malformed
+            # Flask-JWT-Extended typically returns 401 for missing token
+            data = json.loads(response.data)
+            self.assertIn('msg', data) # Default message key for flask-jwt-extended
+            self.assertEqual(data['msg'], 'Missing Authorization Header')
+
+
+    def test_personalized_feed_success_and_structure(self):
+        with app.app_context():
+            # 1. Setup Data
+            # Friendships: user1 is friends with user2
+            self._create_friendship(self.user1_id, self.user2_id, status='accepted')
+
+            # Posts:
+            # Post by user3 (not friend), liked by user2 (friend of user1) -> should be recommended
+            post1_by_user3 = self._create_db_post(user_id=self.user3_id, title="Post by User3, Liked by User2", timestamp=datetime.utcnow() - timedelta(hours=1))
+            self._create_db_like(user_id=self.user2_id, post_id=post1_by_user3.id, timestamp=datetime.utcnow() - timedelta(minutes=30))
+
+            # Post by user2 (friend of user1) -> should be recommended (because friend created it, even if no other interaction)
+            # The current suggest_posts_to_read logic might not pick this up unless it's also interacted with by another friend or meets other criteria.
+            # For testing, let's ensure it's picked up. We might need to make user1 also friend with user3, and user3 likes user2's post.
+            # Let's simplify: user3 (not friend) posts, user2 (friend) comments.
+            post2_by_user3 = self._create_db_post(user_id=self.user3_id, title="Another Post by User3, Commented by User2", timestamp=datetime.utcnow() - timedelta(hours=3))
+            self._create_db_comment(user_id=self.user2_id, post_id=post2_by_user3.id, content="Friend comment", timestamp=datetime.utcnow() - timedelta(hours=2))
+
+            # Events:
+            # Event by user3, user2 (friend of user1) RSVP'd 'Attending' -> should be recommended
+            event1_by_user3 = self._create_db_event(user_id=self.user3_id, title="Event by User3, User2 Attending", date="2025-01-01")
+            event1_by_user3.created_at = datetime.utcnow() - timedelta(days=1) # Set created_at for sorting
+            db.session.commit()
+            self._create_db_event_rsvp(user_id=self.user2_id, event_id=event1_by_user3.id, status="Attending")
+
+            # Polls:
+            # Poll by user2 (friend of user1) -> should be recommended
+            poll1_by_user2 = self._create_db_poll(user_id=self.user2_id, question="Poll by User2 (Friend)?")
+            poll1_by_user2.created_at = datetime.utcnow() - timedelta(days=2) # Set created_at
+            db.session.commit()
+            # Add a vote from user3 to make it seem active, though suggest_polls_to_vote might pick it up just by being friend-created
+            option_for_poll1 = poll1_by_user2.options[0]
+            self._create_db_poll_vote(user_id=self.user3_id, poll_id=poll1_by_user2.id, poll_option_id=option_for_poll1.id)
+
+
+            # 2. Login as user1 and get token
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {'Authorization': f'Bearer {token}'}
+
+            # 3. Make request
+            response = self.client.get('/api/personalized-feed', headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
+            self.assertIn('feed_items', data)
+            feed_items = data['feed_items']
+            self.assertIsInstance(feed_items, list)
+
+            # We expect at least one of each type based on setup
+            self.assertTrue(len(feed_items) >= 3, f"Expected at least 3 items, got {len(feed_items)}")
+
+            found_post = False
+            found_event = False
+            found_poll = False
+
+            timestamps = []
+
+            for item in feed_items:
+                self.assertIn('type', item)
+                self.assertIn('id', item)
+                self.assertIn('timestamp', item)
+                self.assertIsNotNone(item['timestamp'])
+                timestamps.append(datetime.fromisoformat(item['timestamp'].replace('Z', ''))) # Handle Z if present
+
+                if item['type'] == 'post':
+                    found_post = True
+                    self.assertIn('title', item)
+                    self.assertIn('content', item)
+                    self.assertIn('author_username', item)
+                    self.assertIn('reason', item)
+                    if item['id'] == post1_by_user3.id:
+                        self.assertEqual(item['title'], "Post by User3, Liked by User2")
+                elif item['type'] == 'event':
+                    found_event = True
+                    self.assertIn('title', item)
+                    self.assertIn('description', item)
+                    self.assertIn('organizer_username', item)
+                    if item['id'] == event1_by_user3.id:
+                        self.assertEqual(item['title'], "Event by User3, User2 Attending")
+                elif item['type'] == 'poll':
+                    found_poll = True
+                    self.assertIn('question', item)
+                    self.assertIn('creator_username', item)
+                    self.assertIn('options', item)
+                    self.assertIsInstance(item['options'], list)
+                    if item['options']:
+                        self.assertIn('text', item['options'][0])
+                        self.assertIn('vote_count', item['options'][0])
+                    if item['id'] == poll1_by_user2.id:
+                         self.assertEqual(item['question'], "Poll by User2 (Friend)?")
+
+            self.assertTrue(found_post, "No post found in feed")
+            self.assertTrue(found_event, "No event found in feed")
+            self.assertTrue(found_poll, "No poll found in feed")
+
+            # Assert sorting by timestamp (descending)
+            for i in range(len(timestamps) - 1):
+                self.assertGreaterEqual(timestamps[i], timestamps[i+1], "Feed items are not sorted correctly by timestamp")
+
+    def test_personalized_feed_empty(self):
+        with app.app_context():
+            # user3 is set up but has no friends or interactions that would generate a feed for them based on current logic
+            token = self._get_jwt_token(self.user3.username, 'password')
+            headers = {'Authorization': f'Bearer {token}'}
+
+            response = self.client.get('/api/personalized-feed', headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
+            self.assertIn('feed_items', data)
+            self.assertEqual(data['feed_items'], [])
+
 
 if __name__ == '__main__':
     with app.app_context():

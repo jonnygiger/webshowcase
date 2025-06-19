@@ -109,6 +109,7 @@ class Post(db.Model):
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     last_edited = db.Column(db.DateTime, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    hashtags = db.Column(db.Text, nullable=True) # Stores comma-separated hashtags
 
     comments = db.relationship('Comment', backref='post', lazy=True, cascade="all, delete-orphan")
     likes = db.relationship('Like', backref='post', lazy=True, cascade="all, delete-orphan")
@@ -127,7 +128,8 @@ class Post(db.Model):
             'timestamp': self.timestamp.isoformat() if self.timestamp else None,
             'last_edited': self.last_edited.isoformat() if self.last_edited else None,
             'user_id': self.user_id,
-            'author_username': self.author.username if self.author else None
+            'author_username': self.author.username if self.author else None,
+            'hashtags': self.hashtags
             # Consider adding comment count or like count if simple to compute
         }
 

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Posts tagged with #{{ tag }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Posts tagged with <span class="badge badge-primary">#{{ tag }}</span></h1>
+    <hr>
+    {% if posts %}
+        {% for post in posts %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title"><a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a></h5>
+                <h6 class="card-subtitle mb-2 text-muted">
+                    By: <a href="{{ url_for('user_profile', username=post.author.username) }}">{{ post.author.username }}</a>
+                    on {{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+                    {% if post.last_edited %}
+                        (Edited: {{ post.last_edited.strftime('%Y-%m-%d %H:%M:%S') }})
+                    {% endif %}
+                </h6>
+                <p class="card-text">{{ post.content[:200] }}{% if post.content|length > 200 %}...{% endif %}</p>
+
+                <p class="card-text">
+                    <small class="text-muted">Likes: {{ post.likes|length }}</small>
+                </p>
+
+                <p class="card-text">
+                    <small class="text-muted">
+                        Average Rating: {{ "%.1f"|format(post.average_rating if post.average_rating else 0) }} stars ({{ post.review_count }} reviews)
+                    </small>
+                </p>
+
+                {% if post.hashtags %}
+                <p class="card-text">
+                    <small>
+                    {% for t in post.hashtags.split(',') %}
+                        {% set cleaned_t = t.strip() %}
+                        {% if cleaned_t %}
+                            <a href="{{ url_for('view_hashtag_posts', tag=cleaned_t) }}">#{{ cleaned_t }}</a>
+                        {% endif %}
+                    {% endfor %}
+                    </small>
+                </p>
+                {% endif %}
+
+                <form action="{{ url_for('bookmark_post', post_id=post.id) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-sm {% if post.id in bookmarked_post_ids %}btn-warning{% else %}btn-outline-warning{% endif %}">
+                        {% if post.id in bookmarked_post_ids %}Unbookmark{% else %}Bookmark{% endif %}
+                    </button>
+                </form>
+                <a href="{{ url_for('view_post', post_id=post.id) }}" class="btn btn-sm btn-outline-primary">Read More & Comment</a>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            No posts found tagged with #{{ tag }}.
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

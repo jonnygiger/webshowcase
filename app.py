@@ -537,13 +537,14 @@ def create_post():
     if request.method == 'POST':
         title = request.form['title']
         content = request.form['content']
+        hashtags = request.form.get('hashtags', '') # Get hashtags
         user_id = session.get('user_id')
 
         if not user_id:
             flash('You must be logged in to create a post.', 'danger')
             return redirect(url_for('login'))
 
-        new_post_db = Post(title=title, content=content, user_id=user_id)
+        new_post_db = Post(title=title, content=content, user_id=user_id, hashtags=hashtags) # Add hashtags
         db.session.add(new_post_db)
         db.session.commit()
 
@@ -635,6 +636,7 @@ def edit_post(post_id):
     if request.method == 'POST':
         post.title = request.form['title']
         post.content = request.form['content']
+        post.hashtags = request.form.get('hashtags', '') # Get and update hashtags
         post.last_edited = datetime.utcnow()
         db.session.commit()
         flash('Post updated successfully!', 'success')
@@ -658,6 +660,32 @@ def delete_post(post_id):
     db.session.commit()
     flash('Post deleted successfully!', 'success')
     return redirect(url_for('blog'))
+
+@app.route('/hashtag/<tag>')
+def view_hashtag_posts(tag):
+    potential_posts = Post.query.filter(Post.hashtags.contains(tag)).order_by(Post.timestamp.desc()).all()
+
+    actual_posts = []
+    for post_item in potential_posts:
+        if post_item.hashtags:
+            tags_list = [t.strip() for t in post_item.hashtags.split(',') if t.strip()]
+            if tag in tags_list:
+                actual_posts.append(post_item)
+
+    bookmarked_post_ids = set()
+    if 'user_id' in session:
+        user_id = session['user_id']
+        bookmarks = Bookmark.query.filter_by(user_id=user_id).all()
+        bookmarked_post_ids = {bookmark.post_id for bookmark in bookmarks}
+
+    for post_item in actual_posts:
+        post_item.review_count = len(post_item.reviews)
+        if post_item.reviews:
+            post_item.average_rating = sum(r.rating for r in post_item.reviews) / len(post_item.reviews)
+        else:
+            post_item.average_rating = 0
+
+    return render_template('hashtag_posts.html', posts=actual_posts, tag=tag, bookmarked_post_ids=bookmarked_post_ids)
 
 @app.route('/blog/post/<int:post_id>/comment', methods=['POST'])
 @login_required

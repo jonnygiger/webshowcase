@@ -25,7 +25,8 @@ from api import UserListResource, UserResource, PostListResource, PostResource, 
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
     suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags,
-    get_trending_hashtags, suggest_trending_posts, update_trending_hashtags, get_personalized_feed_posts
+    get_trending_hashtags, suggest_trending_posts, update_trending_hashtags, get_personalized_feed_posts,
+    get_on_this_day_content
 )
 
 app = Flask(__name__)
@@ -2267,6 +2268,26 @@ def recommendations_view():
                            suggested_events=suggested_events,
                            suggested_polls=suggested_polls,
                            suggested_hashtags=suggested_hashtags)
+
+
+@app.route('/onthisday')
+@login_required
+def on_this_day_page():
+    user_id = session.get('user_id')
+    if not user_id:
+        # This should ideally be caught by @login_required,
+        # but as a safeguard or if @login_required is removed temporarily.
+        flash('You need to be logged in to view this page.', 'warning')
+        return redirect(url_for('login'))
+
+    # User object is not strictly needed here if get_on_this_day_content only needs user_id
+    # user = User.query.get(user_id)
+    # if not user:
+    #     flash('User not found. Please log in again.', 'danger')
+    #     return redirect(url_for('login'))
+
+    content = get_on_this_day_content(user_id)
+    return render_template('on_this_day.html', posts=content.get('posts', []), events=content.get('events', []))
 
 
 @app.route('/post/<int:post_id>/flag', methods=['POST'])

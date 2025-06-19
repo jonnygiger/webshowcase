@@ -638,6 +638,20 @@ You can find dedicated recommendations on the `/recommendations` page (accessibl
 #### Enhanced Post Recommendations with Reasons
 The personalized feed, particularly for posts displayed on pages like the Discover page, now includes a specific reason why each post is being recommended to the user. This enhancement aims to provide transparency and help users understand the system's choices (e.g., "Liked by a friend," "Trending post," "From a group you joined," "From user you follow," etc.). This involves updates to the backend recommendation generation and how this information is passed to and displayed on the frontend.
 
+### On This Day
+
+This feature allows users to revisit their past posts and events that occurred on the same calendar day in previous years.
+
+*   **Web Page Functionality**:
+    *   Logged-in users can access their "On This Day" page by clicking the "On This Day" link in the navigation bar.
+    *   The page (`/onthisday`) displays two sections:
+        *   **Past Posts**: Lists blog posts created by the user on the current month and day, but from previous years. Each entry shows the post's title (linked to the full post), a content snippet, and the original timestamp.
+        *   **Past Events**: Lists events created by the user where the event date (not creation date) matches the current month and day, but from previous years. Each entry shows the event's title (linked to the full event page), a description snippet, and the event's date and time.
+    *   If no content is found for the current day in past years, appropriate messages are displayed.
+
+*   **API Endpoint**:
+    *   See the `GET /api/onthisday` endpoint documentation under the "RESTful API" section for details on programmatic access.
+
 ### Content Moderation
 
 The application includes a content moderation system to help maintain a safe and respectful environment. This feature allows users to report inappropriate content (posts or comments) and for designated moderators to review these reports and take appropriate action.
@@ -1085,6 +1099,47 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
             "message": "Post deleted successfully"
         }
         ```
+
+### "On This Day" API
+
+*   **GET /api/onthisday**
+    *   **Description:** Retrieves posts and events created by the authenticated user that occurred on the current month and day in previous years.
+    *   **Authentication:** Required (JWT Token). The token should be passed in the `Authorization` header as a Bearer token (e.g., `Authorization: Bearer <YOUR_JWT_TOKEN>`).
+    *   **Successful Response (200 OK):**
+        A JSON object containing two lists: `on_this_day_posts` and `on_this_day_events`.
+        ```json
+        {
+          "on_this_day_posts": [
+            {
+              "id": 101,
+              "title": "My Throwback Post Title",
+              "content": "Content of the post from a past year...",
+              "timestamp": "2022-10-26T10:30:00",
+              "author_username": "current_user",
+              // ... other post fields ...
+            }
+          ],
+          "on_this_day_events": [
+            {
+              "id": 55,
+              "title": "Annual Past Event",
+              "description": "Details of an event that happened on this day in a previous year...",
+              "date": "2021-10-26",
+              "time": "15:00",
+              "organizer_username": "current_user",
+              // ... other event fields ...
+            }
+          ]
+        }
+        ```
+        *(Note: The exact fields returned for posts and events depend on their respective `to_dict()` methods in `models.py`.)*
+    *   **Error Responses:**
+        *   `401 Unauthorized`: If the JWT token is missing or invalid.
+            ```json
+            {
+                "msg": "Missing Authorization Header" // Or other JWT error messages like "Token has expired"
+            }
+            ```
 
 ### Events API
 

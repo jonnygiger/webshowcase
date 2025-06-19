@@ -11,7 +11,8 @@ from recommendations import (
     suggest_polls_to_vote,
     suggest_groups_to_join, # Keep existing imports from RecommendationResource
     suggest_users_to_follow, # Keep existing imports from RecommendationResource
-    get_personalized_feed_posts # Import for PersonalizedFeedResource
+    get_personalized_feed_posts, # Import for PersonalizedFeedResource
+    get_on_this_day_content # Import for OnThisDayResource
 )
 
 # Placeholder for authentication logic for now
@@ -213,37 +214,20 @@ class OnThisDayResource(Resource):
     @jwt_required()
     def get(self):
         current_user_id = get_jwt_identity()
-        today = datetime.utcnow()
-        current_month = today.month
-        current_day = today.day
-        current_year = today.year
 
-        # Fetch posts
-        posts_on_this_day = Post.query.filter(
-            Post.user_id == current_user_id,
-            extract('month', Post.timestamp) == current_month,
-            extract('day', Post.timestamp) == current_day,
-            extract('year', Post.timestamp) != current_year
-        ).all()
+        # Call the function from recommendations.py
+        on_this_day_data = get_on_this_day_content(current_user_id)
 
-        # Fetch events
-        events_on_this_day = []
-        all_user_events = Event.query.filter(Event.user_id == current_user_id).all()
-        for event in all_user_events:
-            try:
-                event_date = datetime.strptime(event.date, '%Y-%m-%d')
-                if event_date.month == current_month and \
-                   event_date.day == current_day and \
-                   event_date.year != current_year:
-                    events_on_this_day.append(event)
-            except ValueError:
-                # Handle cases where event.date is not in the expected format
-                # Or log this error, depending on desired behavior
-                continue
+        # Ensure the User object exists, though jwt_required and get_jwt_identity should handle auth.
+        # If get_on_this_day_content requires a User object, this might need adjustment,
+        # but it's designed to take user_id.
+        user = User.query.get(current_user_id)
+        if not user:
+             return {'message': 'User not found'}, 404 # Should be rare due to JWT
 
         return {
-            'on_this_day_posts': [post.to_dict() for post in posts_on_this_day],
-            'on_this_day_events': [event.to_dict() for event in events_on_this_day]
+            'on_this_day_posts': [post.to_dict() for post in on_this_day_data.get("posts", [])],
+            'on_this_day_events': [event.to_dict() for event in on_this_day_data.get("events", [])]
         }, 200
 
 class UserStatsResource(Resource):

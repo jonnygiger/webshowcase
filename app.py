@@ -35,6 +35,11 @@ poll_votes = {}  # {poll_id: {option_id: {user1, user2}}}
 app.poll_id_counter = 0
 app.poll_option_id_counter = 0
 
+# Event Management data structures
+events = []  # List of event dictionaries
+event_rsvps = {}  # {event_id: {username: rsvp_status}}
+app.event_id_counter = 0
+
 # Ensure the upload folder exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -76,7 +81,12 @@ def user_profile(username):
         # Optionally, you could also filter posts using users[username]['blog_post_ids']
         # but the current author_username filter is likely sufficient and simpler.
 
-    return render_template('user.html', username=username, posts=user_posts, user_images=user_images)
+    # Retrieve events organized by the user
+    organized_events = [event for event in events if event['organizer_username'] == username]
+    # Sort events, e.g., by creation date or event date. Let's use creation date for now.
+    organized_events = sorted(organized_events, key=lambda x: x['created_at'], reverse=True)
+
+    return render_template('user.html', username=username, posts=user_posts, user_images=user_images, organized_events=organized_events)
 
 @app.route('/todo', methods=['GET', 'POST'])
 @login_required
@@ -505,6 +515,45 @@ def polls_list():
     return render_template('polls.html', polls=sorted_polls)
 
 
+@app.route('/events/create', methods=['GET', 'POST'])
+@login_required
+def create_event():
+    if request.method == 'POST':
+        title = request.form.get('title')
+        description = request.form.get('description')
+        event_date = request.form.get('event_date')
+        event_time = request.form.get('event_time')
+        location = request.form.get('location')
+
+        if not title or not title.strip():
+            flash('Event title is required.', 'danger')
+            return render_template('create_event.html')
+        if not event_date:
+            flash('Event date is required.', 'danger')
+            return render_template('create_event.html')
+
+        app.event_id_counter += 1
+        new_event = {
+            "id": app.event_id_counter,
+            "title": title.strip(),
+            "description": description.strip() if description else "",
+            "date": event_date,
+            "time": event_time if event_time else "",
+            "location": location.strip() if location else "",
+            "organizer_username": session['username'],
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        events.append(new_event)
+        flash('Event created successfully!', 'success')
+        # Redirecting to a future 'events_list' or specific event view
+        # For now, let's assume 'events_list' will be created.
+        # If 'view_event' was available: return redirect(url_for('view_event', event_id=new_event['id']))
+        return redirect(url_for('events_list')) # Assuming 'events_list' will exist
+
+    # GET request
+    return render_template('create_event.html')
+
+
 @app.route('/poll/<int:poll_id>')
 def view_poll(poll_id):
     poll = next((p for p in polls if p['id'] == poll_id), None)
@@ -607,3 +656,115 @@ def delete_poll(poll_id):
 
     flash('Poll deleted successfully!', 'success')
     return redirect(url_for('polls_list'))
+
+
+@app.route('/events')
+@login_required
+def events_list():
+    # Sort events by event date (upcoming first).
+    # Need to handle potential errors if date string is malformed, though validation should prevent this.
+    # Also, consider events without a date or with past dates.
+    # For simplicity, events without a valid date might appear at the end or beginning based on error handling.
+
+    def sort_key(event):
+        try:
+            # Assuming event['date'] is in "YYYY-MM-DD" format
+            return datetime.strptime(event['date'], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            # For events with missing or invalid dates, place them at the end.
+            # Return a date very far in the future.
+            return datetime.max.date()
+
+    # Filter out past events if desired, or sort all and let the template handle display.
+    # For now, sorting all events.
+    # Upcoming events first, so ascending order of dates.
+    sorted_events = sorted(events, key=sort_key)
+
+    return render_template('events.html', events=sorted_events)
+
+
+@app.route('/event/<int:event_id>')
+def view_event(event_id):
+    event = next((e for e in events if e['id'] == event_id), None)
+    if not event:
+        flash('Event not found!', 'danger')
+        return redirect(url_for('events_list'))
+
+    # RSVP Information
+    rsvp_counts = {"Attending": 0, "Maybe": 0, "Not Attending": 0}
+    user_rsvp_status = None
+    current_user_username = session.get('username')
+
+    if event_id in event_rsvps:
+        for username, status in event_rsvps[event_id].items():
+            if status in rsvp_counts:
+                rsvp_counts[status] += 1
+            if username == current_user_username:
+                user_rsvp_status = status
+
+    # Determine if the current user is the organizer
+    is_organizer = False
+    if current_user_username and event['organizer_username'] == current_user_username:
+        is_organizer = True
+
+    return render_template('view_event.html',
+                           event=event,
+                           rsvp_counts=rsvp_counts,
+                           user_rsvp_status=user_rsvp_status,
+                           is_organizer=is_organizer)
+
+
+@app.route('/event/<int:event_id>/rsvp', methods=['POST'])
+@login_required
+def rsvp_event(event_id):
+    event = next((e for e in events if e['id'] == event_id), None)
+    if not event:
+        flash('Event not found!', 'danger')
+        return redirect(url_for('events_list'))
+
+    rsvp_status = request.form.get('rsvp_status')
+    valid_statuses = ["Attending", "Maybe", "Not Attending"]
+    if not rsvp_status or rsvp_status not in valid_statuses:
+        flash('Invalid RSVP status submitted.', 'danger')
+        return redirect(url_for('view_event', event_id=event_id))
+
+    username = session['username']
+
+    # Ensure the event_id key exists in event_rsvps
+    if event_id not in event_rsvps:
+        event_rsvps[event_id] = {}
+
+    event_rsvps[event_id][username] = rsvp_status
+
+    flash(f'Your RSVP ("{rsvp_status}") has been recorded!', 'success')
+    return redirect(url_for('view_event', event_id=event_id))
+
+
+@app.route('/event/<int:event_id>/delete', methods=['POST'])
+@login_required
+def delete_event(event_id):
+    event_to_delete = None
+    event_index = -1
+    for i, e in enumerate(events):
+        if e['id'] == event_id:
+            event_to_delete = e
+            event_index = i
+            break
+
+    if not event_to_delete:
+        flash('Event not found!', 'danger')
+        return redirect(url_for('events_list'))
+
+    if session['username'] != event_to_delete['organizer_username']:
+        flash('You are not authorized to delete this event.', 'danger')
+        return redirect(url_for('view_event', event_id=event_id))
+
+    # Remove the event from the list
+    if event_index != -1:
+        events.pop(event_index)
+
+    # Remove RSVP data for the event
+    event_rsvps.pop(event_id, None)
+
+    flash('Event deleted successfully.', 'success')
+    return redirect(url_for('events_list'))

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Events - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Upcoming Events</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="mb-3">
+        <a href="{{ url_for('create_event') }}" class="btn btn-primary">Create New Event</a>
+    </div>
+
+    {% if events %}
+        <ul class="list-group">
+            {% for event in events %}
+                <li class="list-group-item">
+                    <h5><a href="{{ url_for('view_event', event_id=event.id) }}">{{ event.title }}</a></h5>
+                    <p>Date: {{ event.date }} {% if event.time %}| Time: {{ event.time }}{% endif %}</p>
+                    <p>Location: {{ event.location if event.location else 'To be announced' }}</p>
+                    <p>Organized by: {{ event.organizer_username }}</p>
+                    {% if event.description %}
+                        <p>Description: {{ event.description }}</p>
+                    {% endif %}
+                    <small class="text-muted">Posted on: {{ event.created_at }}</small>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No events scheduled yet. Why not <a href="{{ url_for('create_event') }}">create one</a>?</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -202,6 +202,27 @@ Users can now interact with blog posts by liking or unliking them, providing a s
     *   Conditional rendering in Jinja templates to display different buttons ("Like" or "Unlike") based on application state.
     *   Handling POST requests for actions that modify data.
 
+### Blog Post Rating and Review System
+
+Enhancing user interaction and feedback, users can now rate blog posts (1-5 stars) and write textual reviews.
+
+*   **Purpose**: Allows users to provide detailed feedback and ratings on blog posts, helping others gauge post quality and fostering a more interactive community.
+*   **Functionality Details**:
+    *   **Review Submission**: Logged-in users can submit a rating (1 to 5 stars) and a textual review for any blog post.
+    *   **Self-Review Restriction**: Users are prevented from reviewing their own blog posts.
+    *   **Single Review Per Post**: Each user can submit only one review per blog post to ensure fairness.
+    *   **Average Rating Display**:
+        *   The calculated average rating for a post is displayed prominently on its individual view page (`/blog/post/<int:post_id>`).
+        *   The average rating and review count are also shown for each post on the main blog listing page (`/blog`).
+    *   **Review Visibility**: All submitted reviews, including the reviewer's username, their given rating, the review text, and the submission timestamp, are displayed on the individual post page.
+*   **Route Involved**:
+    *   `POST /blog/post/<int:post_id>/review`: Endpoint for submitting a new review for a specific blog post.
+*   **Flask Functionalities Demonstrated**:
+    *   Reinforces concepts of form handling (for rating and review text) and data validation (e.g., rating range, non-empty review text).
+    *   Extends user session management for authorizing review submissions and tracking review authorship.
+    *   Demonstrates dynamic calculation and display of aggregate data (average ratings).
+    *   Further practice in managing and displaying user-generated content.
+
 ## Private Messaging
 
 This application now supports private messaging between registered users, allowing for direct, one-on-one communication.

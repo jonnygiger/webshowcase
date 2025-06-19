@@ -15,7 +15,6 @@ scheduler = BackgroundScheduler()
 # generate_activity_summary will be defined later in this file
 # For testing, use a short interval like 1 minute.
 # In production, this might be 5, 10, or 15 minutes.
-scheduler.add_job(func=generate_activity_summary, trigger="interval", minutes=1)
 
 app.config['SECRET_KEY'] = 'supersecretkey'
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads')
@@ -50,6 +49,21 @@ app.poll_option_id_counter = 0
 events = []  # List of event dictionaries
 event_rsvps = {}  # {event_id: {username: rsvp_status}}
 app.event_id_counter = 0
+
+# Blog Reviews data structure
+# blog_reviews = []
+# app.blog_review_id_counter = 0
+# Review object structure:
+# {
+#     "review_id": int,
+#     "post_id": int,
+#     "reviewer_username": str,
+#     "rating": int,  # e.g., 1-5
+#     "review_text": str,
+#     "timestamp": str # datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+# }
+blog_reviews = []
+app.blog_review_id_counter = 0
 
 # Notification data structures
 app.notifications = []
@@ -284,6 +298,15 @@ def create_post():
 def blog():
     # Sort posts by timestamp, newest first (optional, but good practice)
     sorted_posts = sorted(blog_posts, key=lambda x: x['timestamp'], reverse=True)
+
+    for post in sorted_posts:
+        post_specific_reviews = [review for review in blog_reviews if review['post_id'] == post['id']]
+        post['review_count'] = len(post_specific_reviews)
+        if post_specific_reviews:
+            post['average_rating'] = sum(r['rating'] for r in post_specific_reviews) / len(post_specific_reviews)
+        else:
+            post['average_rating'] = 0
+
     return render_template('blog.html', posts=sorted_posts)
 
 @app.route('/blog/post/<int:post_id>')
@@ -298,7 +321,28 @@ def view_post(post_id):
         if 'username' in session and post['id'] in post_likes and session['username'] in post_likes[post['id']]:
             user_has_liked = True
 
-        return render_template('view_post.html', post=post, comments=post_comments, user_has_liked=user_has_liked)
+        # Reviews
+        post_reviews = [review for review in blog_reviews if review['post_id'] == post_id]
+        post_reviews = sorted(post_reviews, key=lambda x: x['timestamp'], reverse=True) # Newest first
+
+        average_rating = 0
+        if post_reviews:
+            average_rating = sum(r['rating'] for r in post_reviews) / len(post_reviews)
+
+        can_submit_review = False
+        if 'username' in session:
+            is_author = post['author_username'] == session['username']
+            has_reviewed = any(r['reviewer_username'] == session['username'] for r in post_reviews)
+            if not is_author and not has_reviewed:
+                can_submit_review = True
+
+        return render_template('view_post.html',
+                               post=post,
+                               comments=post_comments,
+                               user_has_liked=user_has_liked,
+                               post_reviews=post_reviews,
+                               average_rating=average_rating,
+                               can_submit_review=can_submit_review)
     else:
         flash('Post not found!', 'danger')
         return redirect(url_for('blog'))
@@ -408,6 +452,60 @@ def unlike_post(post_id):
     else:
         flash('You have not liked this post yet.', 'info')
 
+    return redirect(url_for('view_post', post_id=post_id))
+
+
+@app.route('/blog/post/<int:post_id>/review', methods=['POST'])
+@login_required
+def add_review(post_id):
+    post = next((p for p in blog_posts if p['id'] == post_id), None)
+    if not post:
+        flash('Post not found!', 'danger')
+        return redirect(url_for('blog')) # Or perhaps a more general error page or back
+
+    # Check for self-review
+    if post['author_username'] == session['username']:
+        flash('You cannot review your own post.', 'danger')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    # Check for existing review by the same user for the same post
+    existing_review = next((r for r in blog_reviews if r['post_id'] == post_id and r['reviewer_username'] == session['username']), None)
+    if existing_review:
+        flash('You have already reviewed this post.', 'danger')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    rating_str = request.form.get('rating')
+    review_text = request.form.get('review_text')
+
+    # Validate rating
+    if not rating_str:
+        flash('Rating is required.', 'danger')
+        return redirect(url_for('view_post', post_id=post_id))
+    try:
+        rating = int(rating_str)
+        if not (1 <= rating <= 5):
+            raise ValueError
+    except ValueError:
+        flash('Rating must be an integer between 1 and 5 stars.', 'danger')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    # Validate review text
+    if not review_text or not review_text.strip():
+        flash('Review text cannot be empty.', 'danger')
+        return redirect(url_for('view_post', post_id=post_id))
+
+    # Create and store review
+    app.blog_review_id_counter += 1
+    new_review = {
+        "review_id": app.blog_review_id_counter,
+        "post_id": post_id,
+        "reviewer_username": session['username'],
+        "rating": rating,
+        "review_text": review_text.strip(),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    blog_reviews.append(new_review)
+    flash('Review submitted successfully!', 'success')
     return redirect(url_for('view_post', post_id=post_id))
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -573,13 +671,15 @@ if __name__ == '__main__':
     # not the reloader's process.
     if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         if not scheduler.running: # Ensure scheduler is not started more than once
+            # Add the job before starting the scheduler
+            scheduler.add_job(func=generate_activity_summary, trigger="interval", minutes=1)
             scheduler.start()
             print("Scheduler started.")
             # It's good practice to shut down the scheduler when the app exits
             import atexit
             atexit.register(lambda: scheduler.shutdown())
             print("Scheduler shutdown registered.")
-    socketio.run(app, debug=True)
+    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
 
 
 @app.route('/polls/create', methods=['GET', 'POST'])

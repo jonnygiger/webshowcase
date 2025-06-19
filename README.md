@@ -505,6 +505,9 @@ To foster community building, the application now supports User Groups. This fea
     *   `/group/<int:group_id>/join` (POST): Allows a logged-in user to join the specified group.
     *   `/group/<int:group_id>/leave` (POST): Allows a logged-in user to leave the specified group.
 
+### Real-time Group Chat
+*   Allows members of a group to send and receive messages in real-time within the group's page. Messages are stored, and the chat history is loaded upon visiting the group page. This feature is powered by Flask-SocketIO, enabling instant communication and a dynamic chat experience.
+
 ### In-App Notifications
 
 To keep users informed about recent activity on the platform, an in-app notification system has been implemented.

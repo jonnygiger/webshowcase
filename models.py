@@ -22,6 +22,9 @@ class Group(db.Model):
                               lazy='dynamic', # Allows for further querying
                               back_populates='joined_groups')
 
+    # Relationship to GroupMessage
+    messages = db.relationship('GroupMessage', backref='group', lazy='dynamic', cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<Group '{self.name}'>"
 
@@ -78,6 +81,9 @@ class User(db.Model):
     # FlaggedContent relationships
     flags_submitted = db.relationship('FlaggedContent', foreign_keys='FlaggedContent.flagged_by_user_id', back_populates='flagged_by_user', lazy='dynamic')
     flags_moderated = db.relationship('FlaggedContent', foreign_keys='FlaggedContent.moderator_id', back_populates='moderator', lazy='dynamic')
+
+    # Relationship to GroupMessage
+    group_messages = db.relationship('GroupMessage', backref='user', lazy='dynamic', cascade="all, delete-orphan")
 
     def __repr__(self):
         return f'<User {self.username}>'

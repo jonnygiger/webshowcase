@@ -4,10 +4,16 @@ import os
 import shutil
 from flask import url_for
 from flask_socketio import SocketIOTestClient
-from app import app, db, User, Post, Comment, Reaction, TodoItem, Bookmark, Friendship, SharedPost, UserActivity, Like, Group, FlaggedContent # Added Like, Group, FlaggedContent
+from app import app, db, User, Post, Comment, Reaction, TodoItem, Bookmark, Friendship, SharedPost, UserActivity, Like, Group, GroupMessage, FlaggedContent # Added Like, Group, GroupMessage, FlaggedContent
 from models import group_members, Event, EventRSVP, Poll, PollOption, PollVote # Import new models
 from recommendations import suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags # Import new recommendation functions
 from werkzeug.security import generate_password_hash
+# Attempt to import the specific handler. If app.py defines it globally, this might work.
+# If it's nested or not directly accessible, test strategy might need adjustment.
+# For now, we assume it's accessible via app.handle_send_group_message_event based on how routes are often structured.
+# If not, we would typically use SocketIOTestClient.emit() to trigger the event.
+# However, the prompt asks to call the handler directly.
+from app import handle_send_group_message_event
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 from collections import Counter

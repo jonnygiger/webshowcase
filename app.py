@@ -5,12 +5,23 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from datetime import datetime
 from flask_socketio import SocketIO, emit, join_room
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 socketio = SocketIO(app)
+
+# Scheduler for periodic tasks
+scheduler = BackgroundScheduler()
+# generate_activity_summary will be defined later in this file
+# For testing, use a short interval like 1 minute.
+# In production, this might be 5, 10, or 15 minutes.
+scheduler.add_job(func=generate_activity_summary, trigger="interval", minutes=1)
+
 app.config['SECRET_KEY'] = 'supersecretkey'
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
+
+app.last_activity_check_time = datetime.now()
 
 # User storage
 users = {
@@ -40,6 +51,20 @@ events = []  # List of event dictionaries
 event_rsvps = {}  # {event_id: {username: rsvp_status}}
 app.event_id_counter = 0
 
+# Notification data structures
+app.notifications = []
+app.notification_id_counter = 0
+# Notification object structure:
+# {
+#     "id": int,
+#     "message": str,  # e.g., "New blog post: 'My Great Adventure'"
+#     "timestamp": str, # datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+#     "type": str,      # e.g., 'new_post', 'new_event', 'new_poll'
+#     "related_id": int, # e.g., post_id, event_id, poll_id
+#     "is_read": bool,   # Default: False
+#     # "target_username": str # For user-specific notifications (future)
+# }
+
 # Ensure the upload folder exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -48,6 +73,68 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[0] != "" and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+def generate_activity_summary():
+    """
+    Checks for new posts, events, and polls since the last check
+    and creates notifications for them.
+    """
+    current_check_time = datetime.now()
+    new_notifications_count = 0
+
+    # Check for new blog posts
+    for post in blog_posts: # Assuming blog_posts is globally accessible or app.blog_posts
+        post_time = datetime.strptime(post['timestamp'], "%Y-%m-%d %H:%M:%S")
+        if post_time > app.last_activity_check_time:
+            app.notification_id_counter += 1
+            notification = {
+                "id": app.notification_id_counter,
+                "message": f"New blog post: '{post['title']}'",
+                "timestamp": current_check_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "type": "new_post",
+                "related_id": post['id'],
+                "is_read": False
+            }
+            app.notifications.append(notification)
+            new_notifications_count += 1
+
+    # Check for new events
+    for event in events: # Assuming events is globally accessible or app.events
+        event_creation_time = datetime.strptime(event['created_at'], "%Y-%m-%d %H:%M:%S")
+        if event_creation_time > app.last_activity_check_time:
+            app.notification_id_counter += 1
+            notification = {
+                "id": app.notification_id_counter,
+                "message": f"New event: '{event['title']}'",
+                "timestamp": current_check_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "type": "new_event",
+                "related_id": event['id'],
+                "is_read": False
+            }
+            app.notifications.append(notification)
+            new_notifications_count += 1
+
+    # Check for new polls
+    for poll in polls: # Assuming polls is globally accessible or app.polls
+        poll_creation_time = datetime.strptime(poll['created_at'], "%Y-%m-%d %H:%M:%S")
+        if poll_creation_time > app.last_activity_check_time:
+            app.notification_id_counter += 1
+            notification = {
+                "id": app.notification_id_counter,
+                "message": f"New poll: '{poll['question']}'",
+                "timestamp": current_check_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "type": "new_poll",
+                "related_id": poll['id'],
+                "is_read": False
+            }
+            app.notifications.append(notification)
+            new_notifications_count += 1
+
+    app.last_activity_check_time = current_check_time
+    if new_notifications_count > 0:
+        print(f"Activity summary generated. {new_notifications_count} new notifications.")
+    else:
+        print("Activity summary generated. No new notifications.")
 
 # Decorator for requiring login
 def login_required(f):
@@ -451,12 +538,47 @@ def inbox():
 
     return render_template('inbox.html', inbox_items=inbox_items)
 
+
+@app.route('/notifications')
+@login_required
+def view_notifications():
+    # For now, show all notifications, newest first.
+    # Later, this can be filtered by user, read status, etc.
+    # Also, consider pagination for many notifications.
+
+    # Sort notifications by timestamp, newest first
+    # Assuming timestamp is stored as string: "YYYY-MM-DD HH:MM:S"
+    # Need to convert to datetime objects for sorting if not already.
+    # The notification timestamp is set by current_check_time.strftime, so it's a string.
+
+    try:
+        # Create a mutable copy for sorting
+        notifications_to_display = list(app.notifications)
+        notifications_to_display.sort(key=lambda x: datetime.strptime(x['timestamp'], "%Y-%m-%d %H:%M:%S"), reverse=True)
+    except Exception as e:
+        print(f"Error sorting notifications: {e}") # Or flash a message
+        notifications_to_display = [] # Default to empty list on error
+        flash("Error loading notifications.", "danger")
+
+    return render_template('notifications.html', notifications=notifications_to_display)
+
 @socketio.on('join_room')
 def handle_join_room_event(data):
     app.logger.info(f"User {session.get('username', 'Anonymous')} joined room: {data['room']}")
     join_room(data['room'])
 
 if __name__ == '__main__':
+    # Start the scheduler only once, even with Flask reloader
+    # The os.environ.get('WERKZEUG_RUN_MAIN') check ensures this runs in the main Flask process,
+    # not the reloader's process.
+    if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        if not scheduler.running: # Ensure scheduler is not started more than once
+            scheduler.start()
+            print("Scheduler started.")
+            # It's good practice to shut down the scheduler when the app exits
+            import atexit
+            atexit.register(lambda: scheduler.shutdown())
+            print("Scheduler shutdown registered.")
     socketio.run(app, debug=True)
 
 
@@ -768,3 +890,14 @@ def delete_event(event_id):
 
     flash('Event deleted successfully.', 'success')
     return redirect(url_for('events_list'))
+
+@app.route('/trigger_notifications_test_only')
+@login_required # Or some other protection if desired
+def trigger_notifications_test_only():
+    if app.debug: # Only allow in debug mode for safety
+        generate_activity_summary()
+        flash('Notification generation triggered for test.', 'info')
+        return redirect(url_for('view_notifications'))
+    else:
+        flash('This endpoint is for testing only and disabled in production.', 'danger')
+        return redirect(url_for('hello_world'))

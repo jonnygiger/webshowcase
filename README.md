@@ -307,3 +307,15 @@ The application now includes an Event Management system, allowing users to organ
     *   `/event/<int:event_id>/delete`: (POST)
         *   Requires login and that the logged-in user is the event organizer.
         *   Deletes the specified event and its RSVP data.
+
+### In-App Notifications
+
+To keep users informed about recent activity on the platform, an in-app notification system has been implemented.
+
+*   **Purpose**: Alerts users to new content such as new blog posts, upcoming events, or recently created polls.
+*   **How it Works**: A background task runs periodically (e.g., every minute) to scan for new content. When new items are found, notifications are generated.
+*   **Accessing Notifications**: Logged-in users can find a "Notifications" link in the navigation bar, which leads to a page displaying all recent activity alerts, sorted by time.
+*   **Flask Functionalities Demonstrated**:
+    *   Integration with `APScheduler` for background task scheduling.
+    *   Dynamic generation of user-facing alerts based on application events.
+    *   New routes and templates for displaying notifications.

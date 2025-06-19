@@ -1,7 +1,10 @@
 import pytest
+import os
+import shutil
 from app import app, db, User, TodoItem # Assuming app structure allows this import
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
+from io import BytesIO # For simulating file uploads
 
 @pytest.fixture
 def client():
@@ -12,6 +15,12 @@ def client():
     # If you need data to persist across client requests within a single test function,
     # ensure the app_context is managed correctly or consider a file-based SQLite for specific tests.
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    # Ensure PROFILE_PICS_FOLDER is set for tests, app.py should handle creation
+    # but good to be explicit if tests run in a slightly different context.
+    # app.py now creates this folder, so direct creation here might be redundant
+    # but cleanup is important.
+    PROFILE_PICS_FOLDER_PATH = app.config['PROFILE_PICS_FOLDER']
+
 
     with app.app_context():
         db.create_all()
@@ -25,12 +34,20 @@ def client():
             db.session.add(test_user)
             db.session.commit()
 
+        # Ensure PROFILE_PICS_FOLDER exists before client is yielded
+        if not os.path.exists(PROFILE_PICS_FOLDER_PATH):
+            os.makedirs(PROFILE_PICS_FOLDER_PATH)
+
         test_client = app.test_client()
         yield test_client # This is where the testing happens
 
         # Teardown
         db.session.remove() # Ensures session is properly closed
         db.drop_all()       # Clears schema
+
+        # Clean up created profile pictures folder and its contents
+        if os.path.exists(PROFILE_PICS_FOLDER_PATH):
+            shutil.rmtree(PROFILE_PICS_FOLDER_PATH)
 
 def login_test_user(client, username="testuser", password="testpassword"):
     """Helper function to log in a test user."""
@@ -41,7 +58,12 @@ def login_test_user(client, username="testuser", password="testpassword"):
         password=password
     ), follow_redirects=True)
 
-def get_test_user():
+def get_test_user_id():
+    """Helper to get the test user ID within app_context."""
+    user = User.query.filter_by(username="testuser").first()
+    return user.id if user else None
+
+def get_test_user_obj():
     """Helper to get the test user object within app_context."""
     return User.query.filter_by(username="testuser").first()
 
@@ -71,8 +93,8 @@ def test_create_and_view_todo(client):
     assert b"To-Do item added!" in response_create.data # Check flash message
 
     # Verify in DB
-    test_user = get_test_user()
-    todo_item = TodoItem.query.filter_by(user_id=test_user.id, task=task_content).first()
+    test_user_obj = get_test_user_obj()
+    todo_item = TodoItem.query.filter_by(user_id=test_user_obj.id, task=task_content).first()
     assert todo_item is not None
     assert todo_item.due_date.strftime('%Y-%m-%d') == due_date_val
     assert todo_item.priority == priority_val
@@ -88,11 +110,11 @@ def test_create_and_view_todo(client):
 def test_edit_todo(client):
     """Test editing an existing To-Do item."""
     login_test_user(client)
-    test_user = get_test_user()
+    test_user_obj = get_test_user_obj()
 
     # First, create a task
     original_task_content = "Original task for editing"
-    todo_item = TodoItem(task=original_task_content, user_id=test_user.id, due_date=datetime.now())
+    todo_item = TodoItem(task=original_task_content, user_id=test_user_obj.id, due_date=datetime.now())
     db.session.add(todo_item)
     db.session.commit()
 
@@ -119,9 +141,9 @@ def test_edit_todo(client):
 def test_update_todo_status(client):
     """Test updating the status of a To-Do item."""
     login_test_user(client)
-    test_user = get_test_user()
+    test_user_obj = get_test_user_obj()
 
-    todo_item = TodoItem(task="Task for status update", user_id=test_user.id, is_done=False)
+    todo_item = TodoItem(task="Task for status update", user_id=test_user_obj.id, is_done=False)
     db.session.add(todo_item)
     db.session.commit()
 
@@ -140,9 +162,9 @@ def test_update_todo_status(client):
 def test_delete_todo(client):
     """Test deleting a To-Do item."""
     login_test_user(client)
-    test_user = get_test_user()
+    test_user_obj = get_test_user_obj()
 
-    todo_item = TodoItem(task="Task to be deleted", user_id=test_user.id)
+    todo_item = TodoItem(task="Task to be deleted", user_id=test_user_obj.id)
     db.session.add(todo_item)
     db.session.commit()
     task_id = todo_item.id
@@ -156,12 +178,12 @@ def test_delete_todo(client):
 def test_sort_todo_by_due_date(client):
     """Test sorting To-Do items by due date."""
     login_test_user(client)
-    test_user = get_test_user()
+    test_user_obj = get_test_user_obj()
 
     # Create items with different due dates
-    item1 = TodoItem(task="Due Last", user_id=test_user.id, due_date=datetime.now() + timedelta(days=2))
-    item2 = TodoItem(task="Due First", user_id=test_user.id, due_date=datetime.now() + timedelta(days=1))
-    item3 = TodoItem(task="No Due Date", user_id=test_user.id, due_date=None)
+    item1 = TodoItem(task="Due Last", user_id=test_user_obj.id, due_date=datetime.now() + timedelta(days=2))
+    item2 = TodoItem(task="Due First", user_id=test_user_obj.id, due_date=datetime.now() + timedelta(days=1))
+    item3 = TodoItem(task="No Due Date", user_id=test_user_obj.id, due_date=None)
     db.session.add_all([item1, item2, item3])
     db.session.commit()
 
@@ -202,3 +224,164 @@ def test_client_fixture_works(client):
     assert client is not None
     response = client.get('/') # A basic route that should exist
     assert response.status_code == 200
+
+
+# --- Profile Picture Tests ---
+
+def test_render_upload_profile_picture_page_unauthorized(client):
+    """Test accessing /upload_profile_picture without login."""
+    response = client.get('/upload_profile_picture', follow_redirects=False)
+    assert response.status_code == 302
+    assert '/login' in response.location
+
+def test_render_upload_profile_picture_page_authorized(client):
+    """Test accessing /upload_profile_picture when logged in."""
+    login_test_user(client)
+    response = client.get('/upload_profile_picture')
+    assert response.status_code == 200
+    assert b"Upload New Profile Picture" in response.data
+
+def test_profile_picture_upload_success(client):
+    """Test successful profile picture upload."""
+    login_test_user(client)
+    test_user = get_test_user_obj()
+
+    # Ensure user initially has no profile picture or a known default
+    assert test_user.profile_picture is None
+
+    data = {
+        'profile_pic': (BytesIO(b"my image data"), 'test_pic.png')
+    }
+    response = client.post('/upload_profile_picture', data=data, content_type='multipart/form-data', follow_redirects=True)
+
+    assert response.status_code == 200 # After redirect to profile page
+    assert b"Profile picture uploaded successfully!" in response.data
+
+    # Verify in DB
+    updated_user = get_test_user_obj()
+    assert updated_user.profile_picture is not None
+    assert 'test_pic.png' in updated_user.profile_picture
+    assert updated_user.profile_picture.startswith('/static/profile_pics/')
+
+    # Verify file exists (check for the unique part of the filename)
+    # This is a bit tricky as the filename is made unique with UUID
+    profile_pic_filename = os.path.basename(updated_user.profile_picture)
+    expected_file_path = os.path.join(app.config['PROFILE_PICS_FOLDER'], profile_pic_filename)
+    assert os.path.exists(expected_file_path)
+
+def test_profile_picture_upload_no_file_selected(client):
+    """Test uploading with no file selected."""
+    login_test_user(client)
+    response = client.post('/upload_profile_picture', data={}, content_type='multipart/form-data', follow_redirects=True)
+
+    assert response.status_code == 200 # Stays on/redirects to upload page
+    assert b"No file part selected." in response.data # Or "No file selected." depending on which check hits first
+
+def test_profile_picture_upload_empty_filename(client):
+    """Test uploading with an empty filename (e.g., file input submitted but no file chosen)."""
+    login_test_user(client)
+    data = {
+        'profile_pic': (BytesIO(b""), '') # Empty filename
+    }
+    response = client.post('/upload_profile_picture', data=data, content_type='multipart/form-data', follow_redirects=True)
+    assert response.status_code == 200
+    assert b"No file selected." in response.data
+
+
+def test_profile_picture_upload_invalid_file_type(client):
+    """Test uploading a file with a disallowed extension."""
+    login_test_user(client)
+    test_user = get_test_user_obj()
+    initial_profile_pic = test_user.profile_picture # Could be None
+
+    data = {
+        'profile_pic': (BytesIO(b"this is not an image"), 'test_doc.txt')
+    }
+    response = client.post('/upload_profile_picture', data=data, content_type='multipart/form-data', follow_redirects=True)
+
+    assert response.status_code == 200 # Stays on/redirects to upload page
+    assert b"Invalid file type." in response.data
+
+    # Verify DB entry hasn't changed
+    updated_user = get_test_user_obj()
+    assert updated_user.profile_picture == initial_profile_pic
+
+def test_display_profile_picture_on_profile_page_with_picture(client):
+    """Test profile page displays the user's uploaded picture."""
+    login_test_user(client)
+    test_user = get_test_user_obj()
+
+    # Simulate an upload to set the picture
+    dummy_image_data = (BytesIO(b"fake image data"), 'user_avatar.png')
+    client.post('/upload_profile_picture', data={'profile_pic': dummy_image_data}, content_type='multipart/form-data')
+
+    # Fetch the user again to get the updated profile_picture path
+    test_user_updated = get_test_user_obj()
+    assert test_user_updated.profile_picture is not None
+
+    response = client.get(f'/user/{test_user_updated.username}')
+    assert response.status_code == 200
+    # Check for the img tag with the specific src
+    expected_img_src = test_user_updated.profile_picture
+    assert f'src="{expected_img_src}"' in response.data.decode()
+
+def test_display_profile_picture_on_profile_page_no_picture(client):
+    """Test profile page displays default picture if user has none."""
+    login_test_user(client) # testuser by default has no picture initially
+    test_user = get_test_user_obj()
+    assert test_user.profile_picture is None # Pre-condition
+
+    response = client.get(f'/user/{test_user.username}')
+    assert response.status_code == 200
+    # Check for the img tag with the default src
+    # Assuming default.png is used as per app.py logic in user.html
+    assert 'src="/static/profile_pics/default.png"' in response.data.decode()
+    assert f'alt="{test_user.username}\'s Profile Picture"' not in response.data.decode() # This alt is for custom pics
+    assert 'alt="Default Profile Picture"' in response.data.decode()
+
+
+def test_display_profile_picture_in_navbar_with_picture(client):
+    """Test navbar displays user's picture when available."""
+    login_test_user(client)
+    test_user = get_test_user_obj()
+
+    # Simulate an upload
+    dummy_image_data = (BytesIO(b"fake nav image"), 'nav_avatar.jpg')
+    client.post('/upload_profile_picture', data={'profile_pic': dummy_image_data}, content_type='multipart/form-data')
+
+    test_user_updated = get_test_user_obj()
+    assert test_user_updated.profile_picture is not None
+
+    response = client.get('/') # Get any page with the base template
+    assert response.status_code == 200
+    # This is a simplified check. A more robust test might parse HTML.
+    # We are checking if the user's specific profile picture URL is in the nav.
+    # This assumes the base.html includes it for current_user.
+    # As of the current base.html, it does not display the picture in the navbar,
+    # but it does link to the profile. If a small thumbnail were added to base.html
+    # next to the username, this test would be more relevant.
+    # For now, we test that "My Profile" and "Change Profile Picture" links are present.
+    assert b'My Profile' in response.data
+    assert b'Change Profile Picture' in response.data
+    # If base.html were to include <img src="{{ current_user.profile_picture }}">
+    # then we could assert test_user_updated.profile_picture.encode() in response.data
+
+
+def test_display_default_picture_in_navbar_no_picture(client):
+    """Test navbar uses default when user has no picture (if navbar showed one)."""
+    login_test_user(client)
+    test_user = get_test_user_obj()
+    assert test_user.profile_picture is None # Pre-condition
+
+    response = client.get('/')
+    assert response.status_code == 200
+    # Similar to above, current base.html doesn't show pic in nav.
+    # If it did, and used a default, we'd check for that default path.
+    # assert b'/static/profile_pics/default.png' in response.data (if nav showed default)
+    # For now, checking existing relevant links:
+    assert b'My Profile' in response.data
+    assert b'Change Profile Picture' in response.data
+
+# It's good practice to also test that another user cannot see/modify profile pic upload for someone else
+# but that's covered by @login_required on the upload route itself.
+# The user_profile page visibility is public by design.

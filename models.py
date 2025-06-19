@@ -29,6 +29,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
+    profile_picture = db.Column(db.String(255), nullable=True)  # Path to profile picture
     # uploaded_images can be a relationship if Image is a model, or a JSON/string field
     # For now, let's assume it's not a direct DB relationship in this phase
     uploaded_images = db.Column(db.Text, nullable=True) # Path to images, comma-separated
@@ -57,6 +58,7 @@ class User(db.Model):
         return {
             'id': self.id,
             'username': self.username,
+            'profile_picture': self.profile_picture,
             'uploaded_images': self.uploaded_images
             # Add other fields if they are simple and non-sensitive
         }

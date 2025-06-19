@@ -37,7 +37,9 @@
                   </li>
                   <li><a href="{{ url_for('inbox') }}">Inbox</a></li>
                   <li><a href="{{ url_for('create_post') }}">Create Post</a></li>
-                  <li><span>Logged in as {{ session['username'] }}</span></li>
+                  <li><a href="{{ url_for('user_profile', username=current_user.username if current_user else session.username) }}">My Profile</a></li>
+                  <li><a href="{{ url_for('upload_profile_picture') }}">Change Profile Picture</a></li>
+                  <li><span>Logged in as {{ current_user.username if current_user else session.username }}</span></li>
                   <li><a href="{{ url_for('logout') }}">Logout</a></li>
                 {% else %}
                   <li><a href="{{ url_for('login') }}">Login</a></li>

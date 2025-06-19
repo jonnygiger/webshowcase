@@ -11,6 +11,7 @@ from sqlalchemy import or_ # Added for inbox query
 from flask_migrate import Migrate
 from flask_restful import Api
 from flask_jwt_extended import JWTManager, create_access_token
+import uuid # For generating unique filenames
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -44,7 +45,8 @@ scheduler = BackgroundScheduler()
 
 app.config['SECRET_KEY'] = 'supersecretkey'
 app.config['JWT_SECRET_KEY'] = 'your-jwt-secret-key' # Choose a strong, unique key
-app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads')
+app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads') # For general gallery
+app.config['PROFILE_PICS_FOLDER'] = os.path.join(app.root_path, 'static', 'profile_pics')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
 
 app.last_activity_check_time = datetime.utcnow() # Changed to utcnow for consistency
@@ -57,6 +59,9 @@ app.last_activity_check_time = datetime.utcnow() # Changed to utcnow for consist
 
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
+
+if not os.path.exists(app.config['PROFILE_PICS_FOLDER']):
+    os.makedirs(app.config['PROFILE_PICS_FOLDER'])
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -159,12 +164,10 @@ def user_profile(username):
     user = User.query.filter_by(username=username).first_or_404()
     # Fetch posts by this user
     user_posts = Post.query.filter_by(user_id=user.id).order_by(Post.timestamp.desc()).all()
-    # User images from comma-separated string
-    user_images_str = user.uploaded_images if user.uploaded_images else ""
-    user_images_list = [img.strip() for img in user_images_str.split(',') if img.strip()]
-    # User images from comma-separated string
-    user_images_str = user.uploaded_images if user.uploaded_images else ""
-    user_images_list = [img.strip() for img in user_images_str.split(',') if img.strip()]
+    # User gallery images from comma-separated string
+    user_gallery_images_str = user.uploaded_images if user.uploaded_images else ""
+    user_gallery_images_list = [img.strip() for img in user_gallery_images_str.split(',') if img.strip()]
+    # Profile picture path is directly user.profile_picture from the User object
     # Fetch events organized by this user
     organized_events = Event.query.filter_by(user_id=user.id).order_by(Event.created_at.desc()).all()
 
@@ -177,12 +180,12 @@ def user_profile(username):
         else:
             post_item.average_rating = 0
 
-    # Pass the whole user object to the template
+    # Pass the whole user object to the template, which includes user.profile_picture
     return render_template('user.html',
                            user=user,
                            username=username, # username is still useful for display
                            posts=user_posts,
-                           user_images=user_images_list,
+                           user_gallery_images=user_gallery_images_list, # Clarified variable name
                            organized_events=organized_events)
 
 @app.route('/todo', methods=['GET', 'POST'])
@@ -378,10 +381,62 @@ def login():
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
-    session.pop('user_id', None) # Remove user_id from session
+    session.pop('user_id', None)
     session.pop('username', None)
     flash('You are now logged out.', 'success')
     return redirect(url_for('login'))
+
+@app.route('/upload_profile_picture', methods=['GET', 'POST'])
+@login_required
+def upload_profile_picture():
+    if request.method == 'POST':
+        if 'profile_pic' not in request.files:
+            flash('No file part selected.', 'warning')
+            return redirect(request.url)
+
+        file = request.files['profile_pic']
+
+        if file.filename == '':
+            flash('No file selected.', 'warning')
+            return redirect(request.url)
+
+        if file and allowed_file(file.filename):
+            # Generate a unique filename to prevent overwrites and ensure URL safety
+            filename = secure_filename(file.filename)
+            unique_filename = uuid.uuid4().hex + "_" + filename
+            file_path = os.path.join(app.config['PROFILE_PICS_FOLDER'], unique_filename)
+
+            try:
+                file.save(file_path)
+
+                # Update user's profile picture path in DB
+                user = User.query.get(session['user_id']) # or current_user from context
+                if user:
+                    user.profile_picture = url_for('static', filename=f'profile_pics/{unique_filename}')
+                    db.session.commit()
+                    flash('Profile picture uploaded successfully!', 'success')
+                    return redirect(url_for('user_profile', username=user.username))
+                else:
+                    flash('User not found. Please log in again.', 'danger')
+                    return redirect(url_for('login'))
+            except Exception as e:
+                app.logger.error(f"Error saving profile picture: {e}")
+                flash('An error occurred while uploading the picture. Please try again.', 'danger')
+                return redirect(request.url)
+        else:
+            flash('Invalid file type. Allowed types are png, jpg, jpeg, gif.', 'danger')
+            return redirect(request.url)
+
+    return render_template('upload_profile_picture.html')
+
+# Context processor to make current_user available to all templates
+@app.context_processor
+def inject_user():
+    if 'user_id' in session:
+        # Use .get() on session to avoid KeyError if 'user_id' isn't set
+        user = User.query.get(session.get('user_id'))
+        return dict(current_user=user)
+    return dict(current_user=None)
 
 @app.route('/blog/create', methods=['GET', 'POST'])
 @login_required # This order was already correct

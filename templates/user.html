@@ -5,6 +5,22 @@
 {% block content %}
     <h2 class="page-title">{{ username }}'s Profile</h2>
 
+    <!-- Profile Picture Display -->
+    <div class="mb-3 text-center">
+        {% if user.profile_picture %}
+            <img src="{{ user.profile_picture }}" alt="{{ username }}'s Profile Picture" class="img-thumbnail" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover;">
+        {% else %}
+            <img src="{{ url_for('static', filename='profile_pics/default.png') }}" alt="Default Profile Picture" class="img-thumbnail" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover;">
+            {# Consider adding a default profile picture, e.g., static/profile_pics/default.png #}
+        {% endif %}
+    </div>
+
+    {% if session['logged_in'] and session['username'] == username %}
+    <div class="mb-3 text-center">
+        <a href="{{ url_for('upload_profile_picture') }}" class="btn btn-secondary btn-sm">Change Profile Picture</a>
+    </div>
+    {% endif %}
+
     {% if session['logged_in'] and session['username'] != username %}
         <div class="mb-3">
             <a href="{{ url_for('send_message', receiver_username=username) }}" class="btn btn-primary">Send Message to {{ username }}</a>
@@ -28,17 +44,17 @@
     </div>
 
     <div class="content-box">
-        <h3>User's Uploaded Images</h3>
-        {% if user_images %}
+        <h3>User's Uploaded Gallery Images</h3> {# Changed title for clarity #}
+        {% if user_gallery_images %}
             <div class="gallery-grid">
-                {% for image_filename in user_images %}
+                {% for image_filename in user_gallery_images %}
                     <div class="gallery-item">
-                        <img src="{{ url_for('uploaded_file', filename=image_filename) }}" alt="User Image {{ image_filename }}" style="max-width: 200px; max-height: 200px; margin: 5px;">
+                        <img src="{{ url_for('uploaded_file', filename=image_filename) }}" alt="User Gallery Image {{ image_filename }}" style="max-width: 200px; max-height: 200px; margin: 5px;">
                     </div>
                 {% endfor %}
             </div>
         {% else %}
-            <p>This user has not uploaded any images yet.</p>
+            <p>This user has not uploaded any gallery images yet.</p>
         {% endif %}
     </div>
 

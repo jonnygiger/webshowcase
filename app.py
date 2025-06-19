@@ -9,6 +9,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_ # Added for inbox query
 from flask_migrate import Migrate
+from flask_restful import Api
+from flask_jwt_extended import JWTManager, create_access_token
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -16,6 +18,7 @@ migrate = Migrate()
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
 from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group # Add Group
+from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
@@ -23,6 +26,15 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 migrate.init_app(app, db)
 socketio = SocketIO(app)
+api = Api(app)
+jwt = JWTManager(app)
+
+api.add_resource(UserListResource, '/api/users')
+api.add_resource(UserResource, '/api/users/<int:user_id>')
+api.add_resource(PostListResource, '/api/posts')
+api.add_resource(PostResource, '/api/posts/<int:post_id>')
+api.add_resource(EventListResource, '/api/events')
+api.add_resource(EventResource, '/api/events/<int:event_id>')
 
 # Scheduler for periodic tasks
 scheduler = BackgroundScheduler()
@@ -31,6 +43,7 @@ scheduler = BackgroundScheduler()
 # In production, this might be 5, 10, or 15 minutes.
 
 app.config['SECRET_KEY'] = 'supersecretkey'
+app.config['JWT_SECRET_KEY'] = 'your-jwt-secret-key' # Choose a strong, unique key
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
 
@@ -697,6 +710,23 @@ with app.app_context():
         else:
             print("Demo user confirmed to exist in existing DB.")
 
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return {'message': 'Username and password are required'}, 400
+
+    user = User.query.filter_by(username=username).first()
+
+    if user and check_password_hash(user.password_hash, password):
+        access_token = create_access_token(identity=user.id) # Use user.id as identity
+        return {'access_token': access_token}, 200
+    else:
+        return {'message': 'Invalid credentials'}, 401
+
 
 if __name__ == '__main__':
     # Start the scheduler only once, even with Flask reloader
@@ -1063,6 +1093,23 @@ def join_group(group_id):
         flash(f'You have successfully joined the group: {group.name}!', 'success')
 
     return redirect(url_for('view_group', group_id=group_id))
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return {'message': 'Username and password are required'}, 400
+
+    user = User.query.filter_by(username=username).first()
+
+    if user and check_password_hash(user.password_hash, password):
+        access_token = create_access_token(identity=user.id) # Use user.id as identity
+        return {'access_token': access_token}, 200
+    else:
+        return {'message': 'Invalid credentials'}, 401
 
 @app.route('/group/<int:group_id>/leave', methods=['POST'])
 @login_required

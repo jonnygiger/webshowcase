@@ -53,6 +53,14 @@ class User(db.Model):
     def __repr__(self):
         return f'<User {self.username}>'
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'uploaded_images': self.uploaded_images
+            # Add other fields if they are simple and non-sensitive
+        }
+
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
@@ -67,6 +75,18 @@ class Post(db.Model):
 
     def __repr__(self):
         return f'<Post {self.title}>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'content': self.content,
+            'timestamp': self.timestamp.isoformat() if self.timestamp else None,
+            'last_edited': self.last_edited.isoformat() if self.last_edited else None,
+            'user_id': self.user_id,
+            'author_username': self.author.username if self.author else None
+            # Consider adding comment count or like count if simple to compute
+        }
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -161,6 +181,19 @@ class Event(db.Model):
 
     def __repr__(self):
         return f'<Event {self.title}>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'description': self.description,
+            'date': self.date,
+            'time': self.time,
+            'location': self.location,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'user_id': self.user_id,
+            'organizer_username': self.organizer.username if self.organizer else None
+        }
 
 class EventRSVP(db.Model):
     id = db.Column(db.Integer, primary_key=True)

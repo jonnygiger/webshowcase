@@ -1947,3 +1947,299 @@ class TestNotifications(unittest.TestCase):
                 found_notification = True
                 break
         self.assertTrue(found_notification, "The specific notification object was not found in app.notifications")
+
+# --- API Tests ---
+import json # Added for API tests
+
+class TestAPIFeatures:
+
+    def _get_jwt_token(self, client, username, password):
+        response = client.post('/api/login',
+                               data=json.dumps({'username': username, 'password': password}),
+                               content_type='application/json')
+        assert response.status_code == 200, f"Failed to get token for {username}. Response: {response.data.decode()}"
+        return response.get_json()['access_token']
+
+    def _create_user_for_test(self, app_instance, username, password):
+        with app_instance.app_context():
+            from app import db # Import db here to use within app_context
+            user = User.query.filter_by(username=username).first()
+            if not user:
+                user = User(username=username, password_hash=generate_password_hash(password))
+                db.session.add(user)
+                db.session.commit()
+            return user
+
+    def test_api_login(self, client, app_instance):
+        # 'demo' user with 'password123' is created by manage_db_state_and_uploads fixture
+
+        # Valid login
+        response = client.post('/api/login',
+                               data=json.dumps({'username': 'demo', 'password': 'password123'}),
+                               content_type='application/json')
+        assert response.status_code == 200
+        json_response = response.get_json()
+        assert 'access_token' in json_response
+
+        # Invalid login - wrong password
+        response = client.post('/api/login',
+                               data=json.dumps({'username': 'demo', 'password': 'wrongpassword'}),
+                               content_type='application/json')
+        assert response.status_code == 401
+        assert response.get_json()['message'] == 'Invalid credentials'
+
+        # Invalid login - wrong username
+        response = client.post('/api/login',
+                               data=json.dumps({'username': 'nonexistentuser', 'password': 'password123'}),
+                               content_type='application/json')
+        assert response.status_code == 401
+        assert response.get_json()['message'] == 'Invalid credentials'
+
+        # Missing credentials
+        response = client.post('/api/login',
+                               data=json.dumps({'username': 'demo'}),
+                               content_type='application/json')
+        assert response.status_code == 400
+        assert response.get_json()['message'] == 'Username and password are required'
+
+    def test_api_get_users_no_auth(self, client, app_instance):
+        response = client.get('/api/users')
+        assert response.status_code == 200
+        users_data = response.get_json()['users']
+        assert isinstance(users_data, list)
+        # Check if demo user is present (created by fixture)
+        assert any(u['username'] == 'demo' for u in users_data)
+
+    def test_api_get_single_user_no_auth(self, client, app_instance):
+        with app_instance.app_context():
+            demo_user = User.query.filter_by(username='demo').first()
+            assert demo_user is not None
+            user_id = demo_user.id
+
+        response = client.get(f'/api/users/{user_id}')
+        assert response.status_code == 200
+        user_data = response.get_json()['user']
+        assert user_data['username'] == 'demo'
+        assert user_data['id'] == user_id
+
+        response_not_found = client.get('/api/users/99999') # Non-existent user
+        assert response_not_found.status_code == 404
+
+
+    def test_api_get_posts_no_auth(self, client, app_instance):
+        # Create a post first to ensure there's data
+        with app_instance.app_context():
+            from app import db
+            demo_user = User.query.filter_by(username='demo').first()
+            post1 = Post(title="API Test Post 1", content="Content 1", user_id=demo_user.id)
+            db.session.add(post1)
+            db.session.commit()
+
+        response = client.get('/api/posts')
+        assert response.status_code == 200
+        posts_data = response.get_json()['posts']
+        assert isinstance(posts_data, list)
+        assert any(p['title'] == 'API Test Post 1' for p in posts_data)
+
+    def test_api_get_single_post_no_auth(self, client, app_instance):
+        with app_instance.app_context():
+            from app import db
+            demo_user = User.query.filter_by(username='demo').first()
+            post = Post(title="API Single Post", content="Content single", user_id=demo_user.id)
+            db.session.add(post)
+            db.session.commit()
+            post_id = post.id
+
+        response = client.get(f'/api/posts/{post_id}')
+        assert response.status_code == 200
+        post_data = response.get_json()['post']
+        assert post_data['title'] == 'API Single Post'
+        assert post_data['id'] == post_id
+
+        response_not_found = client.get('/api/posts/99999')
+        assert response_not_found.status_code == 404
+
+    def test_api_create_post_no_auth(self, client):
+        post_data = {'title': 'No Auth Post', 'content': 'Content'}
+        response = client.post('/api/posts', data=json.dumps(post_data), content_type='application/json')
+        assert response.status_code == 401 # Expecting JWT Required
+
+    def test_api_create_post_with_auth(self, client, app_instance):
+        token = self._get_jwt_token(client, 'demo', 'password123')
+        headers = {'Authorization': f'Bearer {token}'}
+
+        post_data = {'title': 'API Auth Test Post', 'content': 'Content created via API with auth'}
+        response = client.post('/api/posts', data=json.dumps(post_data), headers=headers, content_type='application/json')
+        assert response.status_code == 201
+        data = response.get_json()
+        assert data['message'] == 'Post created successfully'
+        assert data['post']['title'] == 'API Auth Test Post'
+
+        with app_instance.app_context():
+            post_in_db = Post.query.filter_by(title='API Auth Test Post').first()
+            assert post_in_db is not None
+            assert post_in_db.content == 'Content created via API with auth'
+            demo_user = User.query.filter_by(username='demo').first()
+            assert post_in_db.user_id == demo_user.id
+
+    def test_api_update_post_no_auth(self, client, app_instance):
+        with app_instance.app_context():
+            from app import db
+            demo_user = User.query.filter_by(username='demo').first()
+            post = Post(title="Post for No Auth Update", content="Initial", user_id=demo_user.id)
+            db.session.add(post)
+            db.session.commit()
+            post_id = post.id
+
+        update_data = {'title': 'Updated Title No Auth'}
+        response = client.put(f'/api/posts/{post_id}', data=json.dumps(update_data), content_type='application/json')
+        assert response.status_code == 401
+
+    def test_api_update_post_with_auth_owner(self, client, app_instance):
+        token = self._get_jwt_token(client, 'demo', 'password123')
+        headers = {'Authorization': f'Bearer {token}'}
+
+        # Create a post by 'demo' user first
+        with app_instance.app_context():
+            from app import db
+            demo_user = User.query.filter_by(username='demo').first()
+            original_post = Post(title="Original Title Owner", content="Original Content Owner", user_id=demo_user.id)
+            db.session.add(original_post)
+            db.session.commit()
+            post_id_to_update = original_post.id
+
+        update_data = {'title': 'Updated Title Owner API', 'content': 'Updated Content Owner API'}
+        response = client.put(f'/api/posts/{post_id_to_update}', data=json.dumps(update_data), headers=headers, content_type='application/json')
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data['post']['title'] == 'Updated Title Owner API'
+        assert data['post']['content'] == 'Updated Content Owner API'
+
+        with app_instance.app_context():
+            updated_post = Post.query.get(post_id_to_update)
+            assert updated_post.title == 'Updated Title Owner API'
+
+    def test_api_update_post_with_auth_not_owner(self, client, app_instance):
+        # Create user 'owner' and a post by them
+        owner_user = self._create_user_for_test(app_instance, 'owner_user', 'password_owner')
+        with app_instance.app_context():
+            from app import db
+            post_by_owner = Post(title="Post by Owner", content="Owner's content", user_id=owner_user.id)
+            db.session.add(post_by_owner)
+            db.session.commit()
+            post_id = post_by_owner.id
+
+        # 'testuser' (from fixture) attempts to update 'owner_user's post
+        token_not_owner = self._get_jwt_token(client, 'testuser', 'password')
+        headers_not_owner = {'Authorization': f'Bearer {token_not_owner}'}
+
+        update_data = {'title': 'Attempted Update Not Owner'}
+        response = client.put(f'/api/posts/{post_id}', data=json.dumps(update_data), headers=headers_not_owner, content_type='application/json')
+        assert response.status_code == 403 # Forbidden
+        assert response.get_json()['message'] == 'Unauthorized to edit this post'
+
+    def test_api_delete_post_no_auth(self, client, app_instance):
+        with app_instance.app_context():
+            from app import db
+            demo_user = User.query.filter_by(username='demo').first()
+            post = Post(title="Post for No Auth Delete", content="Initial", user_id=demo_user.id)
+            db.session.add(post)
+            db.session.commit()
+            post_id = post.id
+
+        response = client.delete(f'/api/posts/{post_id}')
+        assert response.status_code == 401
+
+    def test_api_delete_post_with_auth_owner(self, client, app_instance):
+        token = self._get_jwt_token(client, 'demo', 'password123')
+        headers = {'Authorization': f'Bearer {token}'}
+
+        with app_instance.app_context():
+            from app import db
+            demo_user = User.query.filter_by(username='demo').first()
+            post_to_delete = Post(title="Post to Delete Owner", content="Content", user_id=demo_user.id)
+            db.session.add(post_to_delete)
+            db.session.commit()
+            post_id = post_to_delete.id
+
+        response = client.delete(f'/api/posts/{post_id}', headers=headers)
+        assert response.status_code == 200
+        assert response.get_json()['message'] == 'Post deleted successfully'
+
+        with app_instance.app_context():
+            assert Post.query.get(post_id) is None
+
+    def test_api_delete_post_with_auth_not_owner(self, client, app_instance):
+        owner_user_del = self._create_user_for_test(app_instance, 'owner_user_del', 'password_owner_del')
+        with app_instance.app_context():
+            from app import db
+            post_by_owner = Post(title="Post by Owner Del", content="Owner's content Del", user_id=owner_user_del.id)
+            db.session.add(post_by_owner)
+            db.session.commit()
+            post_id = post_by_owner.id
+
+        token_not_owner = self._get_jwt_token(client, 'testuser', 'password') # 'testuser' is not owner
+        headers_not_owner = {'Authorization': f'Bearer {token_not_owner}'}
+
+        response = client.delete(f'/api/posts/{post_id}', headers=headers_not_owner)
+        assert response.status_code == 403
+        assert response.get_json()['message'] == 'Unauthorized to delete this post'
+
+        with app_instance.app_context():
+            assert Post.query.get(post_id) is not None # Post should still exist
+
+    def test_api_get_events_no_auth(self, client, app_instance):
+        with app_instance.app_context():
+            from app import db
+            demo_user = User.query.filter_by(username='demo').first()
+            event1 = Event(title="API Test Event 1", description="Desc 1", date="2024-01-01", user_id=demo_user.id)
+            db.session.add(event1)
+            db.session.commit()
+
+        response = client.get('/api/events')
+        assert response.status_code == 200
+        events_data = response.get_json()['events']
+        assert isinstance(events_data, list)
+        assert any(e['title'] == 'API Test Event 1' for e in events_data)
+
+    def test_api_get_single_event_no_auth(self, client, app_instance):
+        with app_instance.app_context():
+            from app import db
+            demo_user = User.query.filter_by(username='demo').first()
+            event = Event(title="API Single Event", description="Desc single", date="2024-02-02", user_id=demo_user.id)
+            db.session.add(event)
+            db.session.commit()
+            event_id = event.id
+
+        response = client.get(f'/api/events/{event_id}')
+        assert response.status_code == 200
+        event_data = response.get_json()['event']
+        assert event_data['title'] == 'API Single Event'
+        assert event_data['id'] == event_id
+
+        response_not_found = client.get('/api/events/99999')
+        assert response_not_found.status_code == 404
+
+    def test_api_create_event_no_auth(self, client):
+        event_data = {'title': 'No Auth Event', 'description': 'Desc', 'date': '2024-03-03'}
+        response = client.post('/api/events', data=json.dumps(event_data), content_type='application/json')
+        assert response.status_code == 401
+
+    def test_api_create_event_with_auth(self, client, app_instance):
+        token = self._get_jwt_token(client, 'demo', 'password123')
+        headers = {'Authorization': f'Bearer {token}'}
+
+        event_data = {'title': 'API Auth Event', 'description': 'Desc auth', 'date': '2024-04-04', 'time': '10:00', 'location': 'Online'}
+        response = client.post('/api/events', data=json.dumps(event_data), headers=headers, content_type='application/json')
+        assert response.status_code == 201
+        data = response.get_json()
+        assert data['message'] == 'Event created successfully'
+        assert data['event']['title'] == 'API Auth Event'
+        assert data['event']['location'] == 'Online'
+
+        with app_instance.app_context():
+            event_in_db = Event.query.filter_by(title='API Auth Event').first()
+            assert event_in_db is not None
+            assert event_in_db.description == 'Desc auth'
+            demo_user = User.query.filter_by(username='demo').first()
+            assert event_in_db.user_id == demo_user.id

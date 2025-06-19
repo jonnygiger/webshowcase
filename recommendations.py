@@ -1,7 +1,7 @@
 from app import db
-from models import User, Post, Group, Friendship, Like, Event, EventRSVP, Poll, PollVote
+from models import User, Post, Group, Friendship, Like, Event, EventRSVP, Poll, PollVote, Comment
 from sqlalchemy import func, or_
-# from collections import defaultdict # Not needed
+from collections import defaultdict
 
 def suggest_users_to_follow(user_id, limit=5):
     """Suggest users who are friends of the current user's friends."""
@@ -55,12 +55,12 @@ def suggest_users_to_follow(user_id, limit=5):
     return ordered_suggested_users[:limit]
 
 def suggest_posts_to_read(user_id, limit=5):
-    """Suggest posts liked by the current user's friends."""
+    """Suggest posts liked or commented on by the current user's friends, ranked by recency of interaction."""
     current_user = User.query.get(user_id)
     if not current_user:
         return []
 
-    # Get friends of the current user
+    # 1. Identify Friends
     user_friendships = Friendship.query.filter(
         or_(Friendship.user_id == user_id, Friendship.friend_id == user_id),
         Friendship.status == 'accepted'
@@ -75,24 +75,77 @@ def suggest_posts_to_read(user_id, limit=5):
     if not friend_ids:
         return []
 
-    # Get posts liked by friends
-    posts_liked_by_friends = db.session.query(Post, func.count(Like.id).label('like_count')).join(Like, Like.post_id == Post.id).filter(
-        Like.user_id.in_(friend_ids),
-        Post.user_id != user_id  # Exclude posts created by the current user
-    ).group_by(Post.id).order_by(func.count(Like.id).desc()).subquery()
+    # Store posts and their latest interaction timestamp
+    # Using defaultdict to store the latest timestamp for each post
+    recommended_posts_with_ts = defaultdict(lambda: None)
 
-    # Filter out posts already liked by the current user
-    user_liked_post_ids = db.session.query(Like.post_id).filter(Like.user_id == user_id).all()
-    user_liked_post_ids = {post_id for (post_id,) in user_liked_post_ids}
+    # 2. Fetch Posts Liked by Friends
+    likes_by_friends = db.session.query(Like.post_id, Like.timestamp).filter(
+        Like.user_id.in_(friend_ids)
+    ).all()
 
-    suggested_posts_query = db.session.query(
-        Post
-    ).select_entity_from(posts_liked_by_friends).filter(
-        Post.id.notin_(user_liked_post_ids)
+    for post_id, like_timestamp in likes_by_friends:
+        if recommended_posts_with_ts[post_id] is None or like_timestamp > recommended_posts_with_ts[post_id]:
+            recommended_posts_with_ts[post_id] = like_timestamp
+
+    # 3. Fetch Posts Commented on by Friends
+    comments_by_friends = db.session.query(Comment.post_id, Comment.timestamp).filter(
+        Comment.user_id.in_(friend_ids)
+    ).all()
+
+    for post_id, comment_timestamp in comments_by_friends:
+        if recommended_posts_with_ts[post_id] is None or comment_timestamp > recommended_posts_with_ts[post_id]:
+            recommended_posts_with_ts[post_id] = comment_timestamp
+
+    if not recommended_posts_with_ts:
+        return []
+
+    # 4. Combine and Rank Recommendations
+    # Exclude posts created by the current user
+    # Exclude posts already liked or commented on by the current user
+    user_liked_post_ids = {like.post_id for like in Like.query.filter_by(user_id=user_id).all()}
+    user_commented_post_ids = {comment.post_id for comment in Comment.query.filter_by(user_id=user_id).all()}
+
+    valid_post_ids = []
+    for post_id in recommended_posts_with_ts.keys():
+        post = Post.query.get(post_id) # Fetch the post object
+        if post: # Ensure post exists
+            if post.user_id == user_id:  # Exclude posts by current user
+                continue
+            if post_id in user_liked_post_ids:  # Exclude posts liked by current user
+                continue
+            if post_id in user_commented_post_ids:  # Exclude posts commented on by current user
+                continue
+            valid_post_ids.append(post_id)
+
+    if not valid_post_ids:
+        return []
+
+    # 5. Sort and Limit
+    # Sort by the interaction timestamp stored in recommended_posts_with_ts
+    # We need to sort the valid_post_ids based on their timestamps from recommended_posts_with_ts
+    # Then fetch the Post objects in that order.
+
+    sorted_post_ids = sorted(
+        valid_post_ids,
+        key=lambda pid: recommended_posts_with_ts[pid],
+        reverse=True
     )
 
-    suggested_posts = suggested_posts_query.limit(limit).all()
-    return suggested_posts
+    # Fetch Post objects in the sorted order
+    # This can be inefficient if sorted_post_ids is very large.
+    # A better way might be to fetch all relevant Post objects first, then sort them in Python.
+
+    # Fetch all relevant Post objects first
+    posts_to_consider = Post.query.filter(Post.id.in_(sorted_post_ids)).all()
+
+    # Create a dictionary for quick lookup
+    post_map = {post.id: post for post in posts_to_consider}
+
+    # Reconstruct the sorted list of Post objects
+    final_suggested_posts = [post_map[pid] for pid in sorted_post_ids if pid in post_map]
+
+    return final_suggested_posts[:limit]
 
 def suggest_groups_to_join(user_id, limit=5):
     """Suggest groups that the current user's friends are members of."""

@@ -82,11 +82,22 @@ def create_friendship_directly(user1_id, user2_id, status='accepted'):
     return friendship
 
 # Helper to create a like directly in DB
-def create_like_directly(user_id, post_id):
-    like = Like(user_id=user_id, post_id=post_id)
+def create_like_directly(user_id, post_id, timestamp=None):
+    if timestamp is None:
+        timestamp = datetime.utcnow()
+    like = Like(user_id=user_id, post_id=post_id, timestamp=timestamp)
     db.session.add(like)
     db.session.commit()
     return like
+
+# Helper to create a comment directly in DB
+def create_comment_directly(user_id, post_id, content="Test comment", timestamp=None):
+    if timestamp is None:
+        timestamp = datetime.utcnow()
+    comment = Comment(user_id=user_id, post_id=post_id, content=content, timestamp=timestamp)
+    db.session.add(comment)
+    db.session.commit()
+    return comment
 
 # Helper to create a group directly in DB
 def create_group_directly(name, creator_id, description="Test group description"):
@@ -2771,3 +2782,113 @@ def test_regular_user_cannot_perform_moderation_action(client):
 
     assert FlaggedContent.query.get(flag.id).status == 'pending'
     assert Post.query.get(post_flagged.id) is not None
+
+
+# --- UserActivity Creation for Likes Test ---
+
+def test_like_post_creates_user_activity(client):
+    """Test that liking a post creates a UserActivity record."""
+    user_liker = create_user_directly("user_liker_activity", "password")
+    user_author = create_user_directly("user_author_activity", "password")
+    post_to_be_liked = create_post_directly(user_id=user_author.id, title="Post for Like Activity", content="Content for like activity test.")
+
+    login_test_user(client, username="user_liker_activity", password="password")
+
+    # Simulate a POST request to like the post
+    response = client.post(f'/blog/post/{post_to_be_liked.id}/like', follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Post liked!" in response.data
+
+    # Assert that a UserActivity record exists
+    activity = UserActivity.query.filter_by(
+        user_id=user_liker.id,
+        activity_type="new_like",
+        related_id=post_to_be_liked.id
+    ).first()
+
+    assert activity is not None
+    assert activity.user_id == user_liker.id
+    assert activity.activity_type == "new_like"
+    assert activity.related_id == post_to_be_liked.id
+    assert activity.content_preview == post_to_be_liked.content[:100]
+
+    with client.application.app_context(): # For url_for
+        expected_link = url_for('view_post', post_id=post_to_be_liked.id, _external=True)
+    assert activity.link == expected_link
+
+
+# --- Test Refined suggest_posts_to_read Logic ---
+from app import recommendations # Import the recommendations module
+
+def test_suggest_posts_to_read_with_comments_and_likes(client):
+    """Test the refined suggest_posts_to_read logic, considering both likes and comments, and recency."""
+    with client.application.app_context(): # Ensure all DB operations and recommendations call are in context
+        # 1. Create Users
+        main_user = create_user_directly("main_user_sugg", "password")
+        friend1 = create_user_directly("friend1_sugg", "password")
+        friend2 = create_user_directly("friend2_sugg", "password")
+        other_user = create_user_directly("other_user_sugg", "password") # Author of most posts
+
+        # 2. Establish Friendships
+        create_friendship_directly(main_user.id, friend1.id)
+        create_friendship_directly(main_user.id, friend2.id)
+
+        # 3. Create Posts
+        post_by_main_user = create_post_directly(user_id=main_user.id, title="Post by Main User")
+
+        post_liked_by_friend1 = create_post_directly(user_id=other_user.id, title="Post Liked by Friend1")
+        post_commented_by_friend2 = create_post_directly(user_id=other_user.id, title="Post Commented by Friend2")
+        post_liked_and_commented_by_friends = create_post_directly(user_id=other_user.id, title="Post Liked and Commented")
+
+        post_by_other_user_no_interaction = create_post_directly(user_id=other_user.id, title="Post by Other No Interaction")
+
+        post_already_liked_by_main_user = create_post_directly(user_id=other_user.id, title="Post Already Liked by Main")
+        post_already_commented_on_by_main_user = create_post_directly(user_id=other_user.id, title="Post Already Commented by Main")
+
+        # 4. Simulate Interactions (with varying timestamps)
+        ts_oldest = datetime.utcnow() - timedelta(hours=5)
+        ts_older = datetime.utcnow() - timedelta(hours=4)
+        ts_recent = datetime.utcnow() - timedelta(hours=3)
+        ts_more_recent = datetime.utcnow() - timedelta(hours=2)
+        ts_most_recent = datetime.utcnow() - timedelta(hours=1)
+
+        create_like_directly(user_id=friend1.id, post_id=post_liked_by_friend1.id, timestamp=ts_recent)
+        create_comment_directly(user_id=friend2.id, post_id=post_commented_by_friend2.id, content="F2 comments", timestamp=ts_more_recent)
+
+        create_like_directly(user_id=friend1.id, post_id=post_liked_and_commented_by_friends.id, timestamp=ts_older) # Liked by F1
+        create_comment_directly(user_id=friend2.id, post_id=post_liked_and_commented_by_friends.id, content="F2 comments on liked post", timestamp=ts_most_recent) # Commented by F2 (more recent)
+
+        # Main user interactions for exclusion testing
+        create_like_directly(user_id=main_user.id, post_id=post_already_liked_by_main_user.id, timestamp=ts_oldest)
+        create_comment_directly(user_id=main_user.id, post_id=post_already_commented_on_by_main_user.id, content="Main user comments", timestamp=ts_oldest)
+
+        # 5. Call suggest_posts_to_read
+        suggested_posts = recommendations.suggest_posts_to_read(main_user.id, limit=5)
+
+        # 6. Perform Assertions
+        assert suggested_posts is not None
+        assert all(isinstance(p, Post) for p in suggested_posts), "All items in suggestions should be Post objects."
+        assert len(suggested_posts) <= 5, "Number of recommendations should not exceed the limit."
+
+        suggested_post_titles = [p.title for p in suggested_posts]
+
+        # `post_liked_and_commented_by_friends` should be first (most recent interaction by friend2's comment)
+        assert post_liked_and_commented_by_friends.title == suggested_post_titles[0], \
+            f"Expected '{post_liked_and_commented_by_friends.title}' first due to most recent friend interaction. Got: {suggested_post_titles}"
+
+        # `post_commented_by_friend2` should be second (friend2's comment is more recent than friend1's like on post_liked_by_friend1)
+        assert post_commented_by_friend2.title == suggested_post_titles[1], \
+            f"Expected '{post_commented_by_friend2.title}' second. Got: {suggested_post_titles}"
+
+        # `post_liked_by_friend1` should be third
+        assert post_liked_by_friend1.title == suggested_post_titles[2], \
+            f"Expected '{post_liked_by_friend1.title}' third. Got: {suggested_post_titles}"
+
+        # Exclusions
+        assert post_by_main_user.title not in suggested_post_titles, "Posts by the main user should not be suggested."
+        assert post_by_other_user_no_interaction.title not in suggested_post_titles, "Posts with no friend interaction should not be suggested (unless limit is high)."
+        assert post_already_liked_by_main_user.title not in suggested_post_titles, "Posts already liked by the main user should not be suggested."
+        assert post_already_commented_on_by_main_user.title not in suggested_post_titles, "Posts already commented on by the main user should not be suggested."
+
+        # Check if the number of actual suggestions is what we expect (3 in this case)
+        assert len(suggested_posts) == 3, f"Expected 3 suggestions, got {len(suggested_posts)}. Titles: {suggested_post_titles}"

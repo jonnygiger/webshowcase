@@ -91,6 +91,21 @@
                 </div>
             </div>
             {% endif %}
+
+            {% if trending_hashtags %}
+            <div class="card mt-3 sticky-top" style="top: 80px;"> <!-- Adjust top value if needed to clear previous sticky element -->
+                <div class="card-body">
+                    <h5 class="card-title">Trending Hashtags</h5>
+                    <ul class="list-group list-group-flush">
+                        {% for tag in trending_hashtags %}
+                        <li class="list-group-item">
+                            <a href="{{ url_for('view_hashtag_posts', tag=tag) }}">#{{ tag }}</a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

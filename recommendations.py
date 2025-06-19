@@ -1,7 +1,7 @@
 from app import db
 from models import User, Post, Group, Friendship, Like, Event, EventRSVP, Poll, PollVote, Comment
 from sqlalchemy import func, or_
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 def suggest_users_to_follow(user_id, limit=5):
     """Suggest users who are friends of the current user's friends."""
@@ -391,3 +391,31 @@ def suggest_hashtags(user_id, limit=5):
     suggested_tags = [tag for tag in popular_hashtags if tag not in user_hashtags]
 
     return suggested_tags[:limit]
+
+
+def get_trending_hashtags(top_n=10):
+    """
+    Queries all posts, counts hashtag occurrences, and returns the top N trending hashtags.
+    """
+    all_posts = Post.query.all()
+    if not all_posts:
+        return []
+
+    hashtag_counts = Counter()
+    for post in all_posts:
+        if post.hashtags: # Ensure hashtags field is not None or empty
+            # Split by comma, strip whitespace, convert to lowercase, and filter out empty strings
+            tags = [tag.strip().lower() for tag in post.hashtags.split(',') if tag.strip()]
+            if tags:
+                hashtag_counts.update(tags)
+
+    if not hashtag_counts:
+        return []
+
+    # Get the top_n hashtags along with their counts
+    top_hashtags_with_counts = hashtag_counts.most_common(top_n)
+
+    # Extract just the hashtag strings
+    trending_hashtags = [tag for tag, count in top_hashtags_with_counts]
+
+    return trending_hashtags

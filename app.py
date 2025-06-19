@@ -21,7 +21,7 @@ migrate = Migrate()
 # and definitely before db.init_app
 from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent # Add UserActivity, FlaggedContent
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
-from recommendations import suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join, suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags # Updated import
+from recommendations import suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join, suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags, get_trending_hashtags # Updated import
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
@@ -616,10 +616,13 @@ def blog():
             post_item.average_rating = 0
         # The number of likes will be len(post_item.likes) in the template
 
+    trending_hashtags_list = get_trending_hashtags(top_n=10)
+
     return render_template('blog.html',
                            posts=all_posts,
                            bookmarked_post_ids=bookmarked_post_ids,
-                           suggested_users_snippet=suggested_users_snippet) # Pass snippet to template
+                           suggested_users_snippet=suggested_users_snippet,
+                           trending_hashtags=trending_hashtags_list) # Pass snippet to template
 
 @app.route('/blog/post/<int:post_id>')
 def view_post(post_id):

@@ -741,14 +741,34 @@ def add_comment(post_id):
         db.session.rollback()
 
     # Prepare data for SocketIO emission (ensure it's serializable)
-    new_comment_data = {
+    new_comment_data_for_post_room = {
         "id": new_comment_db.id,
         "post_id": new_comment_db.post_id,
         "author_username": new_comment_db.author.username, # Assumes Comment.author relationship gives User
         "content": new_comment_db.content,
         "timestamp": new_comment_db.timestamp.strftime("%Y-%m-%d %H:%M:%S")
     }
-    socketio.emit('new_comment_event', new_comment_data, room=f'post_{post_id}')
+    socketio.emit('new_comment_event', new_comment_data_for_post_room, room=f'post_{post_id}')
+
+    # Notification for post author
+    post_author_id = post.user_id
+    commenter_id = session.get('user_id') # This is the current user who is commenting
+
+    if post_author_id != commenter_id:
+        # Ensure commenter's User object is available for username
+        commenter_user = User.query.get(commenter_id)
+        if commenter_user: # Should always be true if user_id in session is valid
+            notification_data = {
+                'post_id': post.id,
+                'commenter_username': commenter_user.username,
+                'comment_content': new_comment_db.content,
+                'post_title': post.title
+            }
+            socketio.emit('new_comment_notification', notification_data, room=f'user_{post_author_id}')
+            app.logger.info(f"Sent new_comment_notification to user_{post_author_id} for post {post.id}")
+        else:
+            app.logger.error(f"Could not find commenter user object for ID {commenter_id} when sending notification.")
+
     flash('Comment added successfully!', 'success')
     return redirect(url_for('view_post', post_id=post_id))
 

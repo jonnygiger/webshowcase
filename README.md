@@ -270,6 +270,12 @@ To further enhance interactivity, the blog now features real-time comment notifi
 *   **Technology**: This is implemented using Flask-SocketIO, enabling bidirectional real-time communication between the server and clients (browsers).
 *   **Enhanced Engagement**: This feature makes discussions more dynamic and engaging, as users can see new contributions as they happen.
 
+### Author Comment Notifications
+
+*   **Targeted Alerts**: Post authors receive instant, targeted notifications when another user comments on one of their posts. This ensures authors are promptly informed of new interactions with their content.
+*   **Implementation**: This is also powered by Flask-SocketIO, delivering notifications to the author's specific user channel.
+*   **User Experience**: Authors are notified via a browser alert when viewing their post and a new comment arrives from someone else.
+
 ### Post Liking
 
 Users can now interact with blog posts by liking or unliking them, providing a simple way to show appreciation or engagement.

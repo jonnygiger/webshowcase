@@ -65,5 +65,26 @@
     <footer>
         <p>&copy; 2023 My Flask App</p>
     </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script type="text/javascript">
+        document.addEventListener('DOMContentLoaded', (event) => {
+            var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+
+            socket.on('connect', function() {
+                console.log('SocketIO connected!');
+                {% if current_user and current_user.is_authenticated %}
+                var userRoom = 'user_{{ current_user.id }}';
+                socket.emit('join_room', {room: userRoom});
+                console.log('Joined room: ' + userRoom);
+                {% endif %}
+            });
+
+            // Optional: For debugging, listen to all events
+            // socket.onAny((event, ...args) => {
+            //   console.log(`Socket.IO event received: ${event}`, args);
+            // });
+        });
+    </script>
 </body>
 </html>

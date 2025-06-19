@@ -2,6 +2,7 @@ import pytest
 import os
 import shutil
 from flask import url_for
+from flask_socketio import SocketIOTestClient
 from app import app, db, User, Post, Comment, Event, Reaction, TodoItem, Bookmark, Friendship, SharedPost, UserActivity # Added Comment, Event, UserActivity
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
@@ -1610,3 +1611,94 @@ def test_edit_post_hashtags(client):
 
     edited_post_4 = Post.query.get(post_with_initial_tags.id)
     assert edited_post_4.hashtags == "final,version"
+
+
+# --- SocketIO Comment Notification Tests ---
+
+def test_add_comment_socketio_notification_emission(client):
+    """Test that new_comment_notification is emitted to post author."""
+    # Setup: Two users, one post by author_user
+    author_user = create_user_directly("author_sio", "password")
+    commenter_user = create_user_directly("commenter_sio", "password")
+    post_by_author = create_post_directly(user_id=author_user.id, title="SIO Test Post", content="Content for SIO test")
+
+    # Initialize SocketIO test client for the author
+    # We need the actual socketio instance from the app
+    sio_client_author = SocketIOTestClient(app, app.extensions['socketio'])
+    assert sio_client_author.is_connected()
+
+    # Author joins their specific room
+    sio_client_author.emit('join_room', {'room': f'user_{author_user.id}'})
+    # Clear any initial connection messages etc.
+    sio_client_author.get_received()
+
+
+    # Action: Commenter logs in and adds a comment
+    login_test_user(client, username="commenter_sio", password="password")
+    comment_text = "A insightful comment for SIO notification."
+    response = client.post(f'/blog/post/{post_by_author.id}/comment', data={
+        'comment_content': comment_text
+    }, follow_redirects=True)
+    assert response.status_code == 200 # Comment posted successfully
+
+    # Assertion: Check for 'new_comment_notification' received by author's SIO client
+    received_events_author = sio_client_author.get_received()
+
+    notification_event = None
+    for event in received_events_author:
+        if event['name'] == 'new_comment_notification':
+            notification_event = event
+            break
+
+    assert notification_event is not None, "new_comment_notification event not found"
+    assert len(notification_event['args']) == 1
+    event_data = notification_event['args'][0]
+
+    assert event_data['post_id'] == post_by_author.id
+    assert event_data['commenter_username'] == commenter_user.username
+    assert event_data['comment_content'] == comment_text
+    assert event_data['post_title'] == post_by_author.title
+    # Room check is implicit: sio_client_author only receives events for rooms it's in or global events.
+    # If it received this event after joining 'user_{author_user.id}', it implies correct room targeting.
+
+    # Ensure the generic 'new_comment_event' for the post room is also sent (optional check, but good for sanity)
+    # This would require another SIO client connected to f'post_{post_by_author.id}' room.
+    # For this test, focusing on the user-specific notification.
+
+
+def test_no_notification_for_own_comment(client):
+    """Test that a user does not receive a new_comment_notification for their own comment."""
+    # Setup: One user, one post by this user
+    test_user = create_user_directly("self_commenter_sio", "password")
+    post_by_user = create_post_directly(user_id=test_user.id, title="Self Comment SIO Post", content="Content for self-comment")
+
+    # Initialize SocketIO test client for the user
+    sio_client_user = SocketIOTestClient(app, app.extensions['socketio'])
+    assert sio_client_user.is_connected()
+
+    # User joins their specific room
+    sio_client_user.emit('join_room', {'room': f'user_{test_user.id}'})
+    sio_client_user.get_received() # Clear initial messages
+
+    # Action: User logs in and adds a comment to their own post
+    login_test_user(client, username="self_commenter_sio", password="password")
+    own_comment_text = "My own comment on my post."
+    response = client.post(f'/blog/post/{post_by_user.id}/comment', data={
+        'comment_content': own_comment_text
+    }, follow_redirects=True)
+    assert response.status_code == 200 # Comment posted
+
+    # Assertion: Check that NO 'new_comment_notification' is received by the user's SIO client
+    received_events_user = sio_client_user.get_received()
+
+    notification_event_found = False
+    for event in received_events_user:
+        if event['name'] == 'new_comment_notification':
+            notification_event_found = True
+            break
+
+    assert not notification_event_found, "User received new_comment_notification for their own comment, which should not happen."
+
+    # It's expected that the user might receive the 'new_comment_event' if they were also in the post's room,
+    # but that's a different event and not tested here for absence/presence.
+    # This test specifically ensures the *author-targeted notification* is not sent for self-comments.

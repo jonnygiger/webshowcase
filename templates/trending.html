@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Trending Posts{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Trending Posts</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% if posts %}
+        <div class="row">
+            {% for post_item in posts %}
+                <div class="col-md-12"> {# Or col-md-8 for a wider main content area if sidebar is added #}
+                    <div class="card mb-4 shadow-sm">
+                        <div class="card-body">
+                            <h4 class="card-title"><a href="{{ url_for('view_post', post_id=post_item.id) }}">{{ post_item.title }}</a></h4>
+                            <p class="card-subtitle mb-2 text-muted">
+                                By:
+                                {% if post_item.author %}
+                                    <a href="{{ url_for('user_profile', username=post_item.author.username) }}">{{ post_item.author.username }}</a>
+                                {% else %}
+                                    Unknown author
+                                {% endif %}
+                                | Posted on: {{ post_item.timestamp.strftime('%Y-%m-%d %H:%M') if post_item.timestamp else 'N/A' }}
+                            </p>
+
+                            <p class="card-text">
+                                {{ post_item.content[:200] }}{% if post_item.content|length > 200 %}...{% endif %}
+                            </p>
+
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div>
+                                    <span class="badge bg-primary rounded-pill me-1">
+                                        <i class="fas fa-thumbs-up"></i> {{ post_item.likes|length if post_item.likes is defined else '0' }}
+                                    </span>
+                                    <span class="badge bg-secondary rounded-pill me-1">
+                                        <i class="fas fa-comments"></i> {{ post_item.comments|length if post_item.comments is defined else '0' }}
+                                    </span>
+                                    <span class="badge bg-success rounded-pill">
+                                        <i class="fas fa-share"></i> {{ post_item.shares.count() if post_item.shares is defined else '0' }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <a href="{{ url_for('view_post', post_id=post_item.id) }}" class="btn btn-outline-primary btn-sm">Read More &raquo;</a>
+
+                            {% if current_user %}
+                                <form action="{{ url_for('bookmark_post', post_id=post_item.id) }}" method="POST" style="display: inline; margin-left: 10px;">
+                                    <button type="submit" class="btn btn-sm {% if post_item.id in bookmarked_post_ids %}btn-warning{% else %}btn-outline-warning{% endif %}">
+                                        <i class="fas fa-bookmark"></i> {% if post_item.id in bookmarked_post_ids %}Unbookmark{% else %}Bookmark{% endif %}
+                                    </button>
+                                </form>
+
+                                <!-- Basic Share Button - Triggers POST request to /post/<post_id>/share -->
+                                <form action="{{ url_for('share_post', post_id=post_item.id) }}" method="POST" style="display: inline; margin-left: 10px;">
+                                    {# Add a text area for an optional comment if the share_post route handles it #}
+                                    {# <textarea name="sharing_comment" placeholder="Add a comment (optional)" rows="1" class="form-control-sm"></textarea> #}
+                                    <button type="submit" class="btn btn-sm btn-outline-success">
+                                        <i class="fas fa-share-square"></i> Share
+                                    </button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            No trending posts to display at the moment. Check back later!
+        </div>
+    {% endif %}
+</div>
+
+{# Add Font Awesome if not already in base.html for icons #}
+{# <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css"> #}
+
+{% endblock %}

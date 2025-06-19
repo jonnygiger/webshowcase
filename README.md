@@ -560,6 +560,11 @@ The recommendations feature has been enhanced to also suggest relevant events an
     *   **Benefit**: Provides a comprehensive overview of interesting content and activities, tailored to the user, enhancing their engagement and experience on the platform.
     *   **Access**: Logged-in users can access their Discovery Feed via the "Discovery" link in the main navigation bar.
 
+*   **Trending Posts Page**:
+    *   **Functionality**: Displays a dedicated list of posts that are currently popular based on recent user interactions such as likes, comments, and shares.
+    *   **Algorithm**: The trending algorithm emphasizes recent activity to ensure the list of trending posts remains fresh and relevant.
+    *   **Access**: Accessible to all users (logged-in or not) via the "Trending" link in the main navigation bar.
+
 These new recommendations are available on the main `/recommendations` page. The Discovery Feed provides an alternative, aggregated view.
 
 You can find dedicated recommendations on the `/recommendations` page (accessible when logged in). Additionally, a snippet of user suggestions is displayed on the main blog page to help you connect with others more easily.

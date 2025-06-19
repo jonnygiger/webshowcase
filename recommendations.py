@@ -1,7 +1,8 @@
 from app import db
-from models import User, Post, Group, Friendship, Like, Event, EventRSVP, Poll, PollVote, Comment
+from models import User, Post, Group, Friendship, Like, Event, EventRSVP, Poll, PollVote, Comment, SharedPost # Added SharedPost
 from sqlalchemy import func, or_
 from collections import defaultdict, Counter
+from datetime import datetime, timedelta # Ensure datetime and timedelta are imported
 
 def suggest_users_to_follow(user_id, limit=5):
     """Suggest users who are friends of the current user's friends."""
@@ -530,6 +531,7 @@ def get_trending_hashtags(top_n=10):
 # Define constants for suggest_trending_posts
 WEIGHT_RECENT_LIKE = 1
 WEIGHT_RECENT_COMMENT = 3
+WEIGHT_RECENT_SHARE = 2 # New weight for recent shares
 TRENDING_POST_AGE_FACTOR_SCALE = 5 # Scales the impact of post age
 
 def suggest_trending_posts(user_id, limit=5, since_days=7):
@@ -553,7 +555,8 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     # 2. Identify candidate posts:
     #    - Created within since_days OR
     #    - Having likes within since_days OR
-    #    - Having comments within since_days
+    #    - Having comments within since_days OR
+    #    - Having shares within since_days
 
     # Posts created recently
     recent_posts_query = Post.query.filter(Post.timestamp >= cutoff_date)
@@ -564,6 +567,9 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     # Posts with recent comments
     posts_with_recent_comments_ids = db.session.query(Comment.post_id).filter(Comment.timestamp >= cutoff_date).distinct()
 
+    # Posts with recent shares
+    posts_with_recent_shares_ids = db.session.query(SharedPost.original_post_id).filter(SharedPost.shared_at >= cutoff_date).distinct()
+
     # Combine IDs of all potentially relevant posts
     candidate_post_ids = set()
     for post in recent_posts_query.all():
@@ -572,6 +578,8 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
         candidate_post_ids.add(r_like_id[0]) # query returns tuples
     for r_comment_id in posts_with_recent_comments_ids:
         candidate_post_ids.add(r_comment_id[0]) # query returns tuples
+    for r_share_id in posts_with_recent_shares_ids:
+        candidate_post_ids.add(r_share_id[0]) # query returns tuples
 
     # Filter out posts by the current user and other exclusions upfront
     # Also filter out posts that are older than since_days if they have no recent activity (implicit in how candidate_post_ids is built)
@@ -606,6 +614,14 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     ).group_by(Comment.post_id).all()
     comments_map = {post_id: count for post_id, count in recent_comments_counts}
 
+    recent_shares_counts = db.session.query(
+        SharedPost.original_post_id, func.count(SharedPost.id).label('share_count')
+    ).filter(
+        SharedPost.original_post_id.in_(valid_candidate_post_ids),
+        SharedPost.shared_at >= cutoff_date
+    ).group_by(SharedPost.original_post_id).all()
+    shares_map = {post_id: count for post_id, count in recent_shares_counts}
+
     # 4. Calculate scores for each valid candidate post
     scored_posts = []
     # Fetch the post objects we will score
@@ -617,6 +633,7 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
         # Interaction score
         score += likes_map.get(post.id, 0) * WEIGHT_RECENT_LIKE
         score += comments_map.get(post.id, 0) * WEIGHT_RECENT_COMMENT
+        score += shares_map.get(post.id, 0) * WEIGHT_RECENT_SHARE
 
         # Post age factor: higher for newer posts within the window
         # This gives a small bonus to newer posts.

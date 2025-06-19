@@ -20,7 +20,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag, SharedFile # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification, TrendingHashtag, SharedFile
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource, UserStatsResource # Added OnThisDayResource
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
@@ -2675,3 +2675,39 @@ def delete_shared_file(shared_file_id):
         flash('An error occurred while deleting the file. Please try again.', 'danger')
 
     return redirect(url_for('files_inbox'))
+
+
+@app.route('/set_status', methods=['POST'])
+@login_required
+def set_status():
+    user_id = session.get('user_id')
+    current_user_obj = User.query.get(user_id)
+
+    if not current_user_obj: # Should ideally not happen if @login_required is effective
+        flash('User not found. Please log in again.', 'danger')
+        return redirect(url_for('login'))
+
+    status_text = request.form.get('status_text', '').strip()
+    emoji = request.form.get('emoji', '').strip()
+
+    if not status_text and not emoji:
+        flash('Status text or emoji must be provided.', 'warning')
+        return redirect(url_for('user_profile', username=current_user_obj.username))
+
+    # Ensure None is stored if strings are empty after stripping, aligning with nullable=True in model
+    new_status = UserStatus(
+        user_id=current_user_obj.id,
+        status_text=status_text if status_text else None,
+        emoji=emoji if emoji else None
+    )
+
+    try:
+        db.session.add(new_status)
+        db.session.commit()
+        flash('Your status has been updated!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error setting status for user {current_user_obj.username}: {e}")
+        flash('An error occurred while setting your status. Please try again.', 'danger')
+
+    return redirect(url_for('user_profile', username=current_user_obj.username))

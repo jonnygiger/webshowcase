@@ -95,6 +95,9 @@ class User(db.Model):
     # Relationship to GroupMessage
     # group_messages = db.relationship('GroupMessage', backref='user', lazy='dynamic', cascade="all, delete-orphan")
 
+    # UserStatus relationship
+    statuses = db.relationship('UserStatus', backref='user', lazy='dynamic', cascade='all, delete-orphan', order_by="UserStatus.timestamp.desc()")
+
     # SharedFile relationships
     sent_files = db.relationship('SharedFile', foreign_keys='SharedFile.sender_id', back_populates='sender', lazy='dynamic', cascade='all, delete-orphan')
     received_files = db.relationship('SharedFile', foreign_keys='SharedFile.receiver_id', back_populates='receiver', lazy='dynamic', cascade='all, delete-orphan')
@@ -144,6 +147,10 @@ class User(db.Model):
 
         # Deduplicate in case of any unforeseen issues, though logic should prevent it
         return list(set(friends))
+
+    def get_current_status(self):
+        """Returns the user's most recent status, or None if none exist."""
+        return self.statuses.first()
 
 class UserActivity(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -497,3 +504,14 @@ class SharedFile(db.Model):
 
     def __repr__(self):
         return f'<SharedFile {self.id} from {self.sender_id} to {self.receiver_id} - {self.original_filename}>'
+
+
+class UserStatus(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    status_text = db.Column(db.String(280), nullable=True)
+    emoji = db.Column(db.String(10), nullable=True)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<UserStatus {self.id} by User {self.user_id}>'

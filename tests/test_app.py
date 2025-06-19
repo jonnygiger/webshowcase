@@ -4,7 +4,7 @@ import json # For checking JSON responses
 import io # For BytesIO
 from unittest.mock import patch, call, ANY
 from app import app, db, socketio # Import socketio from app
-from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile # Added Group, Event, Poll, PollOption, TrendingHashtag, SharedFile
+from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus # Added Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus
 from recommendations import update_trending_hashtags # For testing the job logic
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash
@@ -1271,6 +1271,174 @@ class TestUserStatsAPI(AppTestCase):
             self.assertEqual(response_forbidden.status_code, 403)
             data_forbidden = json.loads(response_forbidden.data)
             self.assertEqual(data_forbidden.get('message'), 'Unauthorized to view these stats')
+
+
+class TestUserStatus(AppTestCase):
+
+    def test_set_status_full(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            status_text = "Feeling great today!"
+            emoji = "🎉"
+
+            response = self.client.post('/set_status', data={
+                'status_text': status_text,
+                'emoji': emoji
+            }, follow_redirects=True)
+
+            self.assertEqual(response.status_code, 200) # Should redirect to profile
+            self.assertIn(f"/{self.user1.username}", response.request.path) # Check redirected URL path
+
+            # Check flash message
+            self.assertIn("Your status has been updated!", response.get_data(as_text=True))
+
+            # Verify database record
+            user_status = UserStatus.query.filter_by(user_id=self.user1.id).order_by(UserStatus.timestamp.desc()).first()
+            self.assertIsNotNone(user_status)
+            self.assertEqual(user_status.status_text, status_text)
+            self.assertEqual(user_status.emoji, emoji)
+            self.logout()
+
+    def test_set_status_only_text(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            status_text = "Just text, no emoji."
+
+            response = self.client.post('/set_status', data={
+                'status_text': status_text,
+                'emoji': ''
+            }, follow_redirects=True)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(f"/{self.user1.username}", response.request.path)
+            self.assertIn("Your status has been updated!", response.get_data(as_text=True))
+
+            user_status = UserStatus.query.filter_by(user_id=self.user1.id).order_by(UserStatus.timestamp.desc()).first()
+            self.assertIsNotNone(user_status)
+            self.assertEqual(user_status.status_text, status_text)
+            self.assertIsNone(user_status.emoji) # Should be None if empty string was sent
+            self.logout()
+
+    def test_set_status_only_emoji(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            emoji = "🚀"
+
+            response = self.client.post('/set_status', data={
+                'status_text': '',
+                'emoji': emoji
+            }, follow_redirects=True)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(f"/{self.user1.username}", response.request.path)
+            self.assertIn("Your status has been updated!", response.get_data(as_text=True))
+
+            user_status = UserStatus.query.filter_by(user_id=self.user1.id).order_by(UserStatus.timestamp.desc()).first()
+            self.assertIsNotNone(user_status)
+            self.assertIsNone(user_status.status_text)
+            self.assertEqual(user_status.emoji, emoji)
+            self.logout()
+
+    def test_set_status_empty_input(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            initial_status_count = UserStatus.query.filter_by(user_id=self.user1.id).count()
+
+            response = self.client.post('/set_status', data={
+                'status_text': '',
+                'emoji': ''
+            }, follow_redirects=True)
+
+            self.assertEqual(response.status_code, 200) # Still redirects to profile
+            self.assertIn(f"/{self.user1.username}", response.request.path)
+
+            # Check flash error message
+            self.assertIn("Status text or emoji must be provided.", response.get_data(as_text=True))
+
+            # Verify no new status record was created
+            final_status_count = UserStatus.query.filter_by(user_id=self.user1.id).count()
+            self.assertEqual(final_status_count, initial_status_count)
+            self.logout()
+
+    def test_view_status_on_profile(self):
+        with app.app_context():
+            # Directly create a status for user1
+            status_text = "Testing profile view."
+            emoji = "👀"
+            timestamp = datetime.utcnow() - timedelta(minutes=5)
+            UserStatus.query.delete() # Clear any existing statuses for this user for predictability
+            db.session.commit()
+
+            created_status = UserStatus(user_id=self.user1.id, status_text=status_text, emoji=emoji, timestamp=timestamp)
+            db.session.add(created_status)
+            db.session.commit()
+
+            # Log in as user2 (or user1, doesn't matter for viewing)
+            self.login(self.user2.username, 'password')
+            response = self.client.get(f'/user/{self.user1.username}')
+
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+
+            self.assertIn(status_text, response_data)
+            self.assertIn(emoji, response_data)
+            # Check for formatted timestamp (e.g., minutes, not seconds for robustness if formatting is general)
+            self.assertIn(timestamp.strftime('%Y-%m-%d %H:%M'), response_data)
+            self.logout()
+
+    def test_view_status_on_profile_no_status(self):
+        with app.app_context():
+            # Ensure user1 has no statuses
+            UserStatus.query.filter_by(user_id=self.user1.id).delete()
+            db.session.commit()
+
+            self.login(self.user2.username, 'password') # Login as another user
+            response = self.client.get(f'/user/{self.user1.username}')
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+
+            # Assert that status-related HTML elements are NOT present or specific message is shown
+            # Depending on template, it might just be empty or have a placeholder.
+            # For now, let's ensure the status specific classes/text aren't there.
+            self.assertNotIn("user-status", response_data) # Assuming a wrapper div class
+            self.assertNotIn("Status set on:", response_data)
+            self.logout()
+
+
+    def test_set_status_form_visible_on_own_profile(self):
+        with app.app_context():
+            self.login(self.user1.username, 'password')
+            response = self.client.get(f'/user/{self.user1.username}')
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+
+            # Check for form elements
+            self.assertIn('action="/set_status"', response_data) # More specific than url_for
+            self.assertIn('name="status_text"', response_data)
+            self.assertIn('name="emoji"', response_data)
+            self.assertIn('type="submit"', response_data)
+            self.assertIn("Set Status", response_data) # Button text
+            self.logout()
+
+    def test_set_status_form_not_visible_on_others_profile(self):
+        with app.app_context():
+            # Log in as user1
+            self.login(self.user1.username, 'password')
+
+            # View user2's profile
+            response = self.client.get(f'/user/{self.user2.username}')
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+
+            # Assert form elements are NOT present
+            self.assertNotIn('action="/set_status"', response_data)
+            self.assertNotIn('name="status_text"', response_data)
+            self.assertNotIn('name="emoji"', response_data)
+            # Check that the specific "Set Status" button text is not there,
+            # being careful if other forms might exist.
+            # A more robust check might be to ensure the specific form container isn't there.
+            # For now, checking for the action and input names is a good start.
+            self.logout()
 
 
 # Helper to create UserActivity for tests

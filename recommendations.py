@@ -1,5 +1,5 @@
-from app import db
-from models import User, Post, Group, Friendship, Like, Event, EventRSVP, Poll, PollVote, Comment, SharedPost # Added SharedPost
+from app import db, app # Added app for logger
+from models import User, Post, Group, Friendship, Like, Event, EventRSVP, Poll, PollVote, Comment, SharedPost, TrendingHashtag # Added SharedPost and TrendingHashtag
 from sqlalchemy import func, or_
 from collections import defaultdict, Counter
 from datetime import datetime, timedelta # Ensure datetime and timedelta are imported
@@ -666,3 +666,67 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
 
     final_posts = [item['post'] for item in scored_posts[:limit]]
     return final_posts
+
+
+def update_trending_hashtags(top_n=10, since_days=7):
+    """
+    Calculates hashtag frequencies from recent posts, deletes existing trending
+    hashtags, and populates the TrendingHashtag table with the new top N hashtags.
+    """
+    app.logger.info(f"Starting update_trending_hashtags job. Top N: {top_n}, Since Days: {since_days}")
+    try:
+        cutoff_date = datetime.utcnow() - timedelta(days=since_days)
+        recent_posts = Post.query.filter(Post.timestamp >= cutoff_date).all()
+
+        if not recent_posts:
+            app.logger.info("No recent posts found to update trending hashtags.")
+            # Clear existing hashtags if no recent posts, or decide to keep old ones
+            try:
+                db.session.begin_nested() # Start a nested transaction
+                num_deleted = TrendingHashtag.query.delete()
+                db.session.commit() # Commit the deletion
+                app.logger.info(f"Cleared {num_deleted} existing trending hashtags as no recent posts were found.")
+            except Exception as e:
+                db.session.rollback() # Rollback in case of error
+                app.logger.error(f"Error clearing trending hashtags: {e}")
+            return
+
+        hashtag_counts = Counter()
+        for post in recent_posts:
+            if post.hashtags:
+                tags = [tag.strip().lower() for tag in post.hashtags.split(',') if tag.strip()]
+                if tags:
+                    hashtag_counts.update(tags)
+
+        if not hashtag_counts:
+            app.logger.info("No hashtags found in recent posts.")
+            try:
+                db.session.begin_nested()
+                num_deleted = TrendingHashtag.query.delete()
+                db.session.commit()
+                app.logger.info(f"Cleared {num_deleted} existing trending hashtags as no new ones were found.")
+            except Exception as e:
+                db.session.rollback()
+                app.logger.error(f"Error clearing trending hashtags: {e}")
+            return
+
+        top_hashtags_with_scores = hashtag_counts.most_common(top_n)
+
+        with db.session.begin_nested(): # Using begin_nested for more control if outer transaction exists
+            TrendingHashtag.query.delete() # Clear old hashtags
+
+            for rank, (tag, score) in enumerate(top_hashtags_with_scores, 1):
+                new_trending_hashtag = TrendingHashtag(
+                    hashtag=tag,
+                    score=float(score),
+                    rank=rank,
+                    calculated_at=datetime.utcnow()
+                )
+                db.session.add(new_trending_hashtag)
+
+        db.session.commit() # Commit the transaction
+        app.logger.info(f"Successfully updated {len(top_hashtags_with_scores)} trending hashtags.")
+
+    except Exception as e:
+        db.session.rollback() # Rollback on any exception during the process
+        app.logger.error(f"Error in update_trending_hashtags job: {e}")

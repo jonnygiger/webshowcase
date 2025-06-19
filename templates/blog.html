@@ -92,21 +92,61 @@
             </div>
             {% endif %}
 
-            {% if trending_hashtags %}
-            <div class="card mt-3 sticky-top" style="top: 80px;"> <!-- Adjust top value if needed to clear previous sticky element -->
+            <div class="trending-hashtags-section card mt-3 sticky-top" style="top: 80px;"> <!-- Adjust top value if needed -->
                 <div class="card-body">
-                    <h5 class="card-title">Trending Hashtags</h5>
-                    <ul class="list-group list-group-flush">
-                        {% for tag in trending_hashtags %}
-                        <li class="list-group-item">
-                            <a href="{{ url_for('view_hashtag_posts', tag=tag) }}">#{{ tag }}</a>
-                        </li>
-                        {% endfor %}
+                    <h4>Trending Hashtags</h4>
+                    <ul id="trending-hashtags-list" class="list-group list-group-flush">
+                        <!-- Hashtags will be loaded here by JavaScript -->
+                        <li class="list-group-item">Loading...</li>
                     </ul>
                 </div>
             </div>
-            {% endif %}
         </div>
     </div>
 </div>
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const hashtagsList = document.getElementById('trending-hashtags-list');
+    fetch('/api/trending_hashtags')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            hashtagsList.innerHTML = ''; // Clear "Loading..."
+            if (data.trending_hashtags && data.trending_hashtags.length > 0) {
+                data.trending_hashtags.forEach(item => {
+                    const listItem = document.createElement('li');
+                    listItem.classList.add('list-group-item');
+                    const link = document.createElement('a');
+                    link.href = `/hashtag/${encodeURIComponent(item.hashtag)}`;
+                    link.textContent = `#${item.hashtag}`;
+                    // Optionally, display score or rank:
+                    // link.textContent += ` (Score: ${item.score.toFixed(2)})`;
+                    listItem.appendChild(link);
+                    hashtagsList.appendChild(listItem);
+                });
+            } else {
+                const listItem = document.createElement('li');
+                listItem.classList.add('list-group-item');
+                listItem.textContent = 'No trending hashtags at the moment.';
+                hashtagsList.appendChild(listItem);
+            }
+        })
+        .catch(error => {
+            hashtagsList.innerHTML = ''; // Clear "Loading..."
+            const listItem = document.createElement('li');
+            listItem.classList.add('list-group-item');
+            listItem.classList.add('text-danger');
+            listItem.textContent = 'Error loading trending hashtags.';
+            hashtagsList.appendChild(listItem);
+            console.error('Error fetching trending hashtags:', error);
+        });
+});
+</script>
 {% endblock %}

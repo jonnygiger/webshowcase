@@ -439,3 +439,23 @@ class FriendPostNotification(db.Model):
 
     def __repr__(self):
         return f'<FriendPostNotification id={self.id} user_id={self.user_id} post_id={self.post_id} poster_id={self.poster_id} is_read={self.is_read}>'
+
+
+class TrendingHashtag(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    hashtag = db.Column(db.String, nullable=False, unique=True)
+    score = db.Column(db.Float, nullable=False, default=0.0)
+    rank = db.Column(db.Integer, nullable=True)
+    calculated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<TrendingHashtag {self.hashtag} (Rank: {self.rank}, Score: {self.score})>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'hashtag': self.hashtag,
+            'score': self.score,
+            'rank': self.rank,
+            'calculated_at': self.calculated_at.isoformat() if self.calculated_at else None,
+        }

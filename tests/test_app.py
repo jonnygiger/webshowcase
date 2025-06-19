@@ -3,7 +3,8 @@ import unittest
 import json # For checking JSON responses
 from unittest.mock import patch, call, ANY
 from app import app, db, socketio # Import socketio from app
-from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption # Added Group, Event, Poll, PollOption
+from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag # Added Group, Event, Poll, PollOption, TrendingHashtag
+from recommendations import update_trending_hashtags # For testing the job logic
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash
 
@@ -585,9 +586,99 @@ class TestPersonalizedFeedAPI(AppTestCase):
             self.assertEqual(data['feed_items'], [])
 
 
+class TestTrendingHashtags(AppTestCase):
+
+    def test_update_trending_hashtags_logic(self):
+        with self.app.app_context():
+            # Clean up existing data
+            Post.query.delete()
+            TrendingHashtag.query.delete()
+            db.session.commit()
+
+            # Create sample posts
+            # self.user1_id is available from AppTestCase's _setup_base_users
+            db.session.add(Post(title="Post 1", content="Test", user_id=self.user1_id, hashtags="flask,python,web", timestamp=datetime.utcnow() - timedelta(days=1)))
+            db.session.add(Post(title="Post 2", content="Test", user_id=self.user1_id, hashtags="python,api,flask", timestamp=datetime.utcnow() - timedelta(days=2)))
+            db.session.add(Post(title="Post 3", content="Test", user_id=self.user1_id, hashtags="python,web", timestamp=datetime.utcnow() - timedelta(days=3))) # python:3, flask:2, web:2, api:1
+            db.session.add(Post(title="Post 4", content="Test", user_id=self.user1_id, hashtags="java,spring", timestamp=datetime.utcnow() - timedelta(days=1))) # java:1, spring:1
+            db.session.add(Post(title="Post 5", content="Test", user_id=self.user1_id, hashtags="python,old,web", timestamp=datetime.utcnow() - timedelta(days=10))) # This is old
+            db.session.commit()
+
+            # Call the function to update trending hashtags (defaults: top_n=10, since_days=7)
+            update_trending_hashtags()
+
+            updated_trends = TrendingHashtag.query.order_by(TrendingHashtag.rank.asc()).all()
+
+            self.assertTrue(len(updated_trends) > 0, "No trending hashtags were generated.")
+            self.assertTrue(len(updated_trends) <= 10, "More than 10 trending hashtags were generated.")
+
+            # Based on recent posts (Post 1, 2, 3, 4):
+            # python: 3 (from post 1, 2, 3)
+            # flask: 2 (from post 1, 2)
+            # web: 2 (from post 1, 3)
+            # api: 1 (from post 2)
+            # java: 1 (from post 4)
+            # spring: 1 (from post 4)
+            # Post 5's "python,old,web" should be ignored due to since_days=7 default
+
+            self.assertEqual(updated_trends[0].hashtag, "python")
+            self.assertEqual(updated_trends[0].rank, 1)
+            self.assertEqual(updated_trends[0].score, 3.0) # Should be 3 from recent posts
+
+            # The order of rank 2 can vary between flask and web as they both have score 2
+            # So, we check if the next two are flask and web in any order
+            rank2_hashtags = {updated_trends[1].hashtag, updated_trends[2].hashtag}
+            self.assertIn("flask", rank2_hashtags)
+            self.assertIn("web", rank2_hashtags)
+            self.assertEqual(updated_trends[1].rank, 2)
+            self.assertEqual(updated_trends[1].score, 2.0)
+            self.assertEqual(updated_trends[2].rank, 3) # Rank should still be distinct
+            self.assertEqual(updated_trends[2].score, 2.0)
+
+            # Check that 'oldpost' tag is not in trends
+            for trend in updated_trends:
+                self.assertNotEqual(trend.hashtag, "oldpost")
+                self.assertNotEqual(trend.hashtag, "old") # from Post 5
+
+
+    def test_get_trending_hashtags_api(self):
+        with self.app.app_context():
+            TrendingHashtag.query.delete()
+            db.session.commit()
+
+            # Manually create TrendingHashtag entries
+            th1 = TrendingHashtag(hashtag="api", score=10.0, rank=1, calculated_at=datetime.utcnow())
+            th2 = TrendingHashtag(hashtag="flask", score=8.0, rank=2, calculated_at=datetime.utcnow())
+            db.session.add_all([th1, th2])
+            db.session.commit()
+
+            response = self.client.get('/api/trending_hashtags')
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+
+            self.assertIn('trending_hashtags', data)
+            self.assertEqual(len(data['trending_hashtags']), 2)
+            self.assertEqual(data['trending_hashtags'][0]['hashtag'], "api")
+            self.assertEqual(data['trending_hashtags'][0]['rank'], 1)
+            self.assertEqual(data['trending_hashtags'][1]['hashtag'], "flask")
+            self.assertEqual(data['trending_hashtags'][1]['rank'], 2)
+
+    def test_get_trending_hashtags_api_empty(self):
+        with self.app.app_context():
+            TrendingHashtag.query.delete()
+            db.session.commit()
+
+            response = self.client.get('/api/trending_hashtags')
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+
+            self.assertIn('trending_hashtags', data)
+            self.assertEqual(len(data['trending_hashtags']), 0)
+
+
 if __name__ == '__main__':
-    with app.app_context():
+    with app.app_context(): # Ensure app context for initial db.create_all() if run directly
         db.create_all()
     unittest.main()
-    with app.app_context():
+    with app.app_context(): # Ensure app context for final db.drop_all()
         db.drop_all()

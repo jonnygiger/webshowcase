@@ -537,6 +537,11 @@ The recommendations feature has been enhanced to also suggest relevant events an
     *   Popular polls that have garnered a significant number of votes.
     *   You won't be shown polls you've already voted on or those you created yourself.
 
+*   **Recommended Hashtags**: Discover trending or relevant topics.
+    *   **Functionality**: Suggests hashtags that might interest the user based on overall popularity within the platform.
+    *   **Logic**: Recommendations are derived from the most frequently used hashtags across all posts, carefully filtered to exclude hashtags the current user has already used in their own posts.
+    *   **Accessibility**: These hashtag suggestions are displayed on the main `/recommendations` page for logged-in users.
+
 These new recommendations are available on the main `/recommendations` page.
 
 You can find dedicated recommendations on the `/recommendations` page (accessible when logged in). Additionally, a snippet of user suggestions is displayed on the main blog page to help you connect with others more easily.

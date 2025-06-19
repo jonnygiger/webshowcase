@@ -525,6 +525,20 @@ To enhance user engagement and content discovery, this application now includes 
 *   **Suggested Posts to Read**: Highlighting posts liked by a user's friends or related to their interests.
 *   **Suggested Groups to Join**: Pointing out groups that friends are part of or that align with a user's activity.
 
+The recommendations feature has been enhanced to also suggest relevant events and polls:
+
+*   **Event Recommendations**: Discover events you might like! Suggestions are based on:
+    *   Events your friends have RSVP'd to as "Attending" or "Maybe".
+    *   Events that are generally popular within the community based on RSVP counts.
+    *   You won't see events you've already RSVP'd to or those you've organized.
+
+*   **Poll Recommendations**: Find interesting polls to participate in. Suggestions include:
+    *   Polls created by your friends.
+    *   Popular polls that have garnered a significant number of votes.
+    *   You won't be shown polls you've already voted on or those you created yourself.
+
+These new recommendations are available on the main `/recommendations` page.
+
 You can find dedicated recommendations on the `/recommendations` page (accessible when logged in). Additionally, a snippet of user suggestions is displayed on the main blog page to help you connect with others more easily.
 
 ## RESTful API

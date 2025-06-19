@@ -223,11 +223,17 @@
 
 {% block scripts %}
 {{ super() }} {# Include scripts from base template if any #}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+{# SocketIO client is now included in base.html and 'socket' variable should be globally available from there #}
 <script type="text/javascript">
   document.addEventListener('DOMContentLoaded', (event) => {
-    // Connect to SocketIO server
-    var socket = io();
+    // SocketIO connection is established in base.html.
+    // We assume 'socket' is a global variable initialized in base.html
+    if (typeof socket === 'undefined' || !socket) {
+        console.error('Socket.IO connection not found. Ensure base.html initializes it.');
+        // Fallback or error handling: try to connect if not already.
+        // This line might be removed if global 'socket' from base.html is reliable.
+        var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+    }
 
     // Get post_id from the page
     var postId = {{ post.id if post else 'null' }}; // Ensure post.id is available
@@ -310,6 +316,21 @@
         if (noCommentsMessage) {
           noCommentsMessage.style.display = 'none'; // Hide or remove
         }
+      }
+    });
+
+    // Listen for the 'new_comment_notification' event for the post author
+    socket.on('new_comment_notification', function(data) {
+      // The user is already in their 'user_{user_id}' room (joined via base.html).
+      // This notification is targeted at them.
+      // We should check if the notification is for the post currently being viewed.
+      if (data.post_id === postId) {
+        // Display the notification. For now, using a simple alert.
+        let commentSnippet = data.comment_content;
+        if (commentSnippet.length > 50) {
+            commentSnippet = commentSnippet.substring(0, 47) + "...";
+        }
+        alert("User " + data.commenter_username + " commented on your post \"" + data.post_title + "\": " + commentSnippet);
       }
     });
   });

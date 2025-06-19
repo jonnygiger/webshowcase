@@ -1,7 +1,7 @@
 from app import db
-from models import User, Post, Group, Friendship, Like
-from sqlalchemy import func, distinct, or_
-from collections import defaultdict
+from models import User, Post, Group, Friendship, Like, Event, EventRSVP, Poll, PollVote
+from sqlalchemy import func, or_
+# from collections import defaultdict # Not needed
 
 def suggest_users_to_follow(user_id, limit=5):
     """Suggest users who are friends of the current user's friends."""
@@ -186,3 +186,122 @@ def suggest_groups_to_join(user_id, limit=5):
     ordered_suggested_groups = [group_map[gid] for gid in sorted_group_ids if gid in group_map]
 
     return ordered_suggested_groups[:limit]
+
+
+def suggest_events_to_attend(user_id, limit=5):
+    current_user = User.query.get(user_id)
+    if not current_user:
+        return []
+
+    user_friendships = Friendship.query.filter(
+        or_(Friendship.user_id == user_id, Friendship.friend_id == user_id),
+        Friendship.status == 'accepted'
+    ).all()
+    friend_ids = set()
+    for friendship in user_friendships:
+        if friendship.user_id == user_id:
+            friend_ids.add(friendship.friend_id)
+        else:
+            friend_ids.add(friendship.user_id)
+
+    user_rsvpd_event_ids = {rsvp.event_id for rsvp in EventRSVP.query.filter_by(user_id=user_id).all()}
+    user_organized_event_ids = {event.id for event in Event.query.filter_by(user_id=user_id).all()}
+    excluded_event_ids = user_rsvpd_event_ids.union(user_organized_event_ids)
+
+    recommendations = {}
+
+    if friend_ids:
+        events_by_friends_rsvps = db.session.query(
+                EventRSVP.event_id,
+                func.count(EventRSVP.user_id).label('friend_rsvp_count')
+            ).filter(
+                EventRSVP.user_id.in_(friend_ids),
+                EventRSVP.status.in_(['Attending', 'Maybe'])
+            ).group_by(EventRSVP.event_id).all()
+
+        for event_id, count in events_by_friends_rsvps:
+            if event_id not in excluded_event_ids:
+                 recommendations[event_id] = recommendations.get(event_id, 0) + count * 2
+
+    popular_events_rsvps = db.session.query(
+            EventRSVP.event_id,
+            func.count(EventRSVP.user_id).label('total_rsvp_count')
+        ).filter(
+            EventRSVP.status.in_(['Attending', 'Maybe'])
+        ).group_by(EventRSVP.event_id).all()
+
+    for event_id, count in popular_events_rsvps:
+        if event_id not in excluded_event_ids:
+            recommendations[event_id] = recommendations.get(event_id, 0) + count
+
+    sorted_recommended_event_ids = [
+        event_id for event_id, score in sorted(recommendations.items(), key=lambda item: item[1], reverse=True)
+    ] # No need to filter by excluded_event_ids again here, as it was done when populating recommendations
+
+    final_event_ids = sorted_recommended_event_ids[:limit]
+
+    if not final_event_ids:
+        return []
+
+    event_map = {event.id: event for event in Event.query.filter(Event.id.in_(final_event_ids)).all()}
+    suggested_events = [event_map[eid] for eid in final_event_ids if eid in event_map]
+
+    return suggested_events
+
+
+def suggest_polls_to_vote(user_id, limit=5):
+    current_user = User.query.get(user_id)
+    if not current_user:
+        return []
+
+    user_friendships = Friendship.query.filter(
+        or_(Friendship.user_id == user_id, Friendship.friend_id == user_id),
+        Friendship.status == 'accepted'
+    ).all()
+    friend_ids = set()
+    for friendship in user_friendships:
+        if friendship.user_id == user_id:
+            friend_ids.add(friendship.friend_id)
+        else:
+            friend_ids.add(friendship.user_id)
+
+    user_voted_poll_ids = {vote.poll_id for vote in PollVote.query.filter_by(user_id=user_id).all()}
+    user_created_poll_ids = {poll.id for poll in Poll.query.filter_by(user_id=user_id).all()}
+    excluded_poll_ids = user_voted_poll_ids.union(user_created_poll_ids)
+
+    recommended_poll_scores = {} # poll_id -> score
+
+    # 1. Polls created by friends
+    if friend_ids:
+        friend_created_polls = Poll.query.filter(
+            Poll.user_id.in_(friend_ids),
+            Poll.id.notin_(excluded_poll_ids)
+        ).all()
+        for poll in friend_created_polls:
+            recommended_poll_scores[poll.id] = recommended_poll_scores.get(poll.id, 0) + 5 # High score for friend's poll
+
+    # 2. Popular polls by vote count
+    popular_poll_votes = db.session.query(
+            PollVote.poll_id,
+            func.count(PollVote.id).label('vote_count')
+        ).group_by(PollVote.poll_id).order_by(func.count(PollVote.id).desc()).all()
+
+    for poll_id, vote_count in popular_poll_votes:
+        if poll_id not in excluded_poll_ids:
+            # Add to score; if already present (e.g. friend's popular poll), this enhances its score
+            recommended_poll_scores[poll_id] = recommended_poll_scores.get(poll_id, 0) + vote_count
+
+    # Sort recommended poll IDs by score
+    sorted_recommended_poll_ids = [
+        pid for pid, score in sorted(recommended_poll_scores.items(), key=lambda item: item[1], reverse=True)
+    ]
+
+    final_poll_ids = sorted_recommended_poll_ids[:limit]
+
+    if not final_poll_ids:
+        return []
+
+    poll_map = {poll.id: poll for poll in Poll.query.filter(Poll.id.in_(final_poll_ids)).all()}
+    suggested_polls = [poll_map[pid] for pid in final_poll_ids if pid in poll_map]
+
+    return suggested_polls

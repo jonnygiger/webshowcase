@@ -53,7 +53,7 @@
     </section>
 
     <!-- Suggested Groups -->
-    <section>
+    <section class="mb-5">
         <h2>Suggested Groups to Join</h2>
         {% if suggested_groups %}
             <div class="list-group">
@@ -71,6 +71,54 @@
             </div>
         {% else %}
             <p>No new group suggestions available at this time.</p>
+        {% endif %}
+    </section>
+
+    <!-- Suggested Events -->
+    <section class="mb-5">
+        <h2>Suggested Events to Attend</h2>
+        {% if suggested_events %}
+            <div class="list-group">
+                {% for event in suggested_events %}
+                    <a href="{{ url_for('view_event', event_id=event.id) }}" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h5 class="mb-1">{{ event.title }}</h5>
+                            <small>Organized by: {{ event.organizer.username }}</small>
+                        </div>
+                        <p class="mb-1">Date: {{ event.date }}{% if event.time %} at {{ event.time }}{% endif %}</p>
+                        {% if event.location %}
+                            <p class="mb-1"><small>Location: {{ event.location }}</small></p>
+                        {% endif %}
+                        {% if event.description %}
+                            <p class="mb-1">{{ event.description[:100] }}{% if event.description|length > 100 %}...{% endif %}</p>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No event suggestions for you right now. Explore existing events!</p>
+        {% endif %}
+    </section>
+
+    <!-- Suggested Polls -->
+    <section> {# No mb-5 if it's the last section in this container #}
+        <h2>Suggested Polls to Participate In</h2>
+        {% if suggested_polls %}
+            <div class="list-group">
+                {% for poll in suggested_polls %}
+                    <a href="{{ url_for('view_poll', poll_id=poll.id) }}" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h5 class="mb-1">{{ poll.question }}</h5>
+                            <small>By: {{ poll.author.username }}</small>
+                        </div>
+                        {# Optionally, display number of options or votes if available and simple #}
+                        {# Example: <p class="mb-1"><small>{{ poll.options|length }} options. {{ poll.votes|length }} votes so far.</small></p> #}
+                        {# Note: Accessing poll.votes might be expensive if not preloaded. Keep it simple for now. #}
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No poll suggestions at the moment. Why not create one?</p>
         {% endif %}
     </section>
 </div>

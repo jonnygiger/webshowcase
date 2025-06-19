@@ -1,5 +1,7 @@
 import os
-from flask import Flask, render_template, request, session, redirect, url_for, flash, send_from_directory, jsonify
+import time
+import json
+from flask import Flask, render_template, request, session, redirect, url_for, flash, send_from_directory, jsonify, Response
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
@@ -31,6 +33,7 @@ from recommendations import (
 )
 
 app = Flask(__name__)
+app.sse_listeners = {}
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
@@ -894,6 +897,31 @@ def edit_post(post_id):
         post.hashtags = request.form.get('hashtags', '') # Get and update hashtags
         post.last_edited = datetime.utcnow()
         db.session.commit()
+
+        # SSE Event for post_edited
+        if post_id in app.sse_listeners:
+            # Create a list copy for safe iteration, in case a client disconnects
+            # and its queue is removed from app.sse_listeners[post_id] during iteration.
+            listeners = list(app.sse_listeners.get(post_id, []))
+            if listeners: # Check if there are actual listeners after fetching the list
+                sse_post_data = {
+                    "id": post.id,
+                    "title": post.title,
+                    "content": post.content, # Consider sending only changed fields or a summary for large content
+                    "last_edited": post.last_edited.strftime("%Y-%m-%d %H:%M:%S") if post.last_edited else None
+                }
+                sse_event = {
+                    "type": "post_edited", # Matches JS event listener in view_post.html
+                    "payload": sse_post_data
+                }
+                for q in listeners:
+                    try:
+                        # Using put_nowait to avoid blocking if a queue is unexpectedly full (though default is unbounded)
+                        # or if the queue has been removed by another thread after creating the 'listeners' copy.
+                        q.put_nowait(sse_event)
+                    except Exception as e: # Catch broad exceptions, e.g., queue.Full or if q is no longer valid
+                        app.logger.error(f"SSE: Error putting post_edited event into queue for post {post_id}: {e}")
+
         flash('Post updated successfully!', 'success')
         return redirect(url_for('view_post', post_id=post_id))
 
@@ -1011,6 +1039,24 @@ def add_comment(post_id):
         "timestamp": new_comment_db.timestamp.strftime("%Y-%m-%d %H:%M:%S")
     }
     socketio.emit('new_comment_event', new_comment_data_for_post_room, room=f'post_{post_id}')
+
+    # SSE Event for new_comment
+    if post_id in app.sse_listeners:
+        sse_comment_data = {
+            "id": new_comment_db.id,
+            "author_username": new_comment_db.author.username,
+            "content": new_comment_db.content,
+            "timestamp": new_comment_db.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        sse_event = {
+            "type": "new_comment", # Matches JS event listener
+            "payload": sse_comment_data
+        }
+        for q in app.sse_listeners[post_id]:
+            try:
+                q.put_nowait(sse_event) # Use put_nowait to avoid blocking if queue is full (though default is unbounded)
+            except Exception as e: # Catch potential queue full or other exceptions
+                app.logger.error(f"SSE: Error putting new_comment event into queue for post {post_id}: {e}")
 
     # Notification for post author
     post_author_id = post.user_id
@@ -1145,6 +1191,43 @@ def add_review(post_id):
     db.session.commit()
     flash('Review submitted successfully!', 'success')
     return redirect(url_for('view_post', post_id=post_id))
+
+
+@app.route('/blog/post/<int:post_id>/stream')
+def post_stream(post_id):
+    def event_stream():
+        import queue
+        q = queue.Queue()
+        if post_id not in app.sse_listeners:
+            app.sse_listeners[post_id] = []
+        app.sse_listeners[post_id].append(q)
+
+        try:
+            while True:
+                # Keep-alive message (optional, helps keep connection open)
+                # yield "event: ping\ndata: {}\n\n"
+                # time.sleep(10) # Send a ping every 10 seconds
+
+                try:
+                    data = q.get(timeout=1) # Wait for 1 second
+                    event_type = data.get("type", "message") # Default to 'message' if no type
+                    payload = data.get("payload", {})
+                    yield f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+                except queue.Empty:
+                    # No new data, continue loop (and send ping if implemented)
+                    # Before continuing, check if the app is still running or if a shutdown is requested.
+                    # This is a simplified example; a real app might have a global shutdown flag.
+                    pass
+        except GeneratorExit:
+            # Client disconnected
+            pass
+        finally:
+            if post_id in app.sse_listeners and q in app.sse_listeners[post_id]:
+                app.sse_listeners[post_id].remove(q)
+                if not app.sse_listeners[post_id]: # If list is empty, remove post_id key
+                    del app.sse_listeners[post_id]
+
+    return Response(event_stream(), mimetype='text/event-stream')
 
 @app.route('/post/<int:post_id>/react', methods=['POST'])
 @login_required

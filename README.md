@@ -337,6 +337,17 @@ To further enhance interactivity, the blog now features real-time comment notifi
 *   **Implementation**: This is also powered by Flask-SocketIO, delivering notifications to the author's specific user channel.
 *   **User Experience**: Authors are notified via a browser alert when viewing their post and a new comment arrives from someone else.
 
+### Live Blog Post Updates (SSE)
+
+To further enhance the interactivity of blog posts, the application now supports live updates directly on the post page using Server-Sent Events (SSE).
+
+*   **Purpose**: This feature provides real-time updates for new comments and post edits directly on an individual blog post page, eliminating the need for users to manually refresh the page to see the latest activity.
+*   **Technology**: It utilizes Server-Sent Events (SSE), a standard web technology for enabling efficient, one-way communication from the server to the client (browser).
+*   **User Benefits**:
+    *   **Enhanced Interactivity**: Users see new comments and changes to the post content as they happen.
+    *   **Immediate Feedback**: Discussions feel more dynamic with comments appearing in real-time.
+    *   **Improved Awareness**: Users are immediately aware of content edits made by the post author.
+
 ### Post Liking
 
 Users can now interact with blog posts by liking or unliking them, providing a simple way to show appreciation or engagement.

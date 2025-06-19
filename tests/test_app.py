@@ -927,3 +927,127 @@ if __name__ == '__main__':
     unittest.main()
     with app.app_context(): # Ensure app context for final db.drop_all()
         db.drop_all()
+
+
+class TestOnThisDayAPI(AppTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.test_user = self.user1 # Use user1 from base setup
+        self.fixed_today = datetime(2023, 10, 26, 12, 0, 0) # Fixed date for testing
+
+        # Posts
+        self.post_on_this_day_past = self._create_db_post(
+            user_id=self.test_user.id,
+            title="Past Post Same Day",
+            content="Content from Oct 26, 2022",
+            timestamp=datetime(2022, 10, 26, 10, 0, 0)
+        )
+        self.post_on_this_day_current_year = self._create_db_post(
+            user_id=self.test_user.id,
+            title="Current Year Post Same Day",
+            content="Content from Oct 26, 2023",
+            timestamp=datetime(2023, 10, 26, 11, 0, 0) # Same as fixed_today's date, but different time
+        )
+        self.post_different_day_past = self._create_db_post(
+            user_id=self.test_user.id,
+            title="Past Post Different Day",
+            content="Content from Oct 27, 2022",
+            timestamp=datetime(2022, 10, 27, 12, 0, 0)
+        )
+        self.post_other_user = self._create_db_post( # Should not appear for self.test_user
+            user_id=self.user2.id,
+            title="Other User Past Post Same Day",
+            content="Content from Oct 26, 2022 by other user",
+            timestamp=datetime(2022, 10, 26, 10, 0, 0)
+        )
+
+        # Events
+        self.event_on_this_day_past = Event(
+            user_id=self.test_user.id,
+            title="Past Event Same Day",
+            description="Event on Oct 26, 2022",
+            date='2022-10-26', # Stored as string
+            time='14:00',
+            location='Past Location'
+        )
+        self.event_on_this_day_current_year = Event(
+            user_id=self.test_user.id,
+            title="Current Year Event Same Day",
+            description="Event on Oct 26, 2023",
+            date='2023-10-26',
+            time='15:00',
+            location='Current Location'
+        )
+        self.event_different_day_past = Event(
+            user_id=self.test_user.id,
+            title="Past Event Different Day",
+            description="Event on Oct 27, 2022",
+            date='2022-10-27',
+            time='16:00',
+            location='Different Past Location'
+        )
+        self.event_other_user = Event( # Should not appear for self.test_user
+            user_id=self.user2.id,
+            title="Other User Past Event Same Day",
+            description="Event on Oct 26, 2022 by other user",
+            date='2022-10-26',
+            time='14:00',
+            location='Other Past Location'
+        )
+        db.session.add_all([
+            self.event_on_this_day_past,
+            self.event_on_this_day_current_year,
+            self.event_different_day_past,
+            self.event_other_user
+        ])
+        db.session.commit()
+
+    @patch('api.datetime') # Patching datetime object in api.py
+    def test_on_this_day_with_content(self, mock_datetime):
+        with app.app_context():
+            mock_datetime.utcnow.return_value = self.fixed_today # Mock current time
+
+            token = self._get_jwt_token(self.test_user.username, 'password')
+            headers = {'Authorization': f'Bearer {token}'}
+
+            response = self.client.get('/api/onthisday', headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
+
+            self.assertIn('on_this_day_posts', data)
+            self.assertIn('on_this_day_events', data)
+
+            self.assertEqual(len(data['on_this_day_posts']), 1)
+            self.assertEqual(data['on_this_day_posts'][0]['id'], self.post_on_this_day_past.id)
+            self.assertEqual(data['on_this_day_posts'][0]['title'], self.post_on_this_day_past.title)
+
+            self.assertEqual(len(data['on_this_day_events']), 1)
+            self.assertEqual(data['on_this_day_events'][0]['id'], self.event_on_this_day_past.id)
+            self.assertEqual(data['on_this_day_events'][0]['title'], self.event_on_this_day_past.title)
+
+    @patch('api.datetime')
+    def test_on_this_day_no_content(self, mock_datetime):
+        with app.app_context():
+            # Mock current time to a date where no "on this day" content was created for self.test_user
+            mock_datetime.utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
+
+            token = self._get_jwt_token(self.test_user.username, 'password')
+            headers = {'Authorization': f'Bearer {token}'}
+
+            response = self.client.get('/api/onthisday', headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
+
+            self.assertIn('on_this_day_posts', data)
+            self.assertIn('on_this_day_events', data)
+            self.assertEqual(len(data['on_this_day_posts']), 0)
+            self.assertEqual(len(data['on_this_day_events']), 0)
+
+    def test_on_this_day_unauthenticated(self):
+        with app.app_context():
+            response = self.client.get('/api/onthisday')
+            self.assertEqual(response.status_code, 401) # Expecting 401 for missing JWT
+            data = json.loads(response.data)
+            self.assertIn('msg', data) # flask-jwt-extended default error key
+            self.assertEqual(data['msg'], 'Missing Authorization Header')

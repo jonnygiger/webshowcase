@@ -21,7 +21,7 @@ migrate = Migrate()
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
 from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification, TrendingHashtag
-from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource # Added PersonalizedFeedResource and TrendingHashtagsResource
+from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource # Added OnThisDayResource
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
     suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags,
@@ -46,6 +46,7 @@ api.add_resource(EventResource, '/api/events/<int:event_id>')
 api.add_resource(RecommendationResource, '/api/recommendations') # Added RecommendationResource endpoint
 api.add_resource(PersonalizedFeedResource, '/api/users/<int:user_id>/feed')
 api.add_resource(TrendingHashtagsResource, '/api/trending_hashtags') # Added TrendingHashtagsResource endpoint
+api.add_resource(OnThisDayResource, '/api/onthisday') # Added OnThisDayResource endpoint
 
 # Scheduler for periodic tasks
 scheduler = BackgroundScheduler()

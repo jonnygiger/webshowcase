@@ -702,6 +702,52 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
         }
         ```
 
+### "On This Day" API
+
+*   **GET /api/onthisday**
+    *   **Description:** Retrieves posts and events created by the authenticated user that occurred on the current month and day in previous years.
+    *   **Authentication:** Required (JWT Token). The token should be passed in the `Authorization` header as a Bearer token (e.g., `Authorization: Bearer <YOUR_JWT_TOKEN>`).
+    *   **Successful Response (200 OK):**
+        ```json
+        {
+          "on_this_day_posts": [
+            {
+              "id": 1,
+              "title": "My Throwback Post",
+              "content": "Content of the post from a past year.",
+              "timestamp": "2022-10-26T10:00:00",
+              "last_edited": null,
+              "user_id": 123,
+              "author_username": "testuser",
+              "hashtags": "#throwback",
+              "is_featured": false,
+              "featured_at": null
+            }
+          ],
+          "on_this_day_events": [
+            {
+              "id": 1,
+              "title": "Past Event",
+              "description": "Details of an event from a past year.",
+              "date": "2022-10-26",
+              "time": "14:00",
+              "location": "Some Location",
+              "created_at": "2022-10-20T14:30:00",
+              "user_id": 123,
+              "organizer_username": "testuser"
+            }
+          ]
+        }
+        ```
+        *(Note: The exact fields returned for posts and events depend on their respective `to_dict()` methods in `models.py`.)*
+    *   **Error Responses:**
+        *   `401 Unauthorized`: If the JWT token is missing or invalid.
+            ```json
+            {
+                "msg": "Missing Authorization Header"
+            }
+            ```
+
 ### Trending Hashtags API
 
 *   **GET /api/trending_hashtags**

@@ -1,18 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}Conversation with <a href="{{ url_for('user_profile', username=conversation_partner) }}">{{ conversation_partner }}</a>{% endblock %}
+{% block title %}Conversation with <a href="{{ url_for('user_profile', username=conversation_partner.username) }}">{{ conversation_partner.username }}</a>{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Conversation with <a href="{{ url_for('user_profile', username=conversation_partner) }}">{{ conversation_partner }}</a></h2>
+    <h2>Conversation with <a href="{{ url_for('user_profile', username=conversation_partner.username) }}">{{ conversation_partner.username }}</a></h2>
     <hr>
 
-    <div class="messages-container mb-4" style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 5px;">
+    <div id="messages-container" class="messages-container mb-4" style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 5px;">
         {% if messages_list %}
             {% for message in messages_list %}
-                <div class="message mb-2 p-2 rounded {% if message.sender_username == session['username'] %}bg-light text-end{% else %}bg-secondary text-white{% endif %}">
-                    <p class="mb-0"><strong><a href="{{ url_for('user_profile', username=message.sender_username) }}" class="{% if message.sender_username == session['username'] %}text-dark{% else %}text-white{% endif %}">{{ message.sender_username }}</a></strong>: {{ message.content }}</p>
-                    <small class="text-muted">{{ message.timestamp }} {% if message.sender_username == session['username'] and message.is_read %} (Read){% endif %}</small>
+                {# Adjust class based on sender_id vs current_user.id for consistency with JS logic #}
+                <div class="message mb-2 p-2 rounded {% if message.sender_id == current_user.id %}bg-light text-end{% else %}bg-primary text-white{% endif %}">
+                    <p class="mb-0"><strong><a href="{{ url_for('user_profile', username=message.sender.username) }}" class="{% if message.sender_id == current_user.id %}text-dark{% else %}text-white{% endif %}">{{ message.sender.username }}</a></strong>: {{ message.content }}</p>
+                    <small class="text-muted-custom {% if message.sender_id == current_user.id %}text-dark-emphasis{% else %}text-white-50{% endif %}">{{ message.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} {% if message.sender_id == current_user.id and message.is_read %} (Read){% endif %}</small>
                 </div>
             {% endfor %}
         {% else %}
@@ -20,8 +21,8 @@
         {% endif %}
     </div>
 
-    <h4>Reply to <a href="{{ url_for('user_profile', username=conversation_partner) }}">{{ conversation_partner }}</a></h4>
-    <form method="POST" action="{{ url_for('send_message', receiver_username=conversation_partner) }}">
+    <h4>Reply to <a href="{{ url_for('user_profile', username=conversation_partner.username) }}">{{ conversation_partner.username }}</a></h4>
+    <form method="POST" action="{{ url_for('send_message', receiver_username=conversation_partner.username) }}">
         <div class="mb-3">
             <label for="content" class="form-label">Your Message:</label>
             <textarea class="form-control" id="content" name="content" rows="3" required></textarea>
@@ -29,4 +30,65 @@
         <button type="submit" class="btn btn-primary">Send Reply</button>
     </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }} {# Includes scripts from base.html if any #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var socket = io();
+
+        var currentUserId = {{ current_user.id | tojson }};
+        var conversationPartnerId = {{ conversation_partner.id | tojson }};
+        var conversationPartnerUsername = {{ conversation_partner.username | tojson }};
+
+        // Join user-specific room for receiving messages
+        if (currentUserId) {
+            socket.emit('join_room', {room: 'user_' + currentUserId});
+            console.log('Joined room: user_' + currentUserId);
+        }
+
+        // Scroll messages to bottom on load
+        var messagesContainer = document.getElementById('messages-container');
+        if (messagesContainer) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        socket.on('new_direct_message', function(data) {
+            console.log('New direct message received:', data);
+
+            // Check if the message is part of the current conversation
+            var messageIsForCurrentConversation = (data.sender_id === conversationPartnerId && data.receiver_id === currentUserId) ||
+                                                (data.sender_id === currentUserId && data.receiver_id === conversationPartnerId);
+
+            if (messageIsForCurrentConversation) {
+                var messageHtml = '<div class="message mb-2 p-2 rounded ' +
+                                  (data.sender_id === currentUserId ? 'bg-light text-end' : 'bg-primary text-white') + '">' +
+                                  '<p class="mb-0"><strong><a href="/user/' + data.sender_username + '" class="' + (data.sender_id === currentUserId ? 'text-dark' : 'text-white') + '">' + data.sender_username + '</a></strong>: ' + data.content + '</p>' +
+                                  '<small class="text-muted-custom ' + (data.sender_id === currentUserId ? 'text-dark-emphasis' : 'text-white-50') + '">' + data.timestamp + '</small>' + // Assuming data.timestamp is already formatted
+                                  '</div>';
+
+                if (messagesContainer) {
+                    // If "No messages yet" paragraph exists, remove it
+                    var noMessagesP = messagesContainer.querySelector('p');
+                    if (noMessagesP && noMessagesP.textContent.includes('No messages yet')) {
+                        messagesContainer.innerHTML = ''; // Clear the "No messages" text
+                    }
+                    messagesContainer.innerHTML += messageHtml;
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight; // Scroll to the new message
+                }
+
+                // Basic notification for testing (optional)
+                // if (data.receiver_id === currentUserId && document.hidden) {
+                //     new Notification('New message from ' + data.sender_username);
+                // }
+            } else {
+                console.log('Message is not for the current conversation window.');
+                // Optionally, you could show a general notification here if the message is for the current_user but not this specific conversationPartner
+                // For example, if (data.receiver_id === currentUserId) { show_generic_notification_dot_on_inbox_link(); }
+            }
+        });
+    });
+</script>
 {% endblock %}

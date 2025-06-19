@@ -377,6 +377,17 @@ This application now supports private messaging between registered users, allowi
     *   `/user/<username>`:
         *   User profile pages now feature a "Send Message" button if the viewer is logged in and is not viewing their own profile. This button links directly to the `/messages/send/<username>` route for the profile owner.
 
+### Real-Time Direct Messaging
+
+Enhancing the private communication capabilities, the application now supports real-time direct messaging between users.
+
+*   **Functionality**:
+    *   Users can send direct messages to other registered users.
+    *   Conversations update instantly without requiring a page reload, showing new messages as they arrive.
+    *   The user's inbox also dynamically updates to reflect new messages and unread counts, ensuring users are always aware of new communications.
+*   **Technology Stack**: This feature is powered by Flask, Flask-SocketIO for real-time bidirectional communication, and SQLAlchemy for database interactions with the `Message` model.
+*   **User Experience**: Provides a seamless and interactive messaging experience, similar to modern chat applications.
+
 ### Polls Feature
 
 This application now includes a "Polls" feature, allowing users to create and participate in polls.

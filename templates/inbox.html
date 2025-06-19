@@ -8,22 +8,117 @@
     <hr>
 
     {% if inbox_items %}
-        <div class="list-group">
+        <ul id="inbox-list-container" class="list-group">
             {% for item in inbox_items %}
-                <a href="{{ url_for('view_conversation', username=item.username) }}" class="list-group-item list-group-item-action {% if item.unread_count > 0 %}list-group-item-primary font-weight-bold{% endif %}">
-                    <div class="d-flex w-100 justify-content-between">
-                        <h5 class="mb-1">Conversation with: <a href="{{ url_for('user_profile', username=item.username) }}">{{ item.username }}</a></h5>
-                        <small>{{ item.last_message_display_timestamp }}</small>
-                    </div>
-                    <p class="mb-1">{{ item.last_message_snippet }}</p>
-                    {% if item.unread_count > 0 %}
-                        <span class="badge bg-danger rounded-pill">{{ item.unread_count }} Unread</span>
-                    {% endif %}
-                </a>
+                <li id="inbox-item-{{ item.partner_id }}" class="list-group-item list-group-item-action {% if item.unread_count > 0 %}list-group-item-primary font-weight-bold{% endif %}">
+                    <a href="{{ url_for('view_conversation', username=item.username) }}" class="text-decoration-none text-dark">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h5 class="mb-1">Conversation with: <a href="{{ url_for('user_profile', username=item.username) }}">{{ item.username }}</a></h5>
+                            <small id="timestamp-{{ item.partner_id }}">{{ item.last_message_display_timestamp }}</small>
+                        </div>
+                        <p id="snippet-{{ item.partner_id }}" class="mb-1">{{ item.last_message_snippet }}</p>
+                        <span id="unread-count-{{ item.partner_id }}" class="badge rounded-pill {% if item.unread_count > 0 %}bg-danger{% else %}bg-secondary{% endif %}">
+                            {{ item.unread_count if item.unread_count > 0 else '' }}
+                        </span>
+                        <small class="ms-1">{% if item.unread_count > 0 and item.unread_count == 1 %}Unread Message{% elif item.unread_count > 0 %}Unread Messages{% endif %}</small>
+                    </a>
+                </li>
             {% endfor %}
-        </div>
+        </ul>
     {% else %}
-        <p>You have no messages.</p>
+        <p id="no-messages-placeholder">You have no messages.</p>
+        <ul id="inbox-list-container" class="list-group" style="display: none;"> <!-- Hidden container for when messages arrive -->
+        </ul>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }} {# Includes scripts from base.html if any #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var socket = io();
+        var currentUserId = {{ current_user.id | tojson }};
+
+        if (currentUserId) {
+            socket.emit('join_room', {room: 'user_' + currentUserId});
+            console.log('Inbox: Joined room: user_' + currentUserId);
+        }
+
+        socket.on('update_inbox_notification', function(data) {
+            console.log('Inbox update notification received:', data);
+
+            var partnerId = data.conversation_partner_id; // ID of the user who sent the message
+
+            var inboxListContainer = document.getElementById('inbox-list-container');
+            var noMessagesPlaceholder = document.getElementById('no-messages-placeholder');
+
+            var inboxItemElement = document.getElementById('inbox-item-' + partnerId);
+
+            if (!inboxItemElement && inboxListContainer) { // New conversation for the inbox
+                // Create new list item
+                inboxItemElement = document.createElement('li');
+                inboxItemElement.id = 'inbox-item-' + partnerId;
+                inboxItemElement.className = 'list-group-item list-group-item-action';
+
+                var contentHtml = '<a href="/messages/conversation/' + data.conversation_partner_username + '" class="text-decoration-none text-dark">' +
+                                    '<div class="d-flex w-100 justify-content-between">' +
+                                        '<h5 class="mb-1">Conversation with: <a href="/user/' + data.conversation_partner_username + '">' + data.conversation_partner_username + '</a></h5>' +
+                                        '<small id="timestamp-' + partnerId + '">' + data.timestamp + '</small>' +
+                                    '</div>' +
+                                    '<p id="snippet-' + partnerId + '" class="mb-1">' + data.message_snippet + '</p>' +
+                                    '<span id="unread-count-' + partnerId + '" class="badge rounded-pill"></span>' +
+                                    '<small class="ms-1" id="unread-text-' + partnerId + '"></small>' +
+                                  '</a>';
+                inboxItemElement.innerHTML = contentHtml;
+                inboxListContainer.prepend(inboxItemElement); // Add to the top
+                if (noMessagesPlaceholder) {
+                    noMessagesPlaceholder.style.display = 'none'; // Hide "no messages" text
+                }
+                if (inboxListContainer.style.display === 'none') {
+                    inboxListContainer.style.display = ''; // Show list if it was hidden
+                }
+
+            } else if (!inboxItemElement) {
+                console.error("Could not find or create inbox item for partnerId: " + partnerId);
+                return;
+            }
+
+            // Update existing elements
+            var unreadCountElement = document.getElementById('unread-count-' + partnerId);
+            var unreadTextElement = document.getElementById('unread-text-' + partnerId); // For "Unread Message(s)" text
+            var snippetElement = document.getElementById('snippet-' + partnerId);
+            var timestampElement = document.getElementById('timestamp-' + partnerId);
+
+            if (unreadCountElement) {
+                unreadCountElement.textContent = data.unread_count > 0 ? data.unread_count : '';
+                if (data.unread_count > 0) {
+                    inboxItemElement.classList.add('list-group-item-primary', 'font-weight-bold');
+                    unreadCountElement.classList.add('bg-danger');
+                    unreadCountElement.classList.remove('bg-secondary');
+                    if (unreadTextElement) unreadTextElement.textContent = data.unread_count === 1 ? 'Unread Message' : 'Unread Messages';
+                } else {
+                    inboxItemElement.classList.remove('list-group-item-primary', 'font-weight-bold');
+                    unreadCountElement.classList.remove('bg-danger');
+                    unreadCountElement.classList.add('bg-secondary'); // Or remove class if empty badge desired
+                     if (unreadTextElement) unreadTextElement.textContent = '';
+                }
+            }
+
+            if (snippetElement) {
+                snippetElement.textContent = data.message_snippet;
+            }
+
+            if (timestampElement) {
+                timestampElement.textContent = data.timestamp;
+            }
+
+            // Move the updated/new inbox item to the top of the list
+            if (inboxListContainer && inboxItemElement && inboxListContainer.firstChild !== inboxItemElement) {
+                inboxListContainer.prepend(inboxItemElement);
+            }
+        });
+    });
+</script>
 {% endblock %}

@@ -33,6 +33,17 @@
         {% if session.logged_in and session.username == post.author_username %}
           <a href="{{ url_for('edit_post', post_id=post.id) }}" class="btn btn-sm btn-outline-secondary" style="margin-left: 10px;">Edit</a>
         {% endif %}
+        {% if current_user.is_authenticated %}
+          <form action="{{ url_for('bookmark_post', post_id=post.id) }}" method="POST" style="display: inline; margin-left: 10px;">
+              <button type="submit" class="btn btn-sm {% if post.id in bookmarked_post_ids %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                  {% if post.id in bookmarked_post_ids %}
+                      Unbookmark
+                  {% else %}
+                      Bookmark
+                  {% endif %}
+              </button>
+          </form>
+        {% endif %}
         </p>
       </article>
       <hr>

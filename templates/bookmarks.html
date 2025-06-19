@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}My Bookmarks{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">My Bookmarked Posts</h1>
+
+    {% if posts %}
+        <div class="list-group">
+            {% for post in posts %}
+                <a href="{{ url_for('view_post', post_id=post.id) }}" class="list-group-item list-group-item-action flex-column align-items-start mb-3 shadow-sm">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">{{ post.title }}</h5>
+                        {# Removed complex bookmark timestamp display for simplicity, order implies recency #}
+                    </div>
+                    <p class="mb-1">
+                        {{ post.content | truncate(200, True) }}
+                    </p>
+                    <small>By: {{ post.author.username }} | Posted on: {{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                    <div>
+                        <small>Likes: {{ post.likes | length }} | Reviews: ({{ post.review_count }}) Avg Rating: {{ "%.1f"|format(post.average_rating if post.average_rating else 0) }}/5 stars</small>
+                    </div>
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            You have no bookmarked posts yet. Browse the <a href="{{ url_for('blog') }}" class="alert-link">blog</a> to find posts to bookmark!
+        </div>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    // Optional: Add any specific JavaScript for this page here
+</script>
+{% endblock %}

@@ -332,12 +332,23 @@ This application now includes a "Polls" feature, allowing users to create and pa
         *   Requires login and that the logged-in user is the author of the poll.
         *   Deletes the specified poll and all its associated vote data.
         *   Redirects to the main polls list.
-
 *   **Key Characteristics**:
     *   Users must be logged in to create polls and to vote.
     *   A user can only vote once on any given poll. Attempts to vote multiple times are prevented.
     *   Poll authors have the ability to delete their own polls. Non-authors cannot delete polls.
     *   Poll results are displayed to all users, showing the number of votes for each option and the corresponding percentage of total votes.
+
+### Bookmarking Posts
+
+Users can now bookmark their favorite posts to easily find them later.
+
+*   **Purpose**: Allows users to save a personal collection of posts for quick access.
+*   **Functionality**:
+    *   **Bookmarking/Unbookmarking**: Logged-in users will find a "Bookmark" button on individual post pages (`/blog/post/<id>`) and in post listings (e.g., main blog page `/blog`, user profile pages `/user/<username>`). If a post is already bookmarked, the button will show "Unbookmark". Clicking the button toggles the bookmark status.
+    *   **Viewing Bookmarks**: Logged-in users can view all their bookmarked posts on a dedicated page: `/bookmarks`. Posts are listed by when they were most recently bookmarked.
+*   **Key Characteristics**:
+    *   Only logged-in users can bookmark posts and view their personal bookmark list.
+    *   The bookmark status is specific to each user.
 
 ### Event Management
 

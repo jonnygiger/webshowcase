@@ -19,7 +19,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction # Add Reaction
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark # Add Reaction and Bookmark
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
 
 app = Flask(__name__)
@@ -181,13 +181,20 @@ def user_profile(username):
         else:
             post_item.average_rating = 0
 
+    bookmarked_post_ids = set()
+    if 'user_id' in session:
+        current_user_id = session['user_id']
+        bookmarks = Bookmark.query.filter_by(user_id=current_user_id).all()
+        bookmarked_post_ids = {bookmark.post_id for bookmark in bookmarks}
+
     # Pass the whole user object to the template, which includes user.profile_picture
     return render_template('user.html',
                            user=user,
                            username=username, # username is still useful for display
                            posts=user_posts,
                            user_gallery_images=user_gallery_images_list, # Clarified variable name
-                           organized_events=organized_events)
+                           organized_events=organized_events,
+                           bookmarked_post_ids=bookmarked_post_ids)
 
 @app.route('/todo', methods=['GET', 'POST'])
 @login_required
@@ -462,7 +469,15 @@ def create_post():
 
 @app.route('/blog')
 def blog():
-    all_posts = Post.query.order_by(Post.timestamp.desc()).all()
+    all_posts_query = Post.query.order_by(Post.timestamp.desc())
+    all_posts = all_posts_query.all()
+
+    bookmarked_post_ids = set()
+    if 'user_id' in session:
+        user_id = session['user_id']
+        bookmarks = Bookmark.query.filter_by(user_id=user_id).all()
+        bookmarked_post_ids = {bookmark.post_id for bookmark in bookmarks}
+
     for post_item in all_posts:
         post_item.review_count = len(post_item.reviews)
         if post_item.reviews:
@@ -471,7 +486,7 @@ def blog():
             post_item.average_rating = 0
         # The number of likes will be len(post_item.likes) in the template
 
-    return render_template('blog.html', posts=all_posts)
+    return render_template('blog.html', posts=all_posts, bookmarked_post_ids=bookmarked_post_ids)
 
 @app.route('/blog/post/<int:post_id>')
 def view_post(post_id):
@@ -506,6 +521,11 @@ def view_post(post_id):
         if not is_author and not has_reviewed:
             can_submit_review = True
 
+    # Check if current user has bookmarked this post
+    user_has_bookmarked = False
+    if current_user_id: # current_user_id is already defined in this function
+        user_has_bookmarked = Bookmark.query.filter_by(user_id=current_user_id, post_id=post.id).count() > 0
+
     return render_template('view_post.html',
                            post=post,
                            comments=post_comments,
@@ -514,7 +534,8 @@ def view_post(post_id):
                            average_rating=average_rating,
                            can_submit_review=can_submit_review,
                            reactions=post_reactions, # Pass all reactions for detailed display if needed
-                           reaction_counts=dict(reaction_counts)) # Pass emoji counts
+                           reaction_counts=dict(reaction_counts), # Pass emoji counts
+                           user_has_bookmarked=user_has_bookmarked) # Pass bookmark status
 
 @app.route('/blog/edit/<int:post_id>', methods=['GET', 'POST'])
 @login_required
@@ -711,6 +732,36 @@ def react_to_post(post_id):
             flash('Reaction added.', 'success')
 
     db.session.commit()
+    return redirect(url_for('view_post', post_id=post_id))
+
+
+@app.route('/bookmark/<int:post_id>', methods=['POST'])
+@login_required
+def bookmark_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    # current_user is made available to templates by context_processor,
+    # but in view functions, it's better to rely on session or flask_login's current_user proxy.
+    # flask_login.current_user would be the most robust way if Flask-Login is fully configured.
+    # For now, using session.get('user_id') as it's consistently used in this file.
+    user_id = session.get('user_id')
+
+    if not user_id: # This check is technically redundant due to @login_required
+        flash('You must be logged in to bookmark posts.', 'danger')
+        # abort(401) # Or redirect to login
+        return redirect(url_for('login'))
+
+    existing_bookmark = Bookmark.query.filter_by(user_id=user_id, post_id=post.id).first()
+
+    if existing_bookmark:
+        db.session.delete(existing_bookmark)
+        db.session.commit()
+        flash('Post unbookmarked.', 'success')
+    else:
+        new_bookmark = Bookmark(user_id=user_id, post_id=post.id)
+        db.session.add(new_bookmark)
+        db.session.commit()
+        flash('Post bookmarked!', 'success')
+
     return redirect(url_for('view_post', post_id=post_id))
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -1290,6 +1341,39 @@ def join_group(group_id):
         flash(f'You have successfully joined the group: {group.name}!', 'success')
 
     return redirect(url_for('view_group', group_id=group_id))
+
+
+@app.route('/bookmarks')
+@login_required
+def bookmarked_posts():
+    user_id = session.get('user_id')
+    # Query for bookmarks by the current user, ordering by when they were bookmarked (newest first)
+    bookmarks = Bookmark.query.filter_by(user_id=user_id).order_by(Bookmark.timestamp.desc()).all()
+
+    # Extract the Post objects from the bookmarks
+    # This will result in N+1 queries if not careful.
+    # A more optimized way would be to join Post table in the initial query if displaying post details directly.
+    # For now, let's get posts one by one, or selectinload if we assume post object is needed.
+    # posts = [bookmark.post for bookmark in bookmarks]
+    # However, if bookmark.post relationship is well defined, SQLAlchemy might handle it efficiently.
+    # Let's try with a join to be more explicit and efficient.
+
+    bookmarked_posts_query = Post.query.join(Bookmark, Post.id == Bookmark.post_id)\
+                                   .filter(Bookmark.user_id == user_id)\
+                                   .order_by(Bookmark.timestamp.desc())
+
+    # Add review and like counts, similar to the main blog page
+    posts_to_display = []
+    for post_item in bookmarked_posts_query.all():
+        post_item.review_count = len(post_item.reviews)
+        if post_item.reviews:
+            post_item.average_rating = sum(r.rating for r in post_item.reviews) / len(post_item.reviews)
+        else:
+            post_item.average_rating = 0
+        # The number of likes will be len(post_item.likes) in the template
+        posts_to_display.append(post_item)
+
+    return render_template('bookmarks.html', posts=posts_to_display)
 
 # @app.route('/api/login', methods=['POST'])
 # def api_login():

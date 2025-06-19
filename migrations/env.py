@@ -36,8 +36,14 @@ def get_engine_url():
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-config.set_main_option('sqlalchemy.url', get_engine_url())
-target_db = current_app.extensions['migrate'].db
+
+# Import the db instance from your app
+from app import db as app_db
+
+effective_url = get_engine_url()
+# print(f"DEBUG: Effective SQLAlchemy URL: {effective_url}") # No longer needed
+config.set_main_option('sqlalchemy.url', effective_url)
+target_db = current_app.extensions['migrate'].db # Keep for other parts if needed, or remove if app_db is solely used
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -46,9 +52,8 @@ target_db = current_app.extensions['migrate'].db
 
 
 def get_metadata():
-    if hasattr(target_db, 'metadatas'):
-        return target_db.metadatas[None]
-    return target_db.metadata
+    # Use the metadata from the imported db instance
+    return app_db.metadata
 
 
 def run_migrations_offline():

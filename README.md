@@ -63,18 +63,25 @@ This application now features a user authentication system.
     *   Upon successful registration, users are redirected to the login page (`/login`) to sign in with their new credentials.
     *   The "Register" link is available in the navigation bar only for users who are not logged in.
 
-### To-Do List
+### Enhanced To-Do List
 
-This application includes a simple To-Do list feature that demonstrates Flask's session handling and form processing capabilities.
+The application features a robust, user-specific To-Do list backed by a database, allowing users to manage their tasks effectively. Access to the To-Do list requires users to be logged in.
 
 *   **Route:** `/todo`
-*   **Functionality:**
-    *   View your current list of tasks.
-    *   Add new tasks to the list using the provided form.
-    *   Tasks are stored in your browser session.
-*   **Clear Tasks:**
-    *   **Route:** `/todo/clear`
-    *   **Functionality:** Clears all tasks from your current session.
+*   **Core Functionalities:**
+    *   **Task Creation**: Users can create new tasks by providing a description. Optional fields include a due date and a priority level (Low, Medium, High).
+    *   **Task Display**: Each task displays its description, due date (if set), priority (if set), and completion status.
+    *   **Mark as Complete/Incomplete**: Tasks can be toggled between "Pending" and "Done". Completed tasks are visually differentiated (e.g., strikethrough).
+    *   **Task Editing**: Existing tasks can be modified. Users can update the task description, due date, and priority through an edit form.
+    *   **Task Deletion**: Users can delete individual tasks.
+    *   **Clear All Tasks**: A feature to delete all tasks belonging to the logged-in user is available via the `/todo/clear` route.
+*   **Sorting**:
+    *   The To-Do list can be sorted by various criteria:
+        *   Due Date (ascending or descending)
+        *   Priority (ascending or descending, logically ordering High > Medium > Low)
+        *   Completion Status (ascending or descending)
+    *   Sorting options are available as links on the `/todo` page.
+*   **User-Specific**: All tasks are private and associated with the logged-in user.
 
 ### Image Gallery
 

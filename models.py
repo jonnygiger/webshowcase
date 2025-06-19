@@ -225,6 +225,8 @@ class TodoItem(db.Model):
     is_done = db.Column(db.Boolean, default=False, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    due_date = db.Column(db.DateTime, nullable=True)
+    priority = db.Column(db.String(50), nullable=True)
 
     user = db.relationship('User', backref=db.backref('todo_items', lazy=True, cascade="all, delete-orphan"))
 

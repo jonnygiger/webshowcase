@@ -469,6 +469,58 @@ def upload_profile_picture():
 
     return render_template('upload_profile_picture.html')
 
+@app.route('/profile/edit', methods=['GET', 'POST'])
+@login_required
+def edit_profile():
+    user_id = session.get('user_id')
+    user = User.query.get_or_404(user_id)
+
+    if request.method == 'POST':
+        new_username = request.form.get('username', '').strip()
+        new_email = request.form.get('email', '').strip()
+        new_bio = request.form.get('bio', '').strip()
+
+        # Validate username
+        if not new_username:
+            flash('Username cannot be empty.', 'danger')
+            return render_template('edit_profile.html', user=user)
+
+        if new_username != user.username:
+            existing_user = User.query.filter(User.username == new_username, User.id != user_id).first()
+            if existing_user:
+                flash('That username is already taken. Please choose a different one.', 'danger')
+                return render_template('edit_profile.html', user=user)
+            user.username = new_username
+            session['username'] = new_username # Update session username if it changed
+
+        # Validate email
+        if not new_email: # Basic check, more complex validation (e.g., regex) could be added
+            flash('Email cannot be empty.', 'danger')
+            # Pass the potentially changed username back to the form
+            current_form_data = {'username': new_username, 'email': user.email}
+            return render_template('edit_profile.html', user=current_form_data)
+
+        if new_email != user.email:
+            existing_email_user = User.query.filter(User.email == new_email, User.id != user_id).first()
+            if existing_email_user:
+                flash('That email is already registered by another user. Please use a different one.', 'danger')
+                current_form_data = {'username': new_username, 'email': user.email} # Keep current email if new one is bad
+                return render_template('edit_profile.html', user=current_form_data)
+            user.email = new_email
+
+        user.bio = new_bio # Update bio, no complex validation for now, just strip whitespace
+
+        try:
+            db.session.commit()
+            flash('Profile updated successfully!', 'success')
+            return redirect(url_for('user_profile', username=user.username))
+        except Exception as e:
+            db.session.rollback()
+            flash('An error occurred while updating your profile. Please try again.', 'danger')
+            app.logger.error(f"Error updating profile for user {user_id}: {e}")
+
+    return render_template('edit_profile.html', user=user)
+
 # Context processor to make current_user available to all templates
 @app.context_processor
 def inject_user():
@@ -556,7 +608,8 @@ def view_post(post_id):
     # Check if current user has bookmarked this post
     user_has_bookmarked = False
     if current_user_id: # current_user_id is already defined in this function
-        user_has_bookmarked = Bookmark.query.filter_by(user_id=current_user_id, post_id=post.id).count() > 0
+        db.session.expire_all() # Force refresh from DB for the session
+        user_has_bookmarked = Bookmark.query.filter_by(user_id=current_user_id, post_id=post.id).first() is not None
 
     return render_template('view_post.html',
                            post=post,

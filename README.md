@@ -206,6 +206,31 @@ Users can now personalize their profiles by uploading a profile picture.
     *   On the upload page, choose an image file and submit.
 *   **Storage**: Profile pictures are stored in the `static/profile_pics/` directory. The specific path for each user is saved in the database.
 
+### User Profile Management
+
+The application provides comprehensive user profiles with options for personalization and management.
+
+*   **Viewing Profiles**:
+    *   Each user has a public profile page accessible via `/user/<username>`.
+    *   This page displays user-specific information, creating a personalized space.
+*   **Information Displayed**:
+    *   **Username**: The primary identifier.
+    *   **Email**: The user's registered email address (visible on their own profile, potentially to others based on privacy settings - currently displayed).
+    *   **Bio**: A short biography or description that the user can set.
+    *   **Profile Picture**: The user's uploaded avatar. A default image is shown if none is uploaded.
+    *   **Created Posts**: A list of blog posts authored by the user, with links to each post.
+    *   **Organized Events**: A list of events organized by the user, with links to each event.
+    *   **Shared Posts**: Posts from other users that this user has shared on their own profile.
+    *   **Gallery Images**: Images uploaded by the user to their personal gallery.
+    *   **Joined Groups**: A list of groups the user is a member of.
+*   **Editing Profiles**:
+    *   Logged-in users can edit their own profile information via the `/profile/edit` route, accessible from their profile page.
+    *   **Editable Fields**:
+        *   Username (must be unique)
+        *   Email (must be unique)
+        *   Bio
+    *   Changes are validated (e.g., for uniqueness of username/email) before being saved.
+
 ### Blog Post Comments
 
 To enhance interactivity, users can now add comments to blog posts.

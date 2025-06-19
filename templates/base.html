@@ -29,6 +29,9 @@
                 <li><a href="{{ url_for('events_list') }}">Events</a></li>
                 {% if session['logged_in'] %}
                   <li><a href="{{ url_for('create_event') }}">Create Event</a></li>
+                  <li class="nav-item">
+                      <a class="nav-link" href="{{ url_for('view_notifications') }}">Notifications</a>
+                  </li>
                   <li><a href="{{ url_for('inbox') }}">Inbox</a></li>
                   <li><a href="{{ url_for('create_post') }}">Create Post</a></li>
                   <li><span>Logged in as {{ session['username'] }}</span></li>

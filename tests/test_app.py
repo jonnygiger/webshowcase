@@ -4,6 +4,7 @@ import pytest
 import io
 import unittest # For new SocketIO tests
 from unittest.mock import patch, MagicMock # For new SocketIO tests
+from datetime import datetime, timedelta # Added for notification tests
 
 # Deliberately deferring app import
 
@@ -1418,3 +1419,142 @@ class TestEventManager:
 # Note: The comment block at the end of the original file is removed by this replacement.
 # If it's important, it would need to be re-added after the TestEventManager class.
 # For now, assuming it's not critical for test functionality.
+
+class TestNotifications(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+        if 'app' in sys.modules:
+            del sys.modules['app']
+
+        from app import app as flask_app, socketio as flask_socketio, users as app_users, \
+                        blog_posts as app_blog_posts, comments as app_comments, \
+                        notifications as app_notifications, polls as app_polls, events as app_events
+
+        cls.app = flask_app
+        cls.socketio = flask_socketio # Though not directly used, kept for consistency if needed
+        cls.app_users = app_users
+        cls.app_blog_posts = app_blog_posts
+        cls.app_comments = app_comments
+        cls.app_notifications = app_notifications
+        cls.app_polls = app_polls
+        cls.app_events = app_events
+
+
+        cls.app.config['TESTING'] = True
+        cls.app.config['DEBUG'] = True # Enable debug mode for test_only route
+        cls.app.config['SECRET_KEY'] = 'testsecretkey_notifications_class'
+
+    def setUp(self):
+        self.app_context = self.app.app_context()
+        self.app_context.push()
+
+        self.client = self.app.test_client()
+
+        # Reset state for each test
+        self.app_users.clear()
+        self.app_users["testuser"] = {"password": generate_password_hash("password"), "uploaded_images": [], "blog_post_ids": []}
+        self.app_users["demo"] = {"password": generate_password_hash("password123"),"uploaded_images": [],"blog_post_ids": []}
+
+        self.app_blog_posts.clear()
+        self.app.blog_post_id_counter = 0
+        self.app_comments.clear()
+        self.app.comment_id_counter = 0
+
+        self.app_notifications.clear()
+        self.app.notification_id_counter = 0
+
+        self.app_polls.clear()
+        self.app.poll_id_counter = 0
+        self.app.poll_option_id_counter = 0
+
+        self.app_events.clear()
+        self.app.event_id_counter = 0
+
+        # Set last_activity_check_time to a known state, e.g., far in the past
+        self.app.last_activity_check_time = datetime.now() - timedelta(days=7)
+
+
+    def tearDown(self):
+        self.app_context.pop()
+
+    def _login_flask_user(self, username, password): # Copied from TestAppSocketIO
+        return self.client.post('/login', data=dict(
+            username=username,
+            password=password
+        ), follow_redirects=True)
+
+    def test_notifications_page_requires_login(self):
+        # Ensure logged out
+        self.client.get('/logout', follow_redirects=True)
+        response = self.client.get(url_for('view_notifications'), follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith(url_for('login')))
+
+        # Check flash message
+        response_redirected = self.client.get(response.location, follow_redirects=True)
+        self.assertIn(b"You need to be logged in to access this page.", response_redirected.data)
+
+    def test_notifications_page_loads_for_logged_in_user(self):
+        self._login_flask_user('testuser', 'password')
+        response = self.client.get(url_for('view_notifications'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Notifications", response.data)
+        # Check for "no new notifications" if list is empty
+        if not self.app_notifications:
+            self.assertIn(b"You have no new notifications.", response.data)
+
+    def test_notification_generation_and_display(self):
+        self._login_flask_user('testuser', 'password')
+
+        # 1. Clear existing notifications and reset time to ensure new post is picked up
+        self.app_notifications.clear()
+        self.app.notification_id_counter = 0
+        # Set last_activity_check_time to sometime before the new post
+        # The new post's timestamp will be datetime.now()
+        self.app.last_activity_check_time = datetime.now() - timedelta(minutes=5)
+
+
+        # 2. Create a new blog post programmatically
+        original_post_count = len(self.app_blog_posts)
+        self.app.blog_post_id_counter += 1
+        post_id = self.app.blog_post_id_counter
+        post_title = "Test Post for Real Notifications"
+        test_post = {
+            "id": post_id,
+            "title": post_title,
+            "content": "This post should generate a notification.",
+            "author_username": "testuser",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S") # Critical: timestamp is now
+        }
+        self.app_blog_posts.append(test_post)
+        self.assertEqual(len(self.app_blog_posts), original_post_count + 1)
+
+
+        # 3. Call the manual trigger (ensure user is logged in for this route)
+        # The _login_flask_user above handles this.
+        # Check if debug is True, as the route requires it.
+        self.assertTrue(self.app.debug, "app.debug should be True for trigger_notifications_test_only")
+
+        trigger_response = self.client.get(url_for('trigger_notifications_test_only'), follow_redirects=True)
+        self.assertEqual(trigger_response.status_code, 200) # Should redirect to notifications page
+        self.assertIn(b"Notification generation triggered for test.", trigger_response.data)
+
+        # 4. Assert that app.notifications is not empty
+        self.assertGreater(len(self.app_notifications), 0, "Notifications list should not be empty after generation.")
+
+        # 5. Access /notifications and check for the message
+        response_notifications_page = self.client.get(url_for('view_notifications'))
+        self.assertEqual(response_notifications_page.status_code, 200)
+
+        expected_message = f"New blog post: '{post_title}'"
+        self.assertIn(bytes(expected_message, 'utf-8'), response_notifications_page.data,
+                      f"Notification message for post '{post_title}' not found on page.")
+
+        # Optional: Check specific details of the notification object if needed
+        found_notification = False
+        for notif in self.app_notifications:
+            if notif['message'] == expected_message and notif['related_id'] == post_id and notif['type'] == 'new_post':
+                found_notification = True
+                break
+        self.assertTrue(found_notification, "The specific notification object was not found in app.notifications")

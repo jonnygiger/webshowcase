@@ -19,7 +19,7 @@ migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent # Add UserActivity, FlaggedContent
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, GroupMessage, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent # Add UserActivity, FlaggedContent, GroupMessage
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
@@ -1254,6 +1254,75 @@ def handle_join_room_event(data):
     app.logger.info(f"User {session.get('username', 'Anonymous')} joined room: {data['room']}")
     join_room(data['room'])
 
+@socketio.on('join_group_chat')
+def handle_join_group_chat_event(data):
+    group_id = data.get('group_id')
+    if not group_id:
+        app.logger.error("join_group_chat event received without group_id")
+        return # Or emit an error back to the client
+
+    room_name = f'group_chat_{group_id}'
+    join_room(room_name)
+    username = session.get('username', 'Unknown user')
+    app.logger.info(f"User '{username}' joined group chat room: '{room_name}'")
+    # Optionally, emit a confirmation or notification to the user or room
+    # emit('user_joined_group_notification', {'username': username, 'group_id': group_id}, room=room_name)
+
+
+@socketio.on('send_group_message')
+def handle_send_group_message_event(data):
+    user_id = session.get('user_id')
+    username = session.get('username')
+
+    if not user_id:
+        app.logger.error("send_group_message event received from unauthenticated user.")
+        # Emit an error event back to the sender if they are identifiable
+        # Or simply return if no specific client to target or if it's a general issue
+        emit('error_event', {'message': 'Authentication required to send messages.'}) # Emits to the current client
+        return
+
+    group_id = data.get('group_id')
+    message_content = data.get('message_content')
+
+    if not group_id:
+        app.logger.error(f"User {username} (ID: {user_id}) tried to send group message without group_id.")
+        emit('error_event', {'message': 'Group ID is missing.'})
+        return
+
+    if not message_content or not message_content.strip():
+        app.logger.info(f"User {username} (ID: {user_id}) tried to send an empty message to group {group_id}.")
+        # Optionally, inform the user their message was empty, or just ignore
+        # emit('error_event', {'message': 'Message content cannot be empty.'})
+        return
+
+    try:
+        new_group_message = GroupMessage(
+            group_id=group_id,
+            user_id=user_id,
+            content=message_content.strip()
+            # timestamp is default=datetime.utcnow
+        )
+        db.session.add(new_group_message)
+        db.session.commit()
+
+        room_name = f'group_chat_{group_id}'
+        message_payload = {
+            'message_content': new_group_message.content,
+            'sender_username': username, # Username from session
+            'timestamp': new_group_message.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            'group_id': group_id,
+            'user_id': user_id, # Include user_id for client-side logic if needed
+            'message_id': new_group_message.id # Include message_id
+        }
+        socketio.emit('receive_group_message', message_payload, room=room_name)
+        app.logger.info(f"User '{username}' sent message to group {group_id}: '{message_content}'")
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error saving or sending group message for group {group_id} by user {user_id}: {e}")
+        emit('error_event', {'message': 'An error occurred while sending your message.'})
+
+
 # with app.app_context():
 #     if not os.path.exists(os.path.join(app.root_path, 'site.db')):  # Check if db file exists in instance folder
 #         db.create_all()
@@ -1622,7 +1691,13 @@ def view_group(group_id):
         # Check if the user is a member. group.members is a dynamic query.
         current_user_is_member = group.members.filter(User.id == user_id).count() > 0
 
-    return render_template('group_detail.html', group=group, current_user_is_member=current_user_is_member)
+    # Fetch chat history for the group
+    # The relationship Group.messages (backref from GroupMessage.group) can be used
+    # or a direct query on GroupMessage model.
+    # Using direct query for clarity on ordering.
+    chat_messages = GroupMessage.query.filter_by(group_id=group_id).order_by(GroupMessage.timestamp.asc()).all()
+
+    return render_template('group_detail.html', group=group, current_user_is_member=current_user_is_member, chat_messages=chat_messages)
 
 @app.route('/groups/create', methods=['GET', 'POST'])
 @login_required

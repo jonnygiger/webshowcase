@@ -23,7 +23,7 @@ class Group(db.Model):
                               back_populates='joined_groups')
 
     # Relationship to GroupMessage
-    messages = db.relationship('GroupMessage', backref='group', lazy='dynamic', cascade="all, delete-orphan")
+    # messages = db.relationship('GroupMessage', backref='group', lazy='dynamic', cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Group '{self.name}'>"
@@ -83,7 +83,7 @@ class User(db.Model):
     flags_moderated = db.relationship('FlaggedContent', foreign_keys='FlaggedContent.moderator_id', back_populates='moderator', lazy='dynamic')
 
     # Relationship to GroupMessage
-    group_messages = db.relationship('GroupMessage', backref='user', lazy='dynamic', cascade="all, delete-orphan")
+    # group_messages = db.relationship('GroupMessage', backref='user', lazy='dynamic', cascade="all, delete-orphan")
 
     def __repr__(self):
         return f'<User {self.username}>'
@@ -136,6 +136,8 @@ class Post(db.Model):
     last_edited = db.Column(db.DateTime, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     hashtags = db.Column(db.Text, nullable=True) # Stores comma-separated hashtags
+    is_featured = db.Column(db.Boolean, default=False)
+    featured_at = db.Column(db.DateTime, nullable=True)
 
     comments = db.relationship('Comment', backref='post', lazy=True, cascade="all, delete-orphan")
     likes = db.relationship('Like', backref='post', lazy=True, cascade="all, delete-orphan")
@@ -155,7 +157,9 @@ class Post(db.Model):
             'last_edited': self.last_edited.isoformat() if self.last_edited else None,
             'user_id': self.user_id,
             'author_username': self.author.username if self.author else None,
-            'hashtags': self.hashtags
+            'hashtags': self.hashtags,
+            'is_featured': self.is_featured,
+            'featured_at': self.featured_at.isoformat() if self.featured_at else None
             # Consider adding comment count or like count if simple to compute
         }
 

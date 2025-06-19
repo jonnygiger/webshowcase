@@ -13,7 +13,7 @@ from werkzeug.security import generate_password_hash
 # For now, we assume it's accessible via app.handle_send_group_message_event based on how routes are often structured.
 # If not, we would typically use SocketIOTestClient.emit() to trigger the event.
 # However, the prompt asks to call the handler directly.
-from app import handle_send_group_message_event
+from app import handle_send_group_message_event, get_featured_post # Added get_featured_post
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 from collections import Counter
@@ -2099,15 +2099,14 @@ def test_suggest_event_no_suggestions(client):
     # The core idea is that no *specific* friend-driven or new popular suggestions are made FOR THIS USER.
     # If this fails due to other tests, it might need more isolated data setup.
     # A simple check for now:
-    is_empty_or_unrelated = True
+            # is_empty_or_unrelated = True # This was a placeholder, removing
     if suggestions_with_inactive_friend:
         # Check if any suggested event is the 'Unrelated Event' by user_b (who is not a friend)
         if any(e.id == event_unrelated.id for e in suggestions_with_inactive_friend):
             # This is okay if it's suggested due to popularity, but not via friend link to user_a
             pass # This case is complex to assert emptiness strictly.
-    assert is_empty_or_unrelated # Placeholder for a more robust check if needed.
-                                 # For now, we trust the logic filters correctly.
-                                 # A better check would be to assert that specific unwanted events are NOT present.
+            # For now, we trust the logic filters correctly.
+            # A better check would be to assert that specific unwanted events are NOT present.
     # A simpler, more direct test for "no suggestions" is if the /recommendations page shows the fallback.
     # We'll test that via the route test later.
     # For direct logic, if setup is clean, it should be empty:
@@ -2494,11 +2493,19 @@ class TestRecommendationsAndDiscovery:
         # client fixture ensures app_context for db operations
         return create_user_directly(f"rec_user_{username_suffix}", password, role)
 
-    def _create_post(self, user_obj, title_suffix, content="Test content", timestamp=None, hashtags=None):
+    def _create_post(self, user_obj, title_suffix, content="Test content", timestamp=None, hashtags=None, is_featured=False, featured_at=None):
         # client fixture ensures app_context
         if timestamp is None:
             timestamp = datetime.utcnow()
-        post = Post(user_id=user_obj.id, title=f"Rec Post {title_suffix}", content=content, timestamp=timestamp, hashtags=hashtags)
+        post = Post(
+            user_id=user_obj.id,
+            title=f"Rec Post {title_suffix}",
+            content=content,
+            timestamp=timestamp,
+            hashtags=hashtags,
+            is_featured=is_featured,
+            featured_at=featured_at
+        )
         db.session.add(post)
         db.session.commit()
         return post
@@ -2539,11 +2546,12 @@ class TestRecommendationsAndDiscovery:
             post_p1 = self._create_post(other_user, "P1_spr_basic")
             self._add_like(friend_b, post_p1)
 
-            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+            suggestions_with_reasons = recommendations.suggest_posts_to_read(user_a.id, limit=5)
 
-            assert len(suggestions) == 1
-            suggested_post, reason = suggestions[0]
-            assert suggested_post.id == post_p1.id
+            assert len(suggestions_with_reasons) == 1
+            suggested_post_obj, reason = suggestions_with_reasons[0]
+            assert isinstance(suggested_post_obj, Post)
+            assert suggested_post_obj.id == post_p1.id
             assert f"Liked by {friend_b.username}" in reason
 
     def test_spr_multiple_friend_interactions_same_post(self, client):
@@ -2559,11 +2567,12 @@ class TestRecommendationsAndDiscovery:
             self._add_like(friend_b, post_p1, timestamp=datetime.utcnow() - timedelta(minutes=10))
             self._add_comment(friend_c, post_p1, content="Nice post!", timestamp=datetime.utcnow() - timedelta(minutes=5)) # More recent
 
-            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+            suggestions_with_reasons = recommendations.suggest_posts_to_read(user_a.id, limit=5)
 
-            assert len(suggestions) == 1
-            suggested_post, reason = suggestions[0]
-            assert suggested_post.id == post_p1.id
+            assert len(suggestions_with_reasons) == 1
+            suggested_post_obj, reason = suggestions_with_reasons[0]
+            assert isinstance(suggested_post_obj, Post)
+            assert suggested_post_obj.id == post_p1.id
             # Exact reason string depends on implementation detail (order of parts)
             assert f"Liked by {friend_b.username}" in reason
             assert f"Commented on by {friend_c.username}" in reason
@@ -2621,9 +2630,9 @@ class TestRecommendationsAndDiscovery:
             self._add_like(friend_b, post_p_new, timestamp=datetime.utcnow() - timedelta(hours=1)) # Same interaction time
 
             # RECENCY_HALFLIFE_DAYS = 7. New post should have higher recency score component.
-            suggestions = recommendations.suggest_posts_to_read(user_a.id, limit=5)
-            assert len(suggestions) >= 2
-            titles_only = [p.title for p,r in suggestions]
+            suggestions_with_reasons = recommendations.suggest_posts_to_read(user_a.id, limit=5)
+            assert len(suggestions_with_reasons) >= 2
+            titles_only = [p.title for p,r in suggestions_with_reasons]
             assert titles_only.index(post_p_new.title) < titles_only.index(post_p_old.title)
 
     def test_spr_scoring_post_popularity(self, client):
@@ -2860,9 +2869,9 @@ class TestRecommendationsAndDiscovery:
 
             # P_new score approx = 1 (like) + 4.28 (age) = 5.28
             # P_old score approx = 1 (like) + 0.71 (age) = 1.71
-            suggestions = recommendations.suggest_trending_posts(user_a.id, limit=5, since_days=7)
-            assert len(suggestions) >= 2
-            titles_only = [p.title for p in suggestions]
+            suggestions_posts = recommendations.suggest_trending_posts(user_a.id, limit=5, since_days=7)
+            assert len(suggestions_posts) >= 2
+            titles_only = [p.title for p in suggestions_posts]
             assert titles_only.index(post_p_new.title) < titles_only.index(post_p_old.title)
 
     def test_stp_exclusions(self, client):
@@ -2889,8 +2898,8 @@ class TestRecommendationsAndDiscovery:
             self._add_like(other_user, post_bookmarked, timestamp=datetime.utcnow()-timedelta(hours=2)) # Make it trend
             self._add_bookmark(user_a, post_bookmarked)
 
-            suggestions = recommendations.suggest_trending_posts(user_a.id, limit=5, since_days=7)
-            post_titles = [p.title for p in suggestions]
+            suggestions_posts = recommendations.suggest_trending_posts(user_a.id, limit=5, since_days=7)
+            post_titles = [p.title for p in suggestions_posts]
 
             assert post_own.title not in post_titles
             assert post_liked.title not in post_titles
@@ -3561,3 +3570,167 @@ def test_suggest_posts_to_read_with_comments_and_likes(client):
 
         # Check if the number of actual suggestions is what we expect (3 in this case)
         assert len(suggested_posts) == 3, f"Expected 3 suggestions, got {len(suggested_posts)}. Titles: {suggested_post_titles}"
+
+
+# --- Featured Post Tests ---
+
+class TestFeaturedPost:
+    def test_homepage_displays_featured_post(self, client):
+        with client.application.app_context():
+            user = create_user_directly("feature_author", "password")
+            post1 = create_post_directly(user_id=user.id, title="Regular Post 1", content="Content 1")
+            featured_post = create_post_directly(
+                user_id=user.id,
+                title="Featured Post Alpha",
+                content="This is the featured content snippet for testing.",
+                is_featured=True,
+                featured_at=datetime.utcnow()
+            )
+            post2 = create_post_directly(user_id=user.id, title="Regular Post 2", content="Content 2")
+
+        response = client.get('/')
+        assert response.status_code == 200
+        response_data = response.data.decode()
+
+        assert "Featured Post of the Day" in response_data
+        assert featured_post.title in response_data
+        assert user.username in response_data # Check for author's username
+        assert featured_post.content[:150] in response_data # Check for content snippet
+
+        expected_link = url_for('view_post', post_id=featured_post.id)
+        assert f'href="{expected_link}"' in response_data
+        assert "Read more" in response_data
+
+        # Ensure other posts are not mistakenly displayed as featured
+        # Check within the featured post section specifically if the HTML structure allows
+        featured_section_html = ""
+        if "Featured Post of the Day" in response_data:
+            # Simple split, might need refinement based on actual HTML structure
+            # This assumes the featured post details are *after* the heading.
+            featured_section_html = response_data.split("Featured Post of the Day", 1)[1]
+
+        assert post1.title not in featured_section_html
+        assert post2.title not in featured_section_html
+
+
+    def test_homepage_no_posts_displays_no_featured_message(self, client):
+        # DB is clean for each test due to fixture
+        response = client.get('/')
+        assert response.status_code == 200
+        assert "No featured post available yet." in response.data.decode()
+        assert "Featured Post of the Day" in response.data.decode() # Section title might still be there
+
+    def test_get_featured_post_logic_explicitly_featured_correctly_chosen(self, client):
+        with client.application.app_context():
+            user = create_user_directly("feature_logic_user", "password")
+
+            old_featured_post = create_post_directly(
+                user_id=user.id, title="Old Featured", is_featured=True,
+                featured_at=datetime.utcnow() - timedelta(days=1)
+            )
+            recent_featured_post = create_post_directly(
+                user_id=user.id, title="Recent Featured", is_featured=True,
+                featured_at=datetime.utcnow()
+            )
+            not_featured_post = create_post_directly(
+                user_id=user.id, title="Not Featured", is_featured=False
+            )
+
+            # Direct call to get_featured_post
+            result_post = get_featured_post()
+
+            assert result_post is not None
+            assert result_post.id == recent_featured_post.id
+            assert result_post.title == "Recent Featured"
+
+    def test_get_featured_post_logic_random_selection_when_none_featured(self, client):
+        with client.application.app_context():
+            user = create_user_directly("random_feature_user", "password")
+            post1 = create_post_directly(user_id=user.id, title="Random Candidate 1", is_featured=False)
+            post2 = create_post_directly(user_id=user.id, title="Random Candidate 2", is_featured=False)
+            post3 = create_post_directly(user_id=user.id, title="Random Candidate 3", is_featured=False)
+            all_post_ids = {post1.id, post2.id, post3.id}
+
+            # Direct call
+            featured_post_obj = get_featured_post()
+
+            assert featured_post_obj is not None
+            assert featured_post_obj.id in all_post_ids
+
+            # Verify in DB that it was updated
+            db_post = Post.query.get(featured_post_obj.id)
+            assert db_post.is_featured is True
+            assert db_post.featured_at is not None
+            # Check if featured_at is recent (within a small delta)
+            assert (datetime.utcnow() - db_post.featured_at).total_seconds() < 5
+
+    def test_get_featured_post_logic_no_posts_in_database(self, client):
+        # DB is clean
+        with client.application.app_context():
+            result_post = get_featured_post()
+        assert result_post is None
+
+    def test_admin_feature_post_route_feature(self, client):
+        with client.application.app_context():
+            admin_user = create_user_directly("admin_feature_op", "password") # User for login
+            post_to_feature = create_post_directly(user_id=admin_user.id, title="To Be Featured by Admin")
+            assert post_to_feature.is_featured is False
+
+        login_test_user(client, username="admin_feature_op", password="password")
+
+        response = client.post(f'/admin/feature_post/{post_to_feature.id}', follow_redirects=True)
+        assert response.status_code == 200 # Redirects to view_post
+        assert f'/blog/post/{post_to_feature.id}' in response.request.path
+        assert f'Post "{post_to_feature.title}" has been featured.'.encode() in response.data
+
+        with client.application.app_context():
+            updated_post = Post.query.get(post_to_feature.id)
+            assert updated_post.is_featured is True
+            assert updated_post.featured_at is not None
+            assert (datetime.utcnow() - updated_post.featured_at).total_seconds() < 5
+
+    def test_admin_feature_post_route_unfeature(self, client):
+        with client.application.app_context():
+            admin_user = create_user_directly("admin_unfeature_op", "password")
+            post_to_unfeature = create_post_directly(
+                user_id=admin_user.id,
+                title="To Be Unfeatured by Admin",
+                is_featured=True,
+                featured_at=datetime.utcnow()
+            )
+            assert post_to_unfeature.is_featured is True
+
+        login_test_user(client, username="admin_unfeature_op", password="password")
+
+        response = client.post(f'/admin/feature_post/{post_to_unfeature.id}', follow_redirects=True)
+        assert response.status_code == 200
+        assert f'/blog/post/{post_to_unfeature.id}' in response.request.path
+        assert f'Post "{post_to_unfeature.title}" is no longer featured.'.encode() in response.data
+
+        with client.application.app_context():
+            updated_post = Post.query.get(post_to_unfeature.id)
+            assert updated_post.is_featured is False
+            assert updated_post.featured_at is None
+
+    def test_admin_feature_post_route_login_required(self, client):
+        with client.application.app_context():
+            user = create_user_directly("author_for_admin_route_test", "password")
+            post = create_post_directly(user_id=user.id, title="Test Admin Login Req")
+
+        # No login
+        response = client.post(f'/admin/feature_post/{post.id}', follow_redirects=False)
+        assert response.status_code == 302
+        assert url_for('login') in response.location
+
+        # Check flash message on login page
+        login_page_response = client.get(response.location, follow_redirects=True)
+        assert b"You need to be logged in to access this page." in login_page_response.data
+
+        with client.application.app_context():
+            db_post = Post.query.get(post.id)
+            assert db_post.is_featured is False # Status should not have changed
+
+    def test_admin_feature_post_route_404_for_non_existent_post(self, client):
+        login_test_user(client) # Log in some user
+        response = client.post('/admin/feature_post/99999', follow_redirects=False)
+        assert response.status_code == 404

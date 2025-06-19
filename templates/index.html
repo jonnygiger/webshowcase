@@ -8,4 +8,22 @@
         <p>This is the home page of our awesome Flask application.</p>
         <p>We are demonstrating how static files (like CSS) are served.</p>
     </div>
+
+    <div class="featured-post-section mt-5">
+        <h2>Featured Post of the Day</h2>
+        {% if featured_post %}
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title">{{ featured_post.title }}</h3>
+                    {% if featured_post.author %}
+                        <h6 class="card-subtitle mb-2 text-muted">By: {{ featured_post.author.username }}</h6>
+                    {% endif %}
+                    <p class="card-text">{{ featured_post.content[:150] }}{% if featured_post.content|length > 150 %}...{% endif %}</p>
+                    <a href="{{ url_for('view_post', post_id=featured_post.id) }}" class="btn btn-primary">Read more</a>
+                </div>
+            </div>
+        {% else %}
+            <p>No featured post available yet.</p>
+        {% endif %}
+    </div>
 {% endblock %}

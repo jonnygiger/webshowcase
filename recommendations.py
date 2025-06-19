@@ -730,3 +730,144 @@ def update_trending_hashtags(top_n=10, since_days=7):
     except Exception as e:
         db.session.rollback() # Rollback on any exception during the process
         app.logger.error(f"Error in update_trending_hashtags job: {e}")
+
+
+def get_personalized_feed_posts(user_id, limit=20):
+    """
+    Generates a personalized feed of posts for a given user.
+    Combines posts from followed users, friends' activity, trending posts, and user's groups.
+    Ensures posts are not duplicated and are ranked appropriately.
+    """
+    current_user = User.query.get(user_id)
+    if not current_user:
+        app.logger.warning(f"get_personalized_feed_posts: User with ID {user_id} not found.")
+        return []
+
+    # --- Scoring Constants ---
+    SCORE_SOURCE_FOLLOWED = 1000
+    SCORE_SOURCE_FRIEND_ACTIVITY = 500
+    SCORE_SOURCE_GROUP = 300
+    SCORE_SOURCE_TRENDING = 100
+    # Recency decay factor (e.g., score halves every N days)
+    RECENCY_HALFLIFE_DAYS = 7
+    RECENCY_MAX_SCORE = 100 # Max possible score from recency alone
+
+    # --- Store for deduplicated posts: {post_id: {'post': Post, 'score': float, 'reason': str}} ---
+    feed_candidates = {}
+
+    # --- Pre-fetch user's interactions to exclude posts ---
+    user_authored_post_ids = {post.id for post in Post.query.filter_by(user_id=user_id).with_entities(Post.id).all()}
+    user_liked_post_ids = {like.post_id for like in Like.query.filter_by(user_id=user_id).with_entities(Like.post_id).all()}
+    user_commented_post_ids = {comment.post_id for comment in Comment.query.filter_by(user_id=user_id).with_entities(Comment.post_id).all()}
+    # Assuming User.bookmarks is a relationship yielding Bookmark objects
+    user_bookmarked_post_ids = {bookmark.post_id for bookmark in current_user.bookmarks}
+
+    excluded_post_ids = user_authored_post_ids.union(user_liked_post_ids).union(user_commented_post_ids).union(user_bookmarked_post_ids)
+
+    def calculate_recency_score(post_timestamp):
+        days_old = (datetime.utcnow() - post_timestamp).days
+        if days_old < 0: days_old = 0
+        score = RECENCY_MAX_SCORE * (0.5 ** (days_old / RECENCY_HALFLIFE_DAYS))
+        return score
+
+    def add_candidate(post, source_score, reason_prefix, entity_name=""):
+        if post.id in excluded_post_ids:
+            return
+
+        recency_score = calculate_recency_score(post.timestamp)
+        final_score = source_score + recency_score
+
+        reason = reason_prefix
+        if entity_name:
+            reason = f"{reason_prefix}: {entity_name}"
+
+        if post.id not in feed_candidates or final_score > feed_candidates[post.id]['score']:
+            feed_candidates[post.id] = {'post': post, 'score': final_score, 'reason': reason}
+
+    # --- 1. Posts from users the current user follows (Friends in this context) ---
+    # Assuming get_friends() returns a list of User objects.
+    # This part might need adjustment based on how "following" is truly modeled.
+    # For now, using the concept of "friends" as "followed".
+    friends = current_user.get_friends() # Assuming this method exists and returns User objects
+    friend_ids = {friend.id for friend in friends}
+    if friend_ids:
+        # Fetch more posts initially, they will be ranked and limited later
+        posts_from_followed = Post.query.filter(
+            Post.user_id.in_(friend_ids),
+            Post.id.notin_(excluded_post_ids) # Pre-filter
+        ).order_by(Post.timestamp.desc()).limit(limit * 3).all()
+        for post in posts_from_followed:
+            author_username = post.author.username if post.author else "Unknown"
+            add_candidate(post, SCORE_SOURCE_FOLLOWED, "From user you follow", author_username)
+
+    # --- 2. Posts liked or commented on by friends (adapting suggest_posts_to_read) ---
+    # suggest_posts_to_read returns (Post, reason_string)
+    # It already handles some exclusions (user's own posts, posts user interacted with)
+    # We pass a larger limit as it will be combined and re-ranked.
+    # The 'reason' from suggest_posts_to_read is more specific about which friend interacted.
+    friend_activity_posts = suggest_posts_to_read(user_id, limit=limit * 3)
+    for post, reason in friend_activity_posts:
+        if post.id in excluded_post_ids: # Double check exclusion
+            continue
+        # The reason from suggest_posts_to_read is good, use it directly.
+        # The base score is SCORE_SOURCE_FRIEND_ACTIVITY, recency added in add_candidate.
+        # We need to ensure `add_candidate` can take a pre-formed reason.
+
+        # Simplified add_candidate for this source if reason is already good:
+        recency_score = calculate_recency_score(post.timestamp)
+        final_score = SCORE_SOURCE_FRIEND_ACTIVITY + recency_score
+        if post.id not in feed_candidates or final_score > feed_candidates[post.id]['score']:
+            feed_candidates[post.id] = {'post': post, 'score': final_score, 'reason': reason}
+
+
+    # --- 3. Trending posts (adapting suggest_trending_posts) ---
+    # suggest_trending_posts returns Post objects and handles some exclusions.
+    trending = suggest_trending_posts(user_id, limit=limit * 2, since_days=14) # Wider window for feed
+    for post in trending:
+        if post.id in excluded_post_ids: # Double check exclusion
+            continue
+        add_candidate(post, SCORE_SOURCE_TRENDING, "Trending post")
+
+    # --- 4. Posts from groups the user is a member of ---
+    # Assuming User.joined_groups relationship exists and Post has a group_id
+    # This section depends on Post model having a 'group_id' field.
+    # If Post.group_id doesn't exist, this source cannot be used.
+    if hasattr(Post, 'group_id'):
+        user_groups = current_user.joined_groups.all() # Returns list of Group objects
+        group_ids = {group.id for group in user_groups}
+        if group_ids:
+            posts_from_groups = Post.query.filter(
+                Post.group_id.in_(group_ids),
+                Post.id.notin_(excluded_post_ids) # Pre-filter
+            ).order_by(Post.timestamp.desc()).limit(limit * 3).all()
+            for post in posts_from_groups:
+                # Find group name for reason string - requires post to have group relationship or query Group
+                group_name = "Unknown Group"
+                if post.group_id: # Check if group_id is set
+                    group = Group.query.get(post.group_id) # Potential N+1 if not careful, better to join if displaying many group posts
+                    if group:
+                        group_name = group.name
+                add_candidate(post, SCORE_SOURCE_GROUP, "From your group", group_name)
+    else:
+        app.logger.info(f"get_personalized_feed_posts: Post model does not have 'group_id'. Skipping group posts source for user {user_id}.")
+
+
+    # --- Combine, Sort, and Limit ---
+    if not feed_candidates:
+        return []
+
+    # Convert dictionary to list of dictionaries
+    final_candidate_list = list(feed_candidates.values())
+
+    # Sort by score (descending), then by post timestamp (descending) for tie-breaking
+    final_candidate_list.sort(key=lambda x: (x['score'], x['post'].timestamp), reverse=True)
+
+    # Extract Post objects for the final list, respecting the limit
+    # The subtask asks for a list of Post objects. If (Post, reason) is needed, change here.
+    result_posts = [item['post'] for item in final_candidate_list[:limit]]
+
+    # For debugging or future use, one might want to return reasons too:
+    # result_with_reasons = [(item['post'], item['reason']) for item in final_candidate_list[:limit]]
+
+    app.logger.info(f"get_personalized_feed_posts: Generated {len(result_posts)} posts for user {user_id}. Candidates found: {len(feed_candidates)}")
+    return result_posts

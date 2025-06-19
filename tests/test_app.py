@@ -3,7 +3,8 @@ import os
 import shutil
 from flask import url_for
 from flask_socketio import SocketIOTestClient
-from app import app, db, User, Post, Comment, Event, Reaction, TodoItem, Bookmark, Friendship, SharedPost, UserActivity # Added Comment, Event, UserActivity
+from app import app, db, User, Post, Comment, Event, Reaction, TodoItem, Bookmark, Friendship, SharedPost, UserActivity, Like, Group # Added Like, Group
+from models import group_members # For direct group membership manipulation if needed, though group.members.append is preferred
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 from io import BytesIO # For simulating file uploads
@@ -68,6 +69,41 @@ def get_test_user_id():
 def get_test_user_obj():
     """Helper to get the test user object within app_context."""
     return User.query.filter_by(username="testuser").first()
+
+# Helper to create a friendship directly in DB
+def create_friendship_directly(user1_id, user2_id, status='accepted'):
+    friendship = Friendship(user_id=user1_id, friend_id=user2_id, status=status)
+    db.session.add(friendship)
+    db.session.commit()
+    return friendship
+
+# Helper to create a like directly in DB
+def create_like_directly(user_id, post_id):
+    like = Like(user_id=user_id, post_id=post_id)
+    db.session.add(like)
+    db.session.commit()
+    return like
+
+# Helper to create a group directly in DB
+def create_group_directly(name, creator_id, description="Test group description"):
+    group = Group(name=name, description=description, creator_id=creator_id)
+    db.session.add(group)
+    # Add creator as a member automatically
+    creator = User.query.get(creator_id)
+    if creator:
+        group.members.append(creator)
+    db.session.commit()
+    return group
+
+# Helper to add a user to a group directly
+def add_user_to_group_directly(user_obj, group_obj):
+    # The SQLAlchemy way:
+    group_obj.members.append(user_obj)
+    # Or direct manipulation if preferred, though less common for simple adds:
+    # stmt = group_members.insert().values(user_id=user_id, group_id=group_id)
+    # db.session.execute(stmt)
+    db.session.commit()
+
 
 # Test cases will be added below
 def test_todo_access_unauthorized(client):
@@ -1702,3 +1738,197 @@ def test_no_notification_for_own_comment(client):
     # It's expected that the user might receive the 'new_comment_event' if they were also in the post's room,
     # but that's a different event and not tested here for absence/presence.
     # This test specifically ensures the *author-targeted notification* is not sent for self-comments.
+
+
+# --- Recommendation Feature Tests ---
+
+class TestRecommendationsRoutes:
+    def test_recommendations_page_logged_in(self, client):
+        login_test_user(client)
+        response = client.get('/recommendations')
+        assert response.status_code == 200
+        response_data = response.data.decode()
+        assert "Recommendations For You" in response_data
+        assert "Suggested Users to Follow" in response_data
+        assert "Suggested Posts to Read" in response_data
+        assert "Suggested Groups to Join" in response_data
+
+    def test_recommendations_page_logged_out(self, client):
+        response = client.get('/recommendations', follow_redirects=True)
+        assert response.status_code == 200 # After redirect to login
+        assert "/login" in response.request.path # Check current path is login
+        assert b"You need to be logged in to access this page." in response.data # Flash message
+
+class TestBlogPageRecommendationSnippet:
+    def test_blog_page_shows_user_snippet_logged_in(self, client):
+        # Setup: u1 (testuser), u2, u3. Friendships: u1-u2, u2-u3. u3 should be suggested to u1.
+        u1 = get_test_user_obj() # This is 'testuser'
+        u2 = create_user_directly("friend_of_testuser", "password")
+        u3 = create_user_directly("friend_of_friend", "password")
+
+        create_friendship_directly(u1.id, u2.id, status='accepted')
+        create_friendship_directly(u2.id, u3.id, status='accepted')
+
+        login_test_user(client) # Log in as u1 ('testuser')
+        response = client.get('/blog')
+        assert response.status_code == 200
+        response_data = response.data.decode()
+        assert "Suggested Users" in response_data # Sidebar title
+        assert u3.username in response_data # u3 should be suggested
+
+    def test_blog_page_no_snippet_logged_out(self, client):
+        response = client.get('/blog')
+        assert response.status_code == 200
+        # The "Suggested Users" card should not be present if not logged in,
+        # as current_user will be None in the template.
+        assert "Suggested Users" not in response.data.decode()
+
+    def test_blog_page_no_snippet_if_no_suggestions(self, client):
+        # u1 (testuser) is logged in, but has no friends, so no FoF suggestions.
+        login_test_user(client)
+        response = client.get('/blog')
+        assert response.status_code == 200
+        # The "Suggested Users" card might still be there but empty, or completely hidden.
+        # Based on template: {% if current_user and suggested_users_snippet %}
+        # If snippet is empty, it should not render the card.
+        assert "Suggested Users" not in response.data.decode()
+        assert "No new user suggestions at the moment." not in response.data.decode() # This message is on full recommendations page
+
+class TestSuggestUsersLogic:
+    def test_suggest_users_friends_of_friends(self, client):
+        u1 = create_user_directly("u1_sug_user", "pw") # Current user
+        u2 = create_user_directly("u2_sug_user", "pw") # Friend of u1
+        u3 = create_user_directly("u3_sug_user", "pw") # Friend of u2 (should be suggested to u1)
+        u4 = create_user_directly("u4_sug_user", "pw") # Another friend of u2 (should be suggested to u1)
+        u5 = create_user_directly("u5_sug_user", "pw") # Unconnected user
+
+        create_friendship_directly(u1.id, u2.id, status='accepted')
+        create_friendship_directly(u2.id, u3.id, status='accepted')
+        create_friendship_directly(u2.id, u4.id, status='accepted')
+
+        login_test_user(client, username="u1_sug_user", password="pw")
+        response = client.get('/recommendations')
+        assert response.status_code == 200
+        response_data = response.data.decode()
+
+        assert u3.username in response_data
+        assert u4.username in response_data
+        assert u1.username not in response_data # Shouldn't suggest self
+        assert u2.username not in response_data # Shouldn't suggest direct friend
+        assert u5.username not in response_data # Shouldn't suggest unconnected user
+
+    def test_suggest_users_no_suggestions_for_lonely_user(self, client):
+        u1 = create_user_directly("u1_lonely", "pw")
+        create_user_directly("u2_other_lonely", "pw") # Another user, but no connection
+
+        login_test_user(client, username="u1_lonely", password="pw")
+        response = client.get('/recommendations')
+        assert response.status_code == 200
+        assert "No new user suggestions at the moment." in response.data.decode()
+
+    def test_suggest_users_excludes_pending_rejected(self, client):
+        u1 = create_user_directly("u1_filter", "pw")
+        u2 = create_user_directly("u2_friend_filter", "pw")
+        u3_fof_good = create_user_directly("u3_fof_good_filter", "pw") # Valid FoF
+        u4_fof_pending = create_user_directly("u4_fof_pending_filter", "pw") # FoF, but u1 has pending request to them
+        u5_fof_rejected = create_user_directly("u5_fof_rejected_filter", "pw") # FoF, but u1 rejected their request
+
+        create_friendship_directly(u1.id, u2.id, status='accepted') # u1 -- u2
+        create_friendship_directly(u2.id, u3_fof_good.id, status='accepted') # u2 -- u3_fof_good
+        create_friendship_directly(u2.id, u4_fof_pending.id, status='accepted') # u2 -- u4_fof_pending
+        create_friendship_directly(u2.id, u5_fof_rejected.id, status='accepted') # u2 -- u5_fof_rejected
+
+        # u1 has pending request to u4_fof_pending
+        create_friendship_directly(u1.id, u4_fof_pending.id, status='pending')
+        # u5_fof_rejected sent request to u1, which u1 rejected
+        create_friendship_directly(u5_fof_rejected.id, u1.id, status='rejected')
+
+        login_test_user(client, username="u1_filter", password="pw")
+        response = client.get('/recommendations')
+        assert response.status_code == 200
+        response_data = response.data.decode()
+
+        assert u3_fof_good.username in response_data
+        assert u4_fof_pending.username not in response_data
+        assert u5_fof_rejected.username not in response_data
+
+class TestSuggestPostsLogic:
+    def test_suggest_posts_liked_by_friends(self, client):
+        u1 = create_user_directly("u1_sug_post", "pw") # Current user
+        u2_friend = create_user_directly("u2_friend_post", "pw") # Friend of u1
+        u3_other = create_user_directly("u3_other_post", "pw") # Another user
+
+        create_friendship_directly(u1.id, u2_friend.id, status='accepted')
+
+        p1_by_u1 = create_post_directly(user_id=u1.id, title="P1 By U1")
+        p2_by_u2 = create_post_directly(user_id=u2_friend.id, title="P2 By U2")
+        p3_by_u3 = create_post_directly(user_id=u3_other.id, title="P3 By U3 - Liked by U2")
+        p4_by_u3_liked_by_u1 = create_post_directly(user_id=u3_other.id, title="P4 Liked by U1")
+
+        # u2_friend likes p3_by_u3
+        create_like_directly(user_id=u2_friend.id, post_id=p3_by_u3.id)
+        # u1 likes p4_by_u3_liked_by_u1 (so p4 should not be suggested)
+        create_like_directly(user_id=u1.id, post_id=p4_by_u3_liked_by_u1.id)
+        # u1 also likes their own post p1 (should not be suggested)
+        create_like_directly(user_id=u1.id, post_id=p1_by_u1.id)
+
+
+        login_test_user(client, username="u1_sug_post", password="pw")
+        response = client.get('/recommendations')
+        assert response.status_code == 200
+        response_data = response.data.decode()
+
+        assert p3_by_u3.title in response_data # Should be suggested
+        assert p1_by_u1.title not in response_data # Own post
+        assert p2_by_u2.title not in response_data # Friend's post, not liked by other friends / not suggested by this logic
+        assert p4_by_u3_liked_by_u1.title not in response_data # Already liked by u1
+
+    def test_suggest_posts_no_suggestions(self, client):
+        u1 = create_user_directly("u1_no_post_sug", "pw")
+        u2_friend = create_user_directly("u2_friend_no_post_sug", "pw")
+        create_friendship_directly(u1.id, u2_friend.id, status='accepted')
+        # u2_friend has not liked any posts, or liked posts u1 already interacted with.
+
+        login_test_user(client, username="u1_no_post_sug", password="pw")
+        response = client.get('/recommendations')
+        assert response.status_code == 200
+        assert "No new post suggestions right now." in response.data.decode()
+
+class TestSuggestGroupsLogic:
+    def test_suggest_groups_joined_by_friends(self, client):
+        u1 = create_user_directly("u1_sug_group", "pw") # Current user
+        u2_friend = create_user_directly("u2_friend_group", "pw") # Friend of u1
+        u3_creator = create_user_directly("u3_creator_group", "pw") # Group creator
+
+        create_friendship_directly(u1.id, u2_friend.id, status='accepted')
+
+        g1_joined_by_u2 = create_group_directly(name="G1 Joined by U2", creator_id=u3_creator.id)
+        g2_joined_by_u1 = create_group_directly(name="G2 Joined by U1", creator_id=u3_creator.id)
+
+        # u2_friend joins g1
+        add_user_to_group_directly(user_obj=u2_friend, group_obj=g1_joined_by_u2)
+        # u1 joins g2 (so g2 should not be suggested)
+        add_user_to_group_directly(user_obj=u1, group_obj=g2_joined_by_u1)
+
+        login_test_user(client, username="u1_sug_group", password="pw")
+        response = client.get('/recommendations')
+        assert response.status_code == 200
+        response_data = response.data.decode()
+
+        assert g1_joined_by_u2.name in response_data # Should be suggested
+        assert g2_joined_by_u1.name not in response_data # Already joined by u1
+
+    def test_suggest_groups_no_suggestions(self, client):
+        u1 = create_user_directly("u1_no_group_sug", "pw")
+        u2_friend = create_user_directly("u2_friend_no_group_sug", "pw")
+        u3_creator = create_user_directly("u3_creator_no_group_sug", "pw")
+        create_friendship_directly(u1.id, u2_friend.id, status='accepted')
+
+        g1 = create_group_directly(name="G1 Only U1", creator_id=u3_creator.id)
+        add_user_to_group_directly(u1, g1)
+        # u2_friend is not in any groups, or only in groups u1 is also in.
+
+        login_test_user(client, username="u1_no_group_sug", password="pw")
+        response = client.get('/recommendations')
+        assert response.status_code == 200
+        assert "No new group suggestions available at this time." in response.data.decode()

@@ -16,11 +16,18 @@
     {% for post in posts %}
       <article>
         <h3><a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a></h3>
-        <p><small>By {{ post.author_username }} on {{ post.timestamp }}
+        <p><small>By <a href="{{ url_for('user_profile', username=post.author_username) }}">{{ post.author_username }}</a> on {{ post.timestamp }}
           {% if post.last_edited %}
             (Edited: {{ post.last_edited }})
           {% endif %}
           | {{ post.likes }} like(s)
+          <br> {# Add a line break for better spacing of review info #}
+          Average Rating:
+            {% if post.review_count > 0 %}
+                {{ "%.1f" | format(post.average_rating) }}/5 ({{ post.review_count }} review{% if post.review_count != 1 %}s{% endif %})
+            {% else %}
+                No reviews yet.
+            {% endif %}
         </small></p>
         <p>{{ post.content[:200] }}... <a href="{{ url_for('view_post', post_id=post.id) }}">Read More</a>
         {% if session.logged_in and session.username == post.author_username %}

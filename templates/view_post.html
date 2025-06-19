@@ -12,7 +12,7 @@
 
   {% if post %}
     <h2>{{ post.title }}</h2>
-    <p><small>By {{ post.author_username }} on {{ post.timestamp }}</small></p>
+    <p><small>By <a href="{{ url_for('user_profile', username=post.author_username) }}">{{ post.author_username }}</a> on {{ post.timestamp }}</small></p>
     <p>{{ post.content | safe }}</p> {# Assuming content is safe or will be sanitized later #}
 
     <div style="margin-top: 15px; margin-bottom: 15px;">
@@ -30,6 +30,19 @@
         {% endif %}
     </div>
 
+    {# Display Average Rating #}
+    <div style="margin-top: 20px; margin-bottom: 20px;">
+        <h4>
+            Average Rating:
+            {% if post_reviews|length > 0 %}
+                {{ "%.1f" | format(average_rating) }}/5
+                <small>(from {{ post_reviews|length }} review{% if post_reviews|length != 1 %}s{% endif %})</small>
+            {% else %}
+                No reviews yet.
+            {% endif %}
+        </h4>
+    </div>
+
     {% if session.logged_in and session.username == post.author_username %}
     <hr>
     <a href="{{ url_for('edit_post', post_id=post.id) }}" class="btn btn-secondary" style="margin-top: 10px; margin-right: 5px;">Edit Post</a>
@@ -37,6 +50,61 @@
         <button type="submit" class="btn btn-danger">Delete Post</button>
     </form>
     {% endif %}
+
+    <hr style="margin-top: 30px; margin-bottom: 30px;">
+
+    {# Review Submission Form #}
+    {% if can_submit_review %}
+        <h3>Submit Your Review</h3>
+        <form method="POST" action="{{ url_for('add_review', post_id=post.id) }}">
+            <div class="form-group" style="margin-bottom: 10px;">
+                <label for="rating">Rating (1-5):</label>
+                <select class="form-control" id="rating" name="rating" required>
+                    <option value="5">5 Stars (Excellent)</option>
+                    <option value="4">4 Stars (Good)</option>
+                    <option value="3">3 Stars (Average)</option>
+                    <option value="2">2 Stars (Poor)</option>
+                    <option value="1">1 Star (Terrible)</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 10px;">
+                <label for="review_text">Your Review:</label>
+                <textarea class="form-control" id="review_text" name="review_text" rows="3" required></textarea>
+            </div>
+            <div style="margin-bottom: 20px;">
+                <button type="submit" class="btn btn-primary">Submit Review</button>
+            </div>
+        </form>
+        <hr style="margin-top: 30px; margin-bottom: 30px;">
+    {% endif %}
+
+    {# Display Existing Reviews #}
+    <h3>Reviews</h3>
+    <div id="reviews-section">
+        {% if post_reviews and post_reviews|length > 0 %}
+            {% for review in post_reviews %}
+                <div class="review" style="margin-bottom: 15px; padding: 10px; border: 1px solid #eee;">
+                    <p>
+                        <strong><a href="{{ url_for('user_profile', username=review.reviewer_username) }}">{{ review.reviewer_username }}</a></strong>
+                        rated: <strong>{{ review.rating }}/5 stars</strong>
+                        <small class="text-muted">({{ review.timestamp }})</small>
+                    </p>
+                    <p style="white-space: pre-wrap;">{{ review.review_text }}</p>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p id="no-reviews-message">
+                {% if not can_submit_review and not (session.logged_in and session.username == post.author_username) %}
+                    No reviews yet for this post.
+                {% elif session.logged_in and session.username == post.author_username %}
+                    Your post has no reviews yet.
+                {% elif not session.logged_in %}
+                     No reviews yet. <a href="{{ url_for('login') }}">Log in</a> to submit one.
+                {% endif %}
+                {# If can_submit_review is true, the form is shown, so no message needed here for that case #}
+            </p>
+        {% endif %}
+    </div>
 
     <hr style="margin-top: 30px; margin-bottom: 30px;">
 
@@ -62,7 +130,7 @@
         {% if comments and comments|length > 0 %}
             {% for comment in comments %}
                 <div class="comment" style="margin-bottom: 15px; padding: 10px; border: 1px solid #eee;">
-                    <p><strong>{{ comment.author_username }}</strong> <small class="text-muted">({{ comment.timestamp }})</small></p>
+                    <p><strong><a href="{{ url_for('user_profile', username=comment.author_username) }}">{{ comment.author_username }}</a></strong> <small class="text-muted">({{ comment.timestamp }})</small></p>
                     <p style="white-space: pre-wrap;">{{ comment.content }}</p>
                 </div>
             {% endfor %}
@@ -89,7 +157,9 @@
     var socket = io();
 
     // Get post_id from the page
-    var postId = {{ post.id }};
+    var postId = {{ post.id if post else 'null' }}; // Ensure post.id is available
+    if (!postId) return; // Do not proceed if postId is not available
+
     var room = 'post_' + postId;
 
     // Emit an event to join the room for this specific post
@@ -99,24 +169,23 @@
     socket.on('new_comment_event', function(comment) {
       if (comment.post_id === postId) {
         var commentsSection = document.getElementById('comments-section');
+        // Ensure commentsSection exists
         if (!commentsSection) {
-            // This part of the script might not be strictly necessary if the div is always present
-            // but good for robustness.
-            commentsSection = document.createElement('div');
-            commentsSection.id = 'comments-section';
-            var postContent = document.querySelector('.post-content'); // Adjust if your post content has a different class or ID
-            if (postContent) {
-                postContent.parentNode.insertBefore(commentsSection, postContent.nextSibling);
+            // Attempt to find where to inject comments section if it's missing
+            var reviewSection = document.getElementById('reviews-section');
+            if (reviewSection) {
+                commentsSection = document.createElement('div');
+                commentsSection.id = 'comments-section';
+                var commentsHeader = document.createElement('h3');
+                commentsHeader.textContent = 'Comments';
+                reviewSection.parentNode.insertBefore(commentsHeader, reviewSection.nextSibling);
+                reviewSection.parentNode.insertBefore(commentsSection, commentsHeader.nextSibling);
             } else {
-                // Fallback: find comment form and insert before it, or append to body
-                var commentForm = document.querySelector('form[action*="add_comment"]');
-                if (commentForm) {
-                    commentForm.parentNode.insertBefore(commentsSection, commentForm);
-                } else {
-                    document.body.appendChild(commentsSection); // Least ideal fallback
-                }
+                console.error("Could not find comments section or suitable anchor to create it.");
+                return;
             }
         }
+
 
         // Create the new comment element
         var commentDiv = document.createElement('div');
@@ -125,37 +194,48 @@
         commentDiv.style.padding = '10px';
         commentDiv.style.border = '1px solid #eee';
 
+        var authorLink = document.createElement('a');
+        authorLink.href = "/user/" + comment.author_username; // Simplified URL generation
+        authorLink.textContent = comment.author_username;
 
-        var commentAuthor = document.createElement('strong');
-        commentAuthor.textContent = comment.author_username;
+        var commentAuthorStrong = document.createElement('strong');
+        commentAuthorStrong.appendChild(authorLink);
 
-        var commentTimestamp = document.createElement('small'); // Changed to small to match existing
+        var commentTimestamp = document.createElement('small');
         commentTimestamp.classList.add('text-muted');
-        // Format timestamp. Assuming comment.timestamp is a string like "YYYY-MM-DD HH:MM:SS" from server
-        // JS Date needs 'T' separator for ISO-like strings if not fully ISO, and 'Z' for UTC.
-        // Safest to parse manually or use a library if format is inconsistent.
-        // For simplicity, assuming it's compatible with `new Date()`.
-        var date = new Date(comment.timestamp.replace(' ', 'T') + 'Z'); // Adjust if timestamp is already UTC or in local time
+        var date = new Date(comment.timestamp.replace(' ', 'T') + 'Z');
         commentTimestamp.textContent = ' (' + date.toLocaleString() + ')';
 
 
         var commentContent = document.createElement('p');
-        commentContent.style.whiteSpace = 'pre-wrap'; // Match existing style
+        commentContent.style.whiteSpace = 'pre-wrap';
         commentContent.textContent = comment.content;
 
-        commentDiv.appendChild(commentAuthor);
-        commentDiv.appendChild(commentTimestamp); // Timestamp next to author
-        commentDiv.appendChild(document.createElement('br')); // Line break before content if desired, or structure differently
-        commentDiv.appendChild(commentContent);
-        // No <hr> inside each comment, but after it if that's the style, or handled by loop structure
+        var pAuthor = document.createElement('p');
+        pAuthor.appendChild(commentAuthorStrong);
+        pAuthor.appendChild(document.createTextNode(' ')); // Add space
+        pAuthor.appendChild(commentTimestamp);
 
-        // Append the new comment to the section
-        commentsSection.appendChild(commentDiv);
+        commentDiv.appendChild(pAuthor);
+        commentDiv.appendChild(commentContent);
+
+        // Prepend or append based on desired order (newest first or last)
+        // Assuming newest comments might go on top, or sort on server and always append
+        var firstChild = commentsSection.firstChild;
+        if (firstChild && firstChild.id === 'no-comments-message'){
+            firstChild.remove(); // Remove "No comments" message
+            commentsSection.appendChild(commentDiv); // Append if it was the only thing
+        } else if (firstChild) {
+            commentsSection.insertBefore(commentDiv, firstChild); // Prepend to existing comments
+        } else {
+           commentsSection.appendChild(commentDiv); // Append if section was empty but no message
+        }
+
 
         // Optional: If there's a "No comments yet" message, remove it
         var noCommentsMessage = document.getElementById('no-comments-message');
         if (noCommentsMessage) {
-          noCommentsMessage.remove();
+          noCommentsMessage.style.display = 'none'; // Hide or remove
         }
       }
     });

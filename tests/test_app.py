@@ -19,6 +19,7 @@ def app_instance():
     from app import app as flask_app
     flask_app.config['TESTING'] = True
     flask_app.config['SECRET_KEY'] = 'my_test_secret_key_for_socketio_tests' # Consistent secret key
+    flask_app.config['SERVER_NAME'] = 'localhost.test' # Added for url_for to work in tests
     return flask_app
 
 @pytest.fixture
@@ -50,7 +51,11 @@ def _login_user(client, username, password):
 def _create_post(client, title="Test Post Title", content="Test Post Content"):
     # Assumes client is already logged in
     client.post(url_for('create_post'), data={'title': title, 'content': content}, follow_redirects=True)
-    return flask_app_for_helpers.blog_post_id_counter
+    # Assumes client is already logged in
+    # Use app_instance passed to the test, or rely on current_app if context is guaranteed
+    from flask import current_app
+    client.post(url_for('create_post'), data={'title': title, 'content': content}, follow_redirects=True)
+    return current_app.blog_post_id_counter
 
 
 @pytest.fixture
@@ -83,7 +88,7 @@ def manage_app_state(app_instance):
 
     cleanup_uploads(upload_folder)
 
-    from app import blog_posts, users, comments, post_likes, private_messages as app_private_messages, app as current_app_instance
+    from app import blog_posts, users, comments, post_likes, private_messages as app_private_messages, app as current_app_instance, blog_reviews
 
     users.clear()
     users["demo"] = {
@@ -118,6 +123,11 @@ def manage_app_state(app_instance):
     event_rsvps.clear()
     current_app_instance.event_id_counter = 0
 
+    # Clear review data
+    blog_reviews.clear()
+    current_app_instance.blog_review_id_counter = 0
+
+
     yield
 
     cleanup_uploads(upload_folder)
@@ -139,6 +149,10 @@ def manage_app_state(app_instance):
     events.clear()
     event_rsvps.clear()
     current_app_instance.event_id_counter = 0
+
+    # Clear review data after tests
+    blog_reviews.clear()
+    current_app_instance.blog_review_id_counter = 0
 
 
 # --- Existing tests ... (keeping them as is) ---
@@ -1419,6 +1433,226 @@ class TestEventManager:
 # Note: The comment block at the end of the original file is removed by this replacement.
 # If it's important, it would need to be re-added after the TestEventManager class.
 # For now, assuming it's not critical for test functionality.
+
+# --- Blog Review Tests ---
+class TestBlogReviews:
+
+    def test_submit_review_success(self, client, app_instance):
+        from app import blog_reviews as app_blog_reviews # Import for assertion
+
+        _register_user(client, "reviewer", "password")
+        _register_user(client, "reviewer", "password")
+        _register_user(client, "author_br", "password") # Use a unique author name for this test class
+
+        _login_user(client, "author_br", "password")
+        post_id = _create_post(client, title="Reviewable Post", content="Content to review")
+        print(f"DEBUG: Created post_id in test_submit_review_success: {post_id}") # DEBUG
+        client.get('/logout', follow_redirects=True) # Author logs out
+
+        _login_user(client, "reviewer", "password")
+        review_data = {'rating': '5', 'review_text': 'This is a great post!'}
+        response = client.post(url_for('add_review', post_id=post_id), data=review_data, follow_redirects=False)
+
+        assert response.status_code == 302
+        expected_path_success = url_for('view_post', post_id=post_id, _external=False)
+        assert response.location.endswith(expected_path_success)
+
+        response_view_post = client.get(url_for('view_post', post_id=post_id)) # Use url_for for consistency
+        assert b"Review submitted successfully!" in response_view_post.data
+        assert b"reviewer" in response_view_post.data # Reviewer's name
+        assert b"5/5 stars" in response_view_post.data # Rating
+        assert b"This is a great post!" in response_view_post.data # Review text
+
+        assert len(app_blog_reviews) == 1
+        assert app_blog_reviews[0]['reviewer_username'] == 'reviewer'
+        assert app_blog_reviews[0]['post_id'] == post_id
+        assert app_blog_reviews[0]['rating'] == 5
+
+    def test_submit_review_not_logged_in(self, client, app_instance):
+        _register_user(client, "author_br_nli", "password")
+        _login_user(client, "author_br_nli", "password")
+        post_id = _create_post(client, title="Post for Unauth Review", content="Content")
+        client.get('/logout', follow_redirects=True) # Ensure no one is logged in
+
+        review_data = {'rating': '4', 'review_text': 'Trying to review while logged out'}
+        response = client.post(url_for('add_review', post_id=post_id), data=review_data, follow_redirects=False)
+
+        assert response.status_code == 302
+        expected_path_login = url_for('login', _external=False)
+        assert response.location.endswith(expected_path_login)
+
+        response_login_page = client.get(url_for('login'))
+        assert b"You need to be logged in to access this page." in response_login_page.data
+
+        from app import blog_reviews as app_blog_reviews
+        assert len(app_blog_reviews) == 0
+
+    def test_submit_review_own_post(self, client, app_instance):
+        _register_user(client, "author_own_post", "password")
+        _login_user(client, "author_own_post", "password")
+        post_id = _create_post(client, title="My Own Post", content="I wrote this")
+
+        review_data = {'rating': '5', 'review_text': 'Reviewing my own masterpiece'}
+        response = client.post(url_for('add_review', post_id=post_id), data=review_data, follow_redirects=False)
+
+        assert response.status_code == 302
+        expected_path_own_post = url_for('view_post', post_id=post_id, _external=False)
+        assert response.location.endswith(expected_path_own_post)
+
+        response_view_post = client.get(url_for('view_post', post_id=post_id))
+        assert b"You cannot review your own post." in response_view_post.data
+
+        from app import blog_reviews as app_blog_reviews
+        assert len(app_blog_reviews) == 0
+
+    def test_submit_review_duplicate(self, client, app_instance):
+        from app import blog_reviews as app_blog_reviews
+        _register_user(client, "reviewer_dup", "password")
+        _register_user(client, "author_br_dup", "password")
+        _login_user(client, "author_br_dup", "password")
+        post_id = _create_post(client, title="Post for Duplicate Review", content="Content")
+        client.get('/logout', follow_redirects=True)
+
+        _login_user(client, "reviewer_dup", "password")
+        # First review
+        client.post(url_for('add_review', post_id=post_id), data={'rating': '4', 'review_text': 'First review!'}, follow_redirects=True)
+        assert len(app_blog_reviews) == 1
+
+        # Attempt second review
+        review_data_dup = {'rating': '3', 'review_text': 'Trying to review again'}
+        response = client.post(url_for('add_review', post_id=post_id), data=review_data_dup, follow_redirects=False)
+
+        assert response.status_code == 302
+        expected_path_dup = url_for('view_post', post_id=post_id, _external=False)
+        assert response.location.endswith(expected_path_dup)
+
+        response_view_post = client.get(url_for('view_post', post_id=post_id))
+        assert b"You have already reviewed this post." in response_view_post.data
+        assert len(app_blog_reviews) == 1 # Count should still be 1
+
+    def test_view_post_with_reviews_and_average_rating(self, client, app_instance):
+        _register_user(client, "author_avg", "password")
+        _register_user(client, "reviewer1_avg", "password")
+        _register_user(client, "reviewer2_avg", "password")
+
+        _login_user(client, "author_avg", "password")
+        post_id = _create_post(client, title="Post for Avg Rating", content="Content")
+        client.get('/logout', follow_redirects=True)
+
+        _login_user(client, "reviewer1_avg", "password")
+        client.post(url_for('add_review', post_id=post_id), data={'rating': '4', 'review_text': 'Good post.'}, follow_redirects=True)
+        client.get('/logout', follow_redirects=True)
+
+        _login_user(client, "reviewer2_avg", "password")
+        client.post(url_for('add_review', post_id=post_id), data={'rating': '5', 'review_text': 'Excellent post!'}, follow_redirects=True)
+        client.get('/logout', follow_redirects=True) # Log out to view as anonymous or any user
+
+        response = client.get(url_for('view_post', post_id=post_id))
+        assert response.status_code == 200
+        assert b"reviewer1_avg" in response.data
+        assert b"4/5 stars" in response.data
+        assert b"Good post." in response.data
+        assert b"reviewer2_avg" in response.data
+        assert b"5/5 stars" in response.data
+        assert b"Excellent post!" in response.data
+        print(f"DEBUG: Response data for average rating: {response.data.decode()}") # DEBUG
+        assert b"Average Rating:" in response.data # Check for the label
+        assert b"4.5/5" in response.data      # Check for the value (4+5)/2 = 4.5
+        assert b"(from 2 reviews)" in response.data
+
+    def test_submit_review_invalid_rating_too_low(self, client, app_instance):
+        _register_user(client, "reviewer_inv_low", "password")
+        _register_user(client, "author_br_inv_low", "password")
+        _login_user(client, "author_br_inv_low", "password")
+        post_id = _create_post(client, title="Post for Invalid Rating Low", content="Content")
+        client.get('/logout', follow_redirects=True)
+
+        _login_user(client, "reviewer_inv_low", "password")
+        review_data = {'rating': '0', 'review_text': 'Rating too low'}
+        response = client.post(url_for('add_review', post_id=post_id), data=review_data, follow_redirects=False)
+
+        assert response.status_code == 302
+        expected_path_inv_low = url_for('view_post', post_id=post_id, _external=False)
+        assert response.location.endswith(expected_path_inv_low)
+        response_view_post = client.get(url_for('view_post', post_id=post_id))
+        assert b"Rating must be an integer between 1 and 5 stars." in response_view_post.data
+        from app import blog_reviews as app_blog_reviews
+        assert len(app_blog_reviews) == 0
+
+    def test_submit_review_invalid_rating_too_high(self, client, app_instance):
+        _register_user(client, "reviewer_inv_high", "password")
+        _register_user(client, "author_br_inv_high", "password")
+        _login_user(client, "author_br_inv_high", "password")
+        post_id = _create_post(client, title="Post for Invalid Rating High", content="Content")
+        client.get('/logout', follow_redirects=True)
+
+        _login_user(client, "reviewer_inv_high", "password")
+        review_data = {'rating': '6', 'review_text': 'Rating too high'}
+        response = client.post(url_for('add_review', post_id=post_id), data=review_data, follow_redirects=False)
+        assert response.status_code == 302
+        expected_path_inv_high = url_for('view_post', post_id=post_id, _external=False)
+        assert response.location.endswith(expected_path_inv_high)
+        response_view_post = client.get(url_for('view_post', post_id=post_id))
+        assert b"Rating must be an integer between 1 and 5 stars." in response_view_post.data
+        from app import blog_reviews as app_blog_reviews
+        assert len(app_blog_reviews) == 0
+
+    def test_submit_review_invalid_rating_non_numeric(self, client, app_instance):
+        _register_user(client, "reviewer_inv_nan", "password")
+        _register_user(client, "author_br_inv_nan", "password")
+        _login_user(client, "author_br_inv_nan", "password")
+        post_id = _create_post(client, title="Post for Invalid Rating NaN", content="Content")
+        client.get('/logout', follow_redirects=True)
+
+        _login_user(client, "reviewer_inv_nan", "password")
+        review_data = {'rating': 'abc', 'review_text': 'Rating is not a number'}
+        response = client.post(url_for('add_review', post_id=post_id), data=review_data, follow_redirects=False)
+        assert response.status_code == 302
+        expected_path_inv_nan = url_for('view_post', post_id=post_id, _external=False)
+        assert response.location.endswith(expected_path_inv_nan)
+        response_view_post = client.get(url_for('view_post', post_id=post_id))
+        assert b"Rating must be an integer between 1 and 5 stars." in response_view_post.data
+        from app import blog_reviews as app_blog_reviews
+        assert len(app_blog_reviews) == 0
+
+    def test_submit_review_empty_text(self, client, app_instance):
+        _register_user(client, "reviewer_empty_text", "password")
+        _register_user(client, "author_br_empty_text", "password")
+        _login_user(client, "author_br_empty_text", "password")
+        post_id = _create_post(client, title="Post for Empty Review Text", content="Content")
+        client.get('/logout', follow_redirects=True)
+
+        _login_user(client, "reviewer_empty_text", "password")
+        review_data = {'rating': '5', 'review_text': '  '} # Empty/whitespace text
+        response = client.post(url_for('add_review', post_id=post_id), data=review_data, follow_redirects=False)
+
+        assert response.status_code == 302
+        expected_path_empty_text = url_for('view_post', post_id=post_id, _external=False)
+        assert response.location.endswith(expected_path_empty_text)
+        response_view_post = client.get(url_for('view_post', post_id=post_id))
+        assert b"Review text cannot be empty." in response_view_post.data
+        from app import blog_reviews as app_blog_reviews
+        assert len(app_blog_reviews) == 0
+
+    def test_submit_review_missing_rating(self, client, app_instance):
+        _register_user(client, "reviewer_missing_rating", "password")
+        _register_user(client, "author_br_missing_rating", "password")
+        _login_user(client, "author_br_missing_rating", "password")
+        post_id = _create_post(client, title="Post for Missing Rating", content="Content")
+        client.get('/logout', follow_redirects=True)
+
+        _login_user(client, "reviewer_missing_rating", "password")
+        # Note: request.form.get('rating') will be None if not provided
+        review_data = {'review_text': 'Some review text'}
+        response = client.post(url_for('add_review', post_id=post_id), data=review_data, follow_redirects=False)
+
+        assert response.status_code == 302
+        expected_path_missing_rating = url_for('view_post', post_id=post_id, _external=False)
+        assert response.location.endswith(expected_path_missing_rating)
+        response_view_post = client.get(url_for('view_post', post_id=post_id))
+        assert b"Rating is required." in response_view_post.data # Updated expected message
+        from app import blog_reviews as app_blog_reviews
+        assert len(app_blog_reviews) == 0
 
 class TestNotifications(unittest.TestCase):
     @classmethod

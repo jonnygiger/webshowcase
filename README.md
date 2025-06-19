@@ -365,3 +365,226 @@ To keep users informed about recent activity on the platform, an in-app notifica
     *   Integration with `APScheduler` for background task scheduling.
     *   Dynamic generation of user-facing alerts based on application events.
     *   New routes and templates for displaying notifications.
+
+## RESTful API
+
+This application provides a RESTful API for interacting with its core resources: Users, Posts, and Events.
+
+### Authentication
+
+The API uses JSON Web Tokens (JWT) for authentication. To access protected endpoints, you first need to obtain a token by sending your credentials to the `/api/login` endpoint.
+
+**POST /api/login**
+
+*   **Request:**
+    ```json
+    {
+        "username": "your_username",
+        "password": "your_password"
+    }
+    ```
+*   **Response (Success - 200 OK):**
+    ```json
+    {
+        "access_token": "your_jwt_access_token"
+    }
+    ```
+*   **Response (Failure - 401 Unauthorized):**
+    ```json
+    {
+        "message": "Invalid credentials"
+    }
+    ```
+
+Include the obtained `access_token` in the `Authorization` header as a Bearer token for subsequent requests to protected endpoints:
+`Authorization: Bearer <your_jwt_access_token>`
+
+### Users API
+
+*   **GET /api/users**
+    *   Description: Retrieves a list of all users.
+    *   Authentication: Not required.
+    *   Response:
+        ```json
+        {
+            "users": [
+                {
+                    "id": 1,
+                    "username": "demo",
+                    "uploaded_images": null
+                }
+                // ... other users
+            ]
+        }
+        ```
+
+*   **GET /api/users/<user_id>**
+    *   Description: Retrieves a specific user by ID.
+    *   Authentication: Not required.
+    *   Response:
+        ```json
+        {
+            "user": {
+                "id": 1,
+                "username": "demo",
+                "uploaded_images": null
+            }
+        }
+        ```
+
+### Posts API
+
+*   **GET /api/posts**
+    *   Description: Retrieves a list of all posts.
+    *   Authentication: Not required.
+    *   Response:
+        ```json
+        {
+            "posts": [
+                {
+                    "id": 1,
+                    "title": "My First Post",
+                    "content": "This is the content of my first post.",
+                    "timestamp": "2023-10-27T10:00:00",
+                    "last_edited": null,
+                    "user_id": 1,
+                    "author_username": "demo"
+                }
+                // ... other posts
+            ]
+        }
+        ```
+
+*   **GET /api/posts/<post_id>**
+    *   Description: Retrieves a specific post by ID.
+    *   Authentication: Not required.
+    *   Response (Example):
+        ```json
+        {
+            "post": {
+                "id": 1,
+                "title": "My First Post",
+                // ... other fields
+            }
+        }
+        ```
+
+*   **POST /api/posts**
+    *   Description: Creates a new post.
+    *   Authentication: Required (JWT Bearer Token).
+    *   Request Body:
+        ```json
+        {
+            "title": "New API Post",
+            "content": "Content for the new post from API."
+        }
+        ```
+    *   Response (Success - 201 Created):
+        ```json
+        {
+            "message": "Post created successfully",
+            "post": {
+                "id": 2,
+                "title": "New API Post",
+                "content": "Content for the new post from API.",
+                // ... other fields
+            }
+        }
+        ```
+
+*   **PUT /api/posts/<post_id>**
+    *   Description: Updates an existing post. Only the author of the post can update it.
+    *   Authentication: Required (JWT Bearer Token).
+    *   Request Body:
+        ```json
+        {
+            "title": "Updated Post Title",
+            "content": "Updated content."
+        }
+        ```
+    *   Response (Success - 200 OK):
+        ```json
+        {
+            "message": "Post updated successfully",
+            "post": {
+                "id": 1,
+                "title": "Updated Post Title",
+                "content": "Updated content."
+                // ... other fields
+            }
+        }
+        ```
+
+*   **DELETE /api/posts/<post_id>**
+    *   Description: Deletes a post. Only the author of the post can delete it.
+    *   Authentication: Required (JWT Bearer Token).
+    *   Response (Success - 200 OK):
+        ```json
+        {
+            "message": "Post deleted successfully"
+        }
+        ```
+
+### Events API
+
+*   **GET /api/events**
+    *   Description: Retrieves a list of all events.
+    *   Authentication: Not required.
+    *   Response (Example):
+        ```json
+        {
+            "events": [
+                {
+                    "id": 1,
+                    "title": "Community Meetup",
+                    "description": "Annual community gathering.",
+                    "date": "2023-11-15",
+                    "time": "18:00",
+                    "location": "Community Hall",
+                    "created_at": "2023-10-20T14:30:00",
+                    "user_id": 1,
+                    "organizer_username": "demo"
+                }
+                // ... other events
+            ]
+        }
+        ```
+
+*   **GET /api/events/<event_id>**
+    *   Description: Retrieves a specific event by ID.
+    *   Authentication: Not required.
+    *   Response (Example):
+        ```json
+        {
+            "event": {
+                "id": 1,
+                "title": "Community Meetup",
+                // ... other fields
+            }
+        }
+        ```
+
+*   **POST /api/events**
+    *   Description: Creates a new event.
+    *   Authentication: Required (JWT Bearer Token).
+    *   Request Body:
+        ```json
+        {
+            "title": "New Tech Talk",
+            "description": "A talk on new technologies.",
+            "date": "2023-12-01",
+            "time": "19:00",
+            "location": "Online"
+        }
+        ```
+    *   Response (Success - 201 Created):
+        ```json
+        {
+            "message": "Event created successfully",
+            "event": {
+                "id": 2,
+                "title": "New Tech Talk",
+                // ... other fields
+            }
+        }
+        ```

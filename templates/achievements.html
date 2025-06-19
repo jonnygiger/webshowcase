@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}{{ profile_user.username }}'s Achievements{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{{ profile_user.username }}'s Achievements</h2>
+    <hr>
+
+    {% if user_earned_achievements_details %}
+        <h3>Earned Achievements ({{ user_earned_achievements_details|length }})</h3>
+        <div class="list-group mb-4">
+            {% for ua_detail in user_earned_achievements_details %}
+                <div class="list-group-item">
+                    <h5 class="mb-1">
+                        <span class="achievement-icon-page">{{ ua_detail.achievement.icon_url | default('[ICON]') }}</span>
+                        {{ ua_detail.achievement.name }}
+                    </h5>
+                    <p class="mb-1">{{ ua_detail.achievement.description }}</p>
+                    <small>Awarded: {{ ua_detail.awarded_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>{{ profile_user.username }} has not earned any achievements yet.</p>
+    {% endif %}
+
+    <h3 class="mt-5">All Available Achievements</h3>
+    <div class="list-group">
+        {% for ach in all_system_achievements %}
+            <div class="list-group-item {% if ach.id in earned_achievement_ids %}achievement-earned-bg{% else %}achievement-not-earned-bg{% endif %}">
+                <h5 class="mb-1">
+                    <span class="achievement-icon-page">{{ ach.icon_url | default('[ICON]') }}</span>
+                    {{ ach.name }}
+                    {% if ach.id in earned_achievement_ids %}
+                        <span class="badge bg-success float-end">Earned</span>
+                    {% else %}
+                        <span class="badge bg-secondary float-end">Not Earned</span>
+                    {% endif %}
+                </h5>
+                <p class="mb-1">{{ ach.description }}</p>
+                <small class="text-muted">Criteria: {{ ach.criteria_type }} >= {{ ach.criteria_value }}</small>
+            </div>
+        {% endfor %}
+    </div>
+
+    <div class="mt-3">
+        <a href="{{ url_for('user_profile', username=profile_user.username) }}" class="btn btn-outline-secondary">Back to {{ profile_user.username }}'s Profile</a>
+    </div>
+
+</div>
+{% endblock %}

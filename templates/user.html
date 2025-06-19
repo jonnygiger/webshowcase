@@ -202,4 +202,31 @@
             <p>{{ user.username }} has not joined any groups yet.</p> {# Use user.username for consistency #}
         {% endif %}
     </div>
+
+    {# Achievements Section #}
+    <div class="content-box mt-4 user-achievements">
+    {% if user_achievements %}
+      <h3>Achievements</h3>
+      <div class="achievements-grid">
+        {% for ua in user_achievements %}
+          <div class="achievement-item" title="{{ ua.achievement.description }}
+Awarded: {{ ua.awarded_at.strftime('%Y-%m-%d') }}">
+            {# Assuming ua.achievement.icon_url is a text placeholder or future image path #}
+            <span class="achievement-icon">{{ ua.achievement.icon_url | default('[ICON]') }}</span>
+            <p class="achievement-name">{{ ua.achievement.name }}</p>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      {% if current_user and current_user.id == user.id %}
+        <p>You haven't earned any achievements yet. Keep exploring and contributing!</p>
+      {% else %}
+        <p>{{ user.username }} hasn't earned any achievements yet.</p>
+      {% endif %}
+    {% endif %}
+    {# Link to all achievements page, visible whether achievements are displayed or not #}
+    <div class="mt-2 text-center"> {# Centered the link for better appearance #}
+        <a href="{{ url_for('view_user_achievements', username=user.username) }}" class="btn btn-sm btn-outline-info">View All Achievements Details</a>
+    </div>
+    </div>
 {% endblock %}

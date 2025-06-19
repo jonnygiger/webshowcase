@@ -4,8 +4,9 @@ import json # For checking JSON responses
 import io # For BytesIO
 from unittest.mock import patch, call, ANY
 from app import app, db, socketio # Import socketio from app
-from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus # Added Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus
+from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus, Achievement, UserAchievement, Comment # Added Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus, Achievement, UserAchievement, Comment
 from recommendations import update_trending_hashtags # For testing the job logic
+from achievements_logic import check_and_award_achievements, get_user_stat
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash
 
@@ -1954,6 +1955,233 @@ class TestFileSharing(AppTestCase):
             self.assertIsNone(SharedFile.query.get(shared_file.id))
             self.assertFalse(os.path.exists(file_path))
             self.logout()
+
+
+# Helper function to seed achievements for tests
+def seed_test_achievements():
+    achievements_data = [
+        {"name": "Test First Post", "description": "Desc1", "icon_url": "icon1", "criteria_type": "num_posts", "criteria_value": 1},
+        {"name": "Test 5 Posts", "description": "Desc2", "icon_url": "icon2", "criteria_type": "num_posts", "criteria_value": 5},
+        {"name": "Test First Comment", "description": "Desc3", "icon_url": "icon3", "criteria_type": "num_comments_given", "criteria_value": 1},
+    ]
+    ach_ids = {}
+    for ach_data in achievements_data:
+        existing_achievement = Achievement.query.filter_by(name=ach_data["name"]).first()
+        if not existing_achievement:
+            ach = Achievement(**ach_data)
+            db.session.add(ach)
+            db.session.commit() # Commit after each add to get ID
+            ach_ids[ach_data['name']] = ach.id
+        else:
+            ach_ids[ach_data['name']] = existing_achievement.id
+
+    # Ensure all are committed before returning IDs based on fresh query
+    # This might be redundant if committing after each add, but safe.
+    db.session.commit()
+    # Re-fetch IDs to be certain, especially if some existed and some were added.
+    final_ach_ids = {ach_data['name']: Achievement.query.filter_by(name=ach_data['name']).first().id for ach_data in achievements_data}
+    return final_ach_ids
+
+class AchievementLogicTests(AppTestCase):
+
+    def test_get_user_stat_num_posts(self):
+        with app.app_context():
+            # user1 is created in AppTestCase's setUp
+            user = self.user1
+
+            # Add posts for the user
+            post1 = Post(title='P1', content='C1', user_id=user.id)
+            post2 = Post(title='P2', content='C2', user_id=user.id)
+            db.session.add_all([post1, post2])
+            db.session.commit()
+
+            self.assertEqual(get_user_stat(user, 'num_posts'), 2)
+            self.assertEqual(get_user_stat(user, 'num_comments_given'), 0)
+
+    def test_award_first_post_achievement(self):
+        with app.app_context():
+            seed_test_achievements()
+            user = self.user2 # Using a different user from AppTestCase
+
+            # Initially no achievement
+            self.assertEqual(UserAchievement.query.filter_by(user_id=user.id).count(), 0)
+
+            # User creates a post
+            post = Post(title='My First Test Post', content='Content', user_id=user.id)
+            db.session.add(post)
+            db.session.commit()
+
+            check_and_award_achievements(user.id)
+
+            first_post_ach = Achievement.query.filter_by(name="Test First Post").first()
+            self.assertIsNotNone(first_post_ach)
+            user_ach = UserAchievement.query.filter_by(user_id=user.id, achievement_id=first_post_ach.id).first()
+            self.assertIsNotNone(user_ach)
+
+            five_posts_ach = Achievement.query.filter_by(name="Test 5 Posts").first()
+            if five_posts_ach:
+                user_ach_5_posts = UserAchievement.query.filter_by(user_id=user.id, achievement_id=five_posts_ach.id).first()
+                self.assertIsNone(user_ach_5_posts)
+
+    def test_award_multiple_achievements_incrementally(self):
+        with app.app_context():
+            ach_ids = seed_test_achievements()
+            user = self.user3 # Using another user
+
+            # Create 1st post
+            db.session.add(Post(title='T1', content='C', user_id=user.id))
+            db.session.commit()
+            check_and_award_achievements(user.id)
+            self.assertIsNotNone(UserAchievement.query.filter_by(user_id=user.id, achievement_id=ach_ids["Test First Post"]).first())
+            if "Test 5 Posts" in ach_ids:
+                self.assertIsNone(UserAchievement.query.filter_by(user_id=user.id, achievement_id=ach_ids["Test 5 Posts"]).first())
+
+            for i in range(2, 5): # Posts 2, 3, 4
+                db.session.add(Post(title=f'T{i}', content='C', user_id=user.id))
+            db.session.commit()
+            check_and_award_achievements(user.id)
+            if "Test 5 Posts" in ach_ids:
+                self.assertIsNone(UserAchievement.query.filter_by(user_id=user.id, achievement_id=ach_ids["Test 5 Posts"]).first())
+
+            db.session.add(Post(title='T5', content='C', user_id=user.id)) # 5th post
+            db.session.commit()
+            check_and_award_achievements(user.id)
+            if "Test 5 Posts" in ach_ids:
+                self.assertIsNotNone(UserAchievement.query.filter_by(user_id=user.id, achievement_id=ach_ids["Test 5 Posts"]).first())
+
+    def test_no_duplicate_achievements_awarded(self):
+        with app.app_context():
+            ach_ids = seed_test_achievements()
+            user = self.user1
+
+            db.session.add(Post(title='P1 Duplicate Test', content='C', user_id=user.id))
+            db.session.commit()
+
+            check_and_award_achievements(user.id)
+            self.assertEqual(UserAchievement.query.filter_by(user_id=user.id, achievement_id=ach_ids["Test First Post"]).count(), 1)
+
+            check_and_award_achievements(user.id) # Call again
+            self.assertEqual(UserAchievement.query.filter_by(user_id=user.id, achievement_id=ach_ids["Test First Post"]).count(), 1)
+
+    def test_display_achievements_on_user_profile(self):
+        with app.app_context():
+            ach_ids = seed_test_achievements()
+            user = User(username='profile_ach_user', email='pau@example.com', password_hash=generate_password_hash('password123'))
+            db.session.add(user)
+            db.session.commit()
+
+            first_post_ach_id = ach_ids.get("Test First Post")
+            self.assertIsNotNone(first_post_ach_id, "Test First Post achievement was not seeded correctly.")
+            user_ach = UserAchievement(user_id=user.id, achievement_id=first_post_ach_id)
+            db.session.add(user_ach)
+            db.session.commit()
+
+            response = self.client.get(f'/user/{user.username}')
+            self.assertEqual(response.status_code, 200)
+
+            response_data = response.get_data(as_text=True)
+            # Check for the achievements section title
+            self.assertIn("<h3>Achievements</h3>", response_data)
+            # Check if earned achievement name is present
+            self.assertIn("Test First Post", response_data)
+            self.assertIn("[ICON]", response_data)
+
+            # Check that an unearned achievement (e.g. Test 5 Posts) is NOT directly listed in the earned section
+            # This is a bit tricky as "Test 5 Posts" might appear in a link to "All Achievements"
+            # We need to be more specific if the test fails due to that.
+            # For now, assume it's not part of a general link text on the profile page itself.
+            if "Test 5 Posts" in ach_ids:
+                # A more robust check would parse HTML, but this is a basic check.
+                # We are checking if "Test 5 Posts" appears specifically within the rendered achievement items.
+                # The current structure in user.html for achievements is:
+                # <div class="achievement-item" title="..."> <span class="achievement-icon">...</span> <p class="achievement-name">ACH_NAME</p> </div>
+                # So, if "Test 5 Posts" is NOT earned, it should not appear as a <p class="achievement-name">Test 5 Posts</p>
+                self.assertNotIn('<p class="achievement-name">Test 5 Posts</p>', response_data)
+
+    def test_no_achievements_message_on_profile(self):
+        with app.app_context():
+            user = User(username='no_ach_user_profile', email='naup@example.com', password_hash=generate_password_hash('password123'))
+            db.session.add(user)
+            db.session.commit()
+
+            response = self.client.get(f'/user/{user.username}')
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+            self.assertIn("hasn&#39;t earned any achievements yet.</p>", response_data) # Check for HTML escaped apostrophe
+            self.assertNotIn('<div class="achievements-grid">', response_data) # Grid should not be there if no achievements
+
+    def test_view_user_achievements_page_earned_and_all(self):
+        with app.app_context():
+            ach_ids = seed_test_achievements()
+            user = User(username='all_ach_user_page', email='aaup@example.com', password_hash=generate_password_hash('password123'))
+            db.session.add(user)
+            db.session.commit()
+
+            first_comment_ach_id = ach_ids.get("Test First Comment")
+            self.assertIsNotNone(first_comment_ach_id, "Test First Comment achievement not seeded.")
+            user_ach = UserAchievement(user_id=user.id, achievement_id=first_comment_ach_id)
+            db.session.add(user_ach)
+            db.session.commit()
+
+            self.login(user.username, 'password123')
+
+            response = self.client.get(f'/user/{user.username}/achievements')
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+
+            self.assertIn(f"{user.username}'s Achievements", response_data)
+
+            self.assertIn("<h3>Earned Achievements", response_data)
+            self.assertIn("Test First Comment", response_data)
+            self.assertIn("Awarded:", response_data)
+
+            self.assertIn("<h3>All Available Achievements</h3>", response_data)
+            self.assertIn("Test First Post", response_data)
+            self.assertIn("Test 5 Posts", response_data)
+
+            # Using more specific checks for badges based on provided HTML structure
+            self.assertIn("Test First Comment</h5>\n                    <p class="mb-1">Desc3</p>\n                    <small>Awarded: ", response_data) # Check it's in the earned list detail
+            self.assertIn("Test First Comment\n                       </h5>\n                       <p class="mb-1">Desc3</p>\n                       <small class="text-muted">Criteria: num_comments_given >= 1</small>", response_data) # Check this part to ensure it's in the "All" list
+            # The above is too fragile. Let's check for the badge directly.
+            self.assertInHTML('<span class="badge bg-success float-end">Earned</span>', response_data, achievement_name="Test First Comment")
+            self.assertInHTML('<span class="badge bg-secondary float-end">Not Earned</span>', response_data, achievement_name="Test First Post")
+            self.logout()
+
+    def test_view_user_achievements_page_no_earned(self):
+        with app.app_context():
+            seed_test_achievements()
+            user = User(username='no_earned_ach_page', email='neaup@example.com', password_hash=generate_password_hash('password123'))
+            db.session.add(user)
+            db.session.commit()
+
+            self.login(user.username, 'password123')
+
+            response = self.client.get(f'/user/{user.username}/achievements')
+            self.assertEqual(response.status_code, 200)
+            response_data = response.get_data(as_text=True)
+
+            self.assertIn(f"{user.username}'s Achievements", response_data)
+            self.assertIn(f"{user.username} has not earned any achievements yet.</p>", response_data)
+
+            self.assertIn("<h3>All Available Achievements</h3>", response_data)
+            self.assertIn("Test First Post", response_data)
+            self.assertIn("badge bg-secondary float-end", response_data)
+            self.assertNotIn("badge bg-success float-end", response_data)
+            self.logout()
+
+    # Helper for more robust HTML checking, if needed, can be added to AppTestCase
+    def assertInHTML(self, needle, haystack, achievement_name):
+        # This is a simplified check. For real HTML parsing, use BeautifulSoup or lxml.
+        # It tries to find the achievement name and then the needle (badge) in its vicinity.
+        try:
+            ach_name_idx = haystack.find(achievement_name)
+            self.assertTrue(ach_name_idx != -1, f"Achievement name '{achievement_name}' not found in HTML.")
+            # Search for the needle (e.g., badge HTML) within a reasonable range after the achievement name.
+            # This range might need adjustment based on actual HTML structure.
+            search_range = haystack[ach_name_idx : ach_name_idx + 300]
+            self.assertIn(needle, search_range, f"'{needle}' not found near '{achievement_name}' in HTML: {search_range[:200]}...")
+        except AttributeError: # if haystack is not a string
+             self.fail("Haystack for assertInHTML was not a string.")
 
     def test_delete_shared_file_sender(self):
         with app.app_context():

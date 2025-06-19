@@ -11,9 +11,9 @@
   {% endwith %}
 
   {% if post %}
-    <h2>{{ post.title }}</h2>
+    <h2 id="post-title">{{ post.title }}</h2>
     <p><small>By <a href="{{ url_for('user_profile', username=post.author_username) }}">{{ post.author_username }}</a> on {{ post.timestamp }}</small></p>
-    <p>{{ post.content | safe }}</p> {# Assuming content is safe or will be sanitized later #}
+    <p id="post-content">{{ post.content | safe }}</p> {# Assuming content is safe or will be sanitized later #}
 
     {% if post.hashtags %}
         <p style="margin-top: 10px;">
@@ -199,7 +199,7 @@
 
     {# Display Comments #}
     <h3>Comments</h3>
-    <div id="comments-section">
+    <div id="comments-list"> {# Changed ID to comments-list for clarity, will use this in JS #}
         {% if comments and comments|length > 0 %}
             {% for comment in comments %}
                 <div class="comment" style="margin-bottom: 15px; padding: 10px; border: 1px solid #eee;">
@@ -361,5 +361,97 @@
       }
     });
   });
+</script>
+
+<script type="text/javascript">
+document.addEventListener('DOMContentLoaded', function () {
+    const postId = {{ post.id if post else 'null' }};
+    if (!postId) {
+        console.error("Post ID not found for SSE.");
+        return;
+    }
+
+    const eventSource = new EventSource("{{ url_for('post_stream', post_id=post.id) }}");
+
+    eventSource.addEventListener('new_comment', function(event) {
+        const commentData = JSON.parse(event.data);
+        const commentsList = document.getElementById('comments-list'); // Use the new ID here
+        if (!commentsList) {
+            console.error("Comments list container not found.");
+            return;
+        }
+
+        // Remove "No comments yet" message if it exists
+        const noCommentsMessage = document.getElementById('no-comments-message');
+        if (noCommentsMessage) {
+            noCommentsMessage.remove();
+        }
+
+        const commentDiv = document.createElement('div');
+        commentDiv.className = 'comment'; // Match existing comment class
+        commentDiv.style.marginBottom = '15px';
+        commentDiv.style.padding = '10px';
+        commentDiv.style.border = '1px solid #eee';
+
+        const authorLink = document.createElement('a');
+        // Note: In a real app, generating URLs client-side like this is fragile.
+        // It's better if the server sends the fully resolved URL or if there's a robust client-side URL generator.
+        authorLink.href = '/user/' + encodeURIComponent(commentData.author_username);
+        authorLink.textContent = commentData.author_username;
+
+        const authorStrong = document.createElement('strong');
+        authorStrong.appendChild(authorLink);
+
+        const timestampSmall = document.createElement('small');
+        timestampSmall.className = 'text-muted';
+        // Format timestamp - assuming commentData.timestamp is ISO or easily parseable
+        try {
+            const date = new Date(commentData.timestamp);
+            timestampSmall.textContent = ' (' + date.toLocaleString() + ')';
+        } catch (e) {
+            timestampSmall.textContent = ' (' + commentData.timestamp + ')'; // Fallback
+        }
+
+
+        const contentP = document.createElement('p');
+        contentP.style.whiteSpace = 'pre-wrap';
+        contentP.textContent = commentData.content;
+
+        const headerP = document.createElement('p');
+        headerP.appendChild(authorStrong);
+        headerP.appendChild(document.createTextNode(' ')); // Space
+        headerP.appendChild(timestampSmall);
+
+        commentDiv.appendChild(headerP);
+        commentDiv.appendChild(contentP);
+
+        // Decide whether to prepend or append. For comments, usually newest appear first or last.
+        // Appending new comments at the end:
+        commentsList.appendChild(commentDiv);
+        // Or, to add at the beginning (newest first):
+        // commentsList.insertBefore(commentDiv, commentsList.firstChild);
+    });
+
+    eventSource.addEventListener('post_edited', function(event) {
+        const postData = JSON.parse(event.data);
+        const postTitleElement = document.getElementById('post-title');
+        const postContentElement = document.getElementById('post-content');
+
+        if (postTitleElement && postData.title) {
+            postTitleElement.textContent = postData.title;
+        }
+        if (postContentElement && postData.content) {
+            // If content might contain HTML and it's trusted, use innerHTML.
+            // Otherwise, textContent is safer. Assuming plain text for now.
+            postContentElement.textContent = postData.content;
+        }
+    });
+
+    eventSource.onerror = function(err) {
+        console.error("EventSource failed:", err);
+        // Optionally close and try to reconnect, or inform the user.
+        eventSource.close();
+    };
+});
 </script>
 {% endblock %}

@@ -164,6 +164,21 @@ This feature provides a dedicated page for each user, showcasing their activity 
     *   **User-Specific Views**: Enhances the application by providing views tailored to individual users, improving personalization.
     *   **Data Structures for User Association**: User data (like associated image filenames and blog post IDs) is managed within the `users` dictionary in `app.py`.
 
+### Profile Pictures
+
+Users can now personalize their profiles by uploading a profile picture.
+
+*   **Functionality**:
+    *   Allows logged-in users to upload an image file (PNG, JPG, JPEG, GIF) to be used as their profile picture.
+    *   Uploaded pictures are displayed on the user's profile page.
+    *   The user's profile picture (or a default image if none is uploaded) helps identify them, and is visible on their profile page. A link to "Change Profile Picture" is available on their own profile page.
+*   **Usage**:
+    *   To upload or change a profile picture, navigate to your "My Profile" page (link available in the navigation bar when logged in).
+    *   Click the "Change Profile Picture" button.
+    *   Alternatively, a direct link "Change Profile Picture" is available in the navigation bar for logged-in users.
+    *   On the upload page, choose an image file and submit.
+*   **Storage**: Profile pictures are stored in the `static/profile_pics/` directory. The specific path for each user is saved in the database.
+
 ### Blog Post Comments
 
 To enhance interactivity, users can now add comments to blog posts.

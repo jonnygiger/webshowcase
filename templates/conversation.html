@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}Conversation with {{ conversation_partner }}{% endblock %}
+{% block title %}Conversation with <a href="{{ url_for('user_profile', username=conversation_partner) }}">{{ conversation_partner }}</a>{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Conversation with {{ conversation_partner }}</h2>
+    <h2>Conversation with <a href="{{ url_for('user_profile', username=conversation_partner) }}">{{ conversation_partner }}</a></h2>
     <hr>
 
     <div class="messages-container mb-4" style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 5px;">
         {% if messages_list %}
             {% for message in messages_list %}
                 <div class="message mb-2 p-2 rounded {% if message.sender_username == session['username'] %}bg-light text-end{% else %}bg-secondary text-white{% endif %}">
-                    <p class="mb-0"><strong>{{ message.sender_username }}</strong>: {{ message.content }}</p>
+                    <p class="mb-0"><strong><a href="{{ url_for('user_profile', username=message.sender_username) }}" class="{% if message.sender_username == session['username'] %}text-dark{% else %}text-white{% endif %}">{{ message.sender_username }}</a></strong>: {{ message.content }}</p>
                     <small class="text-muted">{{ message.timestamp }} {% if message.sender_username == session['username'] and message.is_read %} (Read){% endif %}</small>
                 </div>
             {% endfor %}
@@ -20,7 +20,7 @@
         {% endif %}
     </div>
 
-    <h4>Reply to {{ conversation_partner }}</h4>
+    <h4>Reply to <a href="{{ url_for('user_profile', username=conversation_partner) }}">{{ conversation_partner }}</a></h4>
     <form method="POST" action="{{ url_for('send_message', receiver_username=conversation_partner) }}">
         <div class="mb-3">
             <label for="content" class="form-label">Your Message:</label>

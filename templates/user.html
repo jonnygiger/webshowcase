@@ -5,8 +5,18 @@
 {% block content %}
     <h2 class="page-title">{{ username }}'s Profile</h2>
 
+    <!-- User Details -->
+    <div class="user-details mb-3 text-center">
+        <p><strong>Email:</strong> {{ user.email if user.email else 'Not available' }}</p>
+        <p><strong>Joined:</strong> {{ user.join_date if user.join_date else 'Not available' }}</p> <!-- Placeholder for join_date -->
+        {% if user.bio %}
+            <p class="mt-2"><strong>Bio:</strong></p>
+            <p class="text-muted" style="white-space: pre-wrap;">{{ user.bio }}</p>
+        {% endif %}
+    </div>
+
     <!-- Profile Picture Display -->
-    <div class="mb-3 text-center">
+    <div class="mb-3 text-center profile-picture-section">
         {% if user.profile_picture %}
             <img src="{{ user.profile_picture }}" alt="{{ username }}'s Profile Picture" class="img-thumbnail" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover;">
         {% else %}
@@ -16,13 +26,14 @@
     </div>
 
     {% if session['logged_in'] and session['username'] == username %}
-    <div class="mb-3 text-center">
+    <div class="mb-3 text-center profile-actions">
         <a href="{{ url_for('upload_profile_picture') }}" class="btn btn-secondary btn-sm">Change Profile Picture</a>
+        <a href="{{ url_for('edit_profile') }}" class="btn btn-primary btn-sm ms-2">Edit Profile</a>
     </div>
     {% endif %}
 
     {# Friendship Actions & Links #}
-    <div class="mb-3 text-center">
+    <div class="mb-3 text-center friendship-actions">
         {% if current_user and current_user.id != user.id %}
             {# Current user is logged in and viewing someone else's profile #}
             {% if friendship_status == 'friends' %}
@@ -50,7 +61,7 @@
     </div>
 
     <div class="mb-3 text-center">
-        <a href="{{ url_for('friends_list', username=user.username) }}" class="btn btn-outline-info btn-sm">{{ user.username }}'s Friends</a>
+        <a href="{{ url_for('view_friends_list', username=user.username) }}" class="btn btn-outline-info btn-sm">{{ user.username }}'s Friends</a>
     </div>
 
     {% if session['logged_in'] and session['username'] != username %}
@@ -59,23 +70,19 @@
         </div>
     {% endif %}
 
-    <div class="content-box">
-        <h3>User's Blog Posts</h3>
+    <div class="content-box user-creations">
+        <h3>Created Posts</h3>
         {% if posts %}
-            <ul>
+            <ul class="list-unstyled">
                 {% for post in posts %}
-                    <li>
+                    <li class="mb-2">
                         <a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a>
-                        <span class="text-muted"> - {{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</span>
-                        {% if current_user.is_authenticated %}
-                          <form action="{{ url_for('bookmark_post', post_id=post.id) }}" method="POST" style="display: inline; margin-left: 10px;">
-                              <button type="submit" class="btn btn-sm {% if post.id in bookmarked_post_ids %}btn-primary{% else %}btn-outline-primary{% endif %}">
-                                  {% if post.id in bookmarked_post_ids %}
-                                      Unbookmark
-                                  {% else %}
-                                      Bookmark
-                                  {% endif %}
-                              </button>
+                        <span class="text-muted small"> - {{ post.timestamp.strftime('%Y-%m-%d %H:%M') }}</span>
+                        {% if current_user.is_authenticated and post.id in bookmarked_post_ids %}
+                            <span class="badge bg-info ms-1">Bookmarked</span>
+                        {% elif current_user.is_authenticated %}
+                          <form action="{{ url_for('bookmark_post', post_id=post.id) }}" method="POST" style="display: inline; margin-left: 5px;">
+                              <button type="submit" class="btn btn-sm btn-outline-primary">Bookmark</button>
                           </form>
                         {% endif %}
                     </li>
@@ -86,8 +93,8 @@
         {% endif %}
     </div>
 
-    <div class="content-box">
-        <h3>User's Uploaded Gallery Images</h3> {# Changed title for clarity #}
+    <div class="content-box user-gallery">
+        <h3>Uploaded Gallery Images</h3> {# Changed title for clarity #}
         {% if user_gallery_images %}
             <div class="gallery-grid">
                 {% for image_filename in user_gallery_images %}
@@ -101,14 +108,14 @@
         {% endif %}
     </div>
 
-    <div class="content-box">
+    <div class="content-box user-events">
         <h3>Organized Events</h3>
         {% if organized_events %}
-            <ul>
+            <ul class="list-unstyled">
                 {% for event in organized_events %}
-                    <li>
+                    <li class="mb-2">
                         <a href="{{ url_for('view_event', event_id=event.id) }}">{{ event.title }}</a>
-                        <span class="text-muted"> - Created on: {{ event.created_at }} (Event Date: {{ event.date }})</span>
+                        <span class="text-muted small"> - Event Date: {{ event.date }} (Created: {{ event.created_at.strftime('%Y-%m-%d') }})</span>
                     </li>
                 {% endfor %}
             </ul>
@@ -118,7 +125,7 @@
     </div>
 
     <!-- Shared Posts Section -->
-    <div class="content-box mt-4">
+    <div class="content-box mt-4 user-shared-posts">
         <h3>Shared Posts</h3>
         {% if shared_posts_by_user %}
             {% for shared_item in shared_posts_by_user %}

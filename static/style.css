@@ -66,5 +66,46 @@ body {
 .content-box { /* From index.html */
     background-color: #f9f9f9;
     padding: 15px;
-    border-radius: 5px;
+    border-radius: 8px; /* Slightly more rounded corners */
+    margin-bottom: 20px; /* Add space between content boxes */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Add a subtle shadow */
+}
+
+/* User Profile Specific Styles */
+.user-details {
+    background-color: #e9ecef; /* Light grey background */
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.user-details p {
+    margin-bottom: 5px;
+    font-size: 0.95rem;
+}
+
+.user-details strong {
+    color: #333;
+}
+
+.profile-actions a.btn, .profile-actions form button.btn {
+    margin-top: 5px; /* Add some space between buttons if they wrap */
+}
+
+/* Styling for sections within user profile for better clarity */
+.user-creations h3, .user-gallery h3, .user-events h3, .user-shared-posts h3 {
+    border-bottom: 2px solid #007bff; /* Blue bottom border for section titles */
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+    color: #0056b3; /* Darker blue for titles */
+}
+
+.user-creations ul li, .user-events ul li {
+    padding: 8px 0; /* Add some padding to list items */
+    border-bottom: 1px solid #eee; /* Separator for list items */
+}
+
+.user-creations ul li:last-child, .user-events ul li:last-child {
+    border-bottom: none; /* Remove border for the last item */
 }

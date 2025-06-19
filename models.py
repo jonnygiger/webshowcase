@@ -28,11 +28,13 @@ class Group(db.Model):
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=True) # Added email field
     password_hash = db.Column(db.String(128), nullable=False)
     profile_picture = db.Column(db.String(255), nullable=True)  # Path to profile picture
     # uploaded_images can be a relationship if Image is a model, or a JSON/string field
     # For now, let's assume it's not a direct DB relationship in this phase
     uploaded_images = db.Column(db.Text, nullable=True) # Path to images, comma-separated
+    bio = db.Column(db.Text, nullable=True) # User's biography
 
     posts = db.relationship('Post', backref='author', lazy=True)
     comments = db.relationship('Comment', backref='author', lazy=True)
@@ -76,8 +78,10 @@ class User(db.Model):
         return {
             'id': self.id,
             'username': self.username,
+            'email': self.email, # Added email to dict
             'profile_picture': self.profile_picture,
-            'uploaded_images': self.uploaded_images
+            'uploaded_images': self.uploaded_images,
+            'bio': self.bio
             # Add other fields if they are simple and non-sensitive
         }
 

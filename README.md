@@ -568,6 +568,11 @@ You can find dedicated recommendations on the `/recommendations` page (accessibl
 
 The application includes a content moderation system to help maintain a safe and respectful environment. This feature allows users to report inappropriate content (posts or comments) and for designated moderators to review these reports and take appropriate action.
 
+### Featured Post of the Day
+*   **Functionality**: Highlights a selected post on the homepage.
+*   **Selection**: Posts can be manually featured by an admin. If no post is manually featured, one is selected automatically (e.g., randomly or by other criteria) to ensure fresh content on the homepage.
+*   **Admin Control**: Admins can use the `/admin/feature_post/<post_id>` route (via a POST request) to toggle a specific post's featured status.
+
 *   **Purpose**: To empower the community to identify and flag content that violates community guidelines, and to provide moderators with the tools to manage these reports efficiently.
 
 *   **Flagging Content (User Action)**:

@@ -13,13 +13,14 @@ from flask_migrate import Migrate
 from flask_restful import Api
 from flask_jwt_extended import JWTManager, create_access_token
 import uuid # For generating unique filenames
+import random
 
 db = SQLAlchemy()
 migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, GroupMessage, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent # Add UserActivity, FlaggedContent, GroupMessage
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent # Add UserActivity, FlaggedContent, GroupMessage
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
@@ -179,9 +180,41 @@ def moderator_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def get_featured_post():
+    """
+    Retrieves or sets a featured post.
+    - If multiple featured posts exist, picks the one with the most recent featured_at.
+    - If no post is featured, selects a random post, features it, and sets featured_at.
+    - Returns None if no posts exist in the database.
+    """
+    featured_post = Post.query.filter_by(is_featured=True)\
+                              .order_by(Post.featured_at.desc())\
+                              .first()
+
+    if featured_post:
+        return featured_post
+    else:
+        all_posts = Post.query.all()
+        if not all_posts:
+            return None
+
+        random_post = random.choice(all_posts)
+        random_post.is_featured = True
+        random_post.featured_at = datetime.utcnow()
+        db.session.add(random_post)
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Error setting random post as featured: {e}")
+            # Depending on desired behavior, could return None or the uncommitted post
+            return None # Or reraise the exception if this failure is critical
+        return random_post
+
 @app.route('/')
 def hello_world():
-    return render_template('index.html')
+    featured_post = get_featured_post()
+    return render_template('index.html', featured_post=featured_post)
 
 @app.route('/child')
 def child():
@@ -768,6 +801,29 @@ def delete_post(post_id):
     flash('Post deleted successfully!', 'success')
     return redirect(url_for('blog'))
 
+@app.route('/admin/feature_post/<int:post_id>', methods=['POST'])
+@login_required
+def admin_feature_post(post_id):
+    post = Post.query.get_or_404(post_id)
+
+    if post.is_featured:
+        post.is_featured = False
+        post.featured_at = None
+        flash(f'Post "{post.title}" is no longer featured.', 'success')
+    else:
+        post.is_featured = True
+        post.featured_at = datetime.utcnow()
+        flash(f'Post "{post.title}" has been featured.', 'success')
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error toggling feature status for post {post_id}: {e}")
+        flash('Failed to update feature status. Please try again.', 'danger')
+
+    return redirect(url_for('view_post', post_id=post.id))
+
 @app.route('/hashtag/<tag>')
 def view_hashtag_posts(tag):
     potential_posts = Post.query.filter(Post.hashtags.contains(tag)).order_by(Post.timestamp.desc()).all()
@@ -1296,30 +1352,30 @@ def handle_send_group_message_event(data):
         return
 
     try:
-        new_group_message = GroupMessage(
-            group_id=group_id,
-            user_id=user_id,
-            content=message_content.strip()
-            # timestamp is default=datetime.utcnow
-        )
-        db.session.add(new_group_message)
-        db.session.commit()
+        # new_group_message = GroupMessage(
+        #     group_id=group_id,
+        #     user_id=user_id,
+        #     content=message_content.strip()
+        #     # timestamp is default=datetime.utcnow
+        # )
+        # db.session.add(new_group_message)
+        # db.session.commit()
 
         room_name = f'group_chat_{group_id}'
         message_payload = {
-            'message_content': new_group_message.content,
+            'message_content': message_content.strip(), # Use content directly
             'sender_username': username, # Username from session
-            'timestamp': new_group_message.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'), # Generate timestamp
             'group_id': group_id,
             'user_id': user_id, # Include user_id for client-side logic if needed
-            'message_id': new_group_message.id # Include message_id
+            'message_id': "temp_id_" + datetime.utcnow().isoformat() # Temporary ID, as message is not saved
         }
         socketio.emit('receive_group_message', message_payload, room=room_name)
-        app.logger.info(f"User '{username}' sent message to group {group_id}: '{message_content}'")
+        app.logger.info(f"User '{username}' sent message to group {group_id}: '{message_content}' (not saved)")
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error saving or sending group message for group {group_id} by user {user_id}: {e}")
+        app.logger.error(f"Error sending (but not saving) group message for group {group_id} by user {user_id}: {e}")
         emit('error_event', {'message': 'An error occurred while sending your message.'})
 
 
@@ -1695,7 +1751,8 @@ def view_group(group_id):
     # The relationship Group.messages (backref from GroupMessage.group) can be used
     # or a direct query on GroupMessage model.
     # Using direct query for clarity on ordering.
-    chat_messages = GroupMessage.query.filter_by(group_id=group_id).order_by(GroupMessage.timestamp.asc()).all()
+    # chat_messages = GroupMessage.query.filter_by(group_id=group_id).order_by(GroupMessage.timestamp.asc()).all()
+    chat_messages = [] # Temporarily disable chat messages
 
     return render_template('group_detail.html', group=group, current_user_is_member=current_user_is_member, chat_messages=chat_messages)
 

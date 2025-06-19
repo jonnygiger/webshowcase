@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Share File with {{ receiver_user.username }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Share File with {{ receiver_user.username }}</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('share_file_route', receiver_username=receiver_user.username) }}" enctype="multipart/form-data">
+        <div class="mb-3">
+            <label for="file" class="form-label">Select file:</label>
+            <input type="file" name="file" id="file" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="message" class="form-label">Optional message:</label>
+            <textarea name="message" id="message" class="form-control" placeholder="Enter an optional message for {{ receiver_user.username }}"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Send File</button>
+        <a href="{{ url_for('user_profile', username=receiver_user.username) }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

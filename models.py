@@ -95,6 +95,10 @@ class User(db.Model):
     # Relationship to GroupMessage
     # group_messages = db.relationship('GroupMessage', backref='user', lazy='dynamic', cascade="all, delete-orphan")
 
+    # SharedFile relationships
+    sent_files = db.relationship('SharedFile', foreign_keys='SharedFile.sender_id', back_populates='sender', lazy='dynamic', cascade='all, delete-orphan')
+    received_files = db.relationship('SharedFile', foreign_keys='SharedFile.receiver_id', back_populates='receiver', lazy='dynamic', cascade='all, delete-orphan')
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
@@ -474,3 +478,19 @@ class TrendingHashtag(db.Model):
             'rank': self.rank,
             'calculated_at': self.calculated_at.isoformat() if self.calculated_at else None,
         }
+
+class SharedFile(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    receiver_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    original_filename = db.Column(db.String(255), nullable=False)
+    saved_filename = db.Column(db.String(255), nullable=False, unique=True)
+    upload_timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    is_read = db.Column(db.Boolean, default=False, nullable=False)
+    message = db.Column(db.Text, nullable=True)
+
+    sender = db.relationship('User', foreign_keys=[sender_id], back_populates='sent_files')
+    receiver = db.relationship('User', foreign_keys=[receiver_id], back_populates='received_files')
+
+    def __repr__(self):
+        return f'<SharedFile {self.id} from {self.sender_id} to {self.receiver_id} - {self.original_filename}>'

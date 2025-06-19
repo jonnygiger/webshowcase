@@ -81,6 +81,24 @@ The application now tracks and displays user activities, providing insight into 
     *   A `UserActivity` model was introduced to store activity records, including `user_id`, `activity_type`, `related_id` (e.g., post ID, event ID), `content_preview`, `link`, and `timestamp`.
     *   The `User` model has an `activities` relationship to easily fetch all activities for a user.
 
+### Live Activity Feed
+
+The application features a real-time Live Activity Feed, providing users with immediate updates on their friends' activities within the platform.
+
+*   **Functionality**:
+    *   Displays a continuously updating stream of recent actions performed by a user's friends.
+    *   Supported activities include new posts, comments on posts, likes on posts, and new friendships formed (when a friend request is accepted by one of the user's friends, or when the user's friend accepts a request).
+*   **Benefits**:
+    *   Keeps users engaged by showing them what their connections are up to in real-time.
+    *   Reduces the need to manually check profiles or refresh pages to see new interactions.
+*   **How it Works**:
+    *   Utilizes WebSockets via the Flask-SocketIO extension for instant communication between the server and connected clients.
+    *   When a user performs a relevant action, the server logs the activity and then broadcasts an event to the friends of that user.
+    *   Client-side JavaScript listens for these events and dynamically prepends new activity items to the feed.
+*   **Access**:
+    *   Logged-in users can access their personalized Live Activity Feed by navigating to the `/live_feed` URL.
+    *   (A direct link in the navigation bar could be added in future enhancements for easier access).
+
 ### User Authentication
 
 This application now features a user authentication system.

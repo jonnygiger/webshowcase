@@ -1204,10 +1204,40 @@ def send_message(receiver_username):
         new_message_db = Message(sender_id=sender_id, receiver_id=receiver.id, content=content)
         db.session.add(new_message_db)
         db.session.commit()
-        flash('Message sent successfully!', 'success')
-        return redirect(url_for('view_conversation', username=receiver_username))
 
-    return render_template('send_message.html', receiver_username=receiver_username)
+        # Emit SocketIO event for new direct message
+        message_payload = {
+            'id': new_message_db.id,
+            'sender_id': new_message_db.sender_id,
+            'receiver_id': new_message_db.receiver_id,
+            'content': new_message_db.content,
+            'timestamp': new_message_db.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            'sender_username': new_message_db.sender.username  # Assumes sender relationship exists
+        }
+        socketio.emit('new_direct_message', message_payload, room=f'user_{new_message_db.receiver_id}')
+
+        # Emit SocketIO event to update inbox for the receiver
+        unread_count = db.session.query(Message).filter(
+            Message.sender_id == new_message_db.sender_id,
+            Message.receiver_id == new_message_db.receiver_id,
+            Message.is_read == False
+        ).count()
+
+        inbox_update_payload = {
+            'sender_id': new_message_db.sender_id,
+            'sender_username': new_message_db.sender.username,
+            'message_snippet': (new_message_db.content[:30] + '...') if len(new_message_db.content) > 30 else new_message_db.content,
+            'timestamp': new_message_db.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            'unread_count': unread_count,
+            'conversation_partner_id': new_message_db.sender_id, # For the receiver, the sender is the conversation partner
+            'conversation_partner_username': new_message_db.sender.username
+        }
+        socketio.emit('update_inbox_notification', inbox_update_payload, room=f'user_{new_message_db.receiver_id}')
+
+        flash('Message sent successfully!', 'success')
+        return redirect(url_for('view_conversation', username=receiver.username)) # Use receiver.username
+
+    return render_template('send_message.html', receiver_username=receiver.username) # Use receiver.username
 
 
 @app.route('/messages/conversation/<username>')
@@ -1241,7 +1271,8 @@ def view_conversation(username):
     if updated:
         db.session.commit()
 
-    return render_template('conversation.html', conversation_partner=username, messages_list=relevant_messages)
+    # Pass the full conversation_partner object to the template
+    return render_template('conversation.html', conversation_partner=conversation_partner, messages_list=relevant_messages)
 
 
 @app.route('/messages/inbox')
@@ -1288,7 +1319,8 @@ def inbox():
                 'last_message_snippet': snippet,
                 'last_message_display_timestamp': last_message.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 'last_message_datetime': last_message.timestamp, # For sorting
-                'unread_count': unread_count
+                'unread_count': unread_count,
+                'partner_id': other_id # Added for client-side identification
             })
 
     # Sort inbox items by the actual datetime of the last message, newest first

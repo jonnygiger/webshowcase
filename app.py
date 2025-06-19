@@ -14,13 +14,14 @@ from flask_restful import Api
 from flask_jwt_extended import JWTManager, create_access_token
 import uuid # For generating unique filenames
 import random
+from achievements_logic import check_and_award_achievements
 
 db = SQLAlchemy()
 migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus
+from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus, UserAchievement, Achievement # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus, UserAchievement, Achievement
 from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource, UserStatsResource # Added OnThisDayResource
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
@@ -340,6 +341,9 @@ def user_profile(username):
     # Fetch posts shared by this user
     shared_posts_by_user = SharedPost.query.filter_by(shared_by_user_id=user.id).order_by(SharedPost.shared_at.desc()).all()
 
+    # Fetch user's achievements
+    user_achievements = UserAchievement.query.filter_by(user_id=user.id).order_by(UserAchievement.awarded_at.desc()).all()
+
     # Pass the whole user object to the template, which includes user.profile_picture
     return render_template('user.html',
                            user=user,
@@ -350,7 +354,8 @@ def user_profile(username):
                            shared_posts_by_user=shared_posts_by_user, # Add shared posts to context
                            bookmarked_post_ids=bookmarked_post_ids,
                            friendship_status=friendship_status,
-                           pending_request_id=pending_request_id)
+                           pending_request_id=pending_request_id,
+                           user_achievements=user_achievements) # Add this
 
 @app.route('/todo', methods=['GET', 'POST'])
 @login_required
@@ -740,7 +745,11 @@ def create_post():
 
         # Friend post notification logic
         post_author = new_post_db.author
-        if post_author:
+        if post_author: # Check if post_author is not None
+            # Award achievement for creating a post
+            if new_post_db.user_id: # Ensure user_id is available
+                check_and_award_achievements(new_post_db.user_id)
+
             friends = post_author.get_friends() # Assumes User model has get_friends()
 
             if friends:
@@ -1007,6 +1016,9 @@ def add_comment(post_id):
     post_author_id = post.user_id
     commenter_id = session.get('user_id') # This is the current user who is commenting
 
+    if new_comment_db.user_id: # Ensure user_id is available for achievement check
+        check_and_award_achievements(new_comment_db.user_id)
+
     if post_author_id != commenter_id:
         # Ensure commenter's User object is available for username
         commenter_user = User.query.get(commenter_id)
@@ -1204,6 +1216,10 @@ def bookmark_post(post_id):
         new_bookmark = Bookmark(user_id=user_id, post_id=post.id)
         db.session.add(new_bookmark)
         db.session.commit()
+        # This should be inside the 'else' block after new_bookmark is committed.
+        # user_id is already available in this route.
+        if user_id and new_bookmark: # ensure new_bookmark was created
+             check_and_award_achievements(user_id)
         flash('Post bookmarked!', 'success')
 
     return redirect(url_for('view_post', post_id=post_id))
@@ -1579,6 +1595,101 @@ if __name__ == '__main__':
     socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
 
 
+def seed_achievements_command():
+    """Seeds the database with predefined achievements."""
+    predefined_achievements = [
+        {
+            "name": "First Post", "description": "Created your first blog post.",
+            "icon_url": "[POST_ICON]", "criteria_type": "num_posts", "criteria_value": 1
+        },
+        {
+            "name": "Say What?!", "description": "Posted your first comment.",
+            "icon_url": "[COMMENT_ICON]", "criteria_type": "num_comments_given", "criteria_value": 1
+        },
+        {
+            "name": "Post Prolific", "description": "Published 10 blog posts.",
+            "icon_url": "[PROLIFIC_POST_ICON]", "criteria_type": "num_posts", "criteria_value": 10
+        },
+        {
+            "name": "Master Communicator", "description": "Wrote 25 insightful comments.",
+            "icon_url": "[PROLIFIC_COMMENT_ICON]", "criteria_type": "num_comments_given", "criteria_value": 25
+        },
+        {
+            "name": "Friendly", "description": "Made your first friend.",
+            "icon_url": "[FRIEND_ICON]", "criteria_type": "num_friends", "criteria_value": 1
+        },
+        {
+            "name": "Well-Connected", "description": "Built a network of 5 friends.",
+            "icon_url": "[NETWORK_ICON]", "criteria_type": "num_friends", "criteria_value": 5
+        },
+        {
+            "name": "Event Enthusiast", "description": "Organized your first event.",
+            "icon_url": "[EVENT_ORGANIZER_ICON]", "criteria_type": "num_events_created", "criteria_value": 1
+        },
+        {
+            "name": "Pollster", "description": "Created your first poll.",
+            "icon_url": "[POLL_CREATOR_ICON]", "criteria_type": "num_polls_created", "criteria_value": 1
+        },
+        {
+            "name": "Opinion Leader", "description": "Voted in 5 different polls.",
+            "icon_url": "[VOTER_ICON]", "criteria_type": "num_polls_voted", "criteria_value": 5
+        },
+        {
+            "name": "Rising Star", "description": "Received 10 likes across all your posts.",
+            "icon_url": "[LIKES_RECEIVED_ICON]", "criteria_type": "num_likes_received", "criteria_value": 10
+        },
+        {
+            "name": "Community Contributor", "description": "Joined your first group.",
+            "icon_url": "[GROUP_JOIN_ICON]", "criteria_type": "num_groups_joined", "criteria_value": 1
+        },
+        {
+            "name": "Bookworm", "description": "Bookmarked 5 posts.",
+            "icon_url": "[BOOKMARK_ICON]", "criteria_type": "num_bookmarks_created", "criteria_value": 5
+        }
+    ]
+
+    achievements_added_count = 0
+    achievements_skipped_count = 0
+
+    for ach_data in predefined_achievements:
+        existing_achievement = Achievement.query.filter_by(name=ach_data["name"]).first()
+        if not existing_achievement:
+            achievement = Achievement(
+                name=ach_data["name"],
+                description=ach_data["description"],
+                icon_url=ach_data["icon_url"],
+                criteria_type=ach_data["criteria_type"],
+                criteria_value=ach_data["criteria_value"]
+            )
+            db.session.add(achievement)
+            achievements_added_count += 1
+            print(f"Adding achievement: {ach_data['name']}")
+        else:
+            achievements_skipped_count += 1
+            print(f"Skipping achievement (already exists): {ach_data['name']}")
+
+    if achievements_added_count > 0:
+        try:
+            db.session.commit()
+            print(f"Successfully added {achievements_added_count} new achievements.")
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error committing new achievements: {e}")
+    else:
+        print("No new achievements to add.")
+
+    if achievements_skipped_count > 0:
+        print(f"Skipped {achievements_skipped_count} achievements that already exist in the database.")
+
+    print("Achievement seeding process complete.")
+
+@app.cli.command("seed-achievements")
+def seed_achievements_cli():
+    """CLI command to seed achievements."""
+    # Need app_context for DB operations if called from CLI outside request context
+    with app.app_context():
+        seed_achievements_command()
+
 @app.route('/polls/create', methods=['GET', 'POST'])
 @login_required
 def create_poll():
@@ -1611,6 +1722,9 @@ def create_poll():
 
         db.session.add(new_poll_db) # Add parent, children are cascaded if configured
         db.session.commit()
+
+        if new_poll_db.user_id:
+            check_and_award_achievements(new_poll_db.user_id)
 
         flash('Poll created successfully!', 'success')
         return redirect(url_for('polls_list')) # Redirect to polls list
@@ -1658,6 +1772,9 @@ def create_event():
         )
         db.session.add(new_event_db)
         db.session.commit() # new_event_db now has an ID
+
+        if new_event_db.user_id:
+            check_and_award_achievements(new_event_db.user_id)
 
         # Log new_event activity
         try:
@@ -1745,6 +1862,9 @@ def vote_on_poll(poll_id):
     new_vote = PollVote(user_id=user_id, poll_option_id=selected_option_id, poll_id=poll.id)
     db.session.add(new_vote)
     db.session.commit()
+
+    if user_id: # user_id of the voter
+        check_and_award_achievements(user_id)
 
     flash('Vote cast successfully!', 'success')
     return redirect(url_for('view_poll', poll_id=poll_id))
@@ -1947,6 +2067,8 @@ def join_group(group_id):
     else:
         group.members.append(current_user)
         db.session.commit()
+        if user_id: # user_id of the user joining
+            check_and_award_achievements(user_id)
         flash(f'You have successfully joined the group: {group.name}!', 'success')
 
     return redirect(url_for('view_group', group_id=group_id))
@@ -2122,6 +2244,14 @@ def accept_friend_request(request_id):
     if friend_request.status == 'pending':
         friend_request.status = 'accepted'
         db.session.commit()
+
+        # Check for achievements for both users involved in the new friendship
+        # Check for current user (acceptor)
+        check_and_award_achievements(current_user_id)
+        # Check for the user who sent the request
+        if friend_request.requester: # requester is the User object
+            check_and_award_achievements(friend_request.requester.id)
+
         flash('Friend request accepted successfully!', 'success')
 
         # Log 'new_follow' activity
@@ -2711,3 +2841,24 @@ def set_status():
         flash('An error occurred while setting your status. Please try again.', 'danger')
 
     return redirect(url_for('user_profile', username=current_user_obj.username))
+
+
+@app.route('/user/<username>/achievements')
+@login_required # Or remove if public viewing of achievements is desired
+def view_user_achievements(username):
+    user = User.query.filter_by(username=username).first_or_404()
+
+    all_system_achievements = Achievement.query.order_by(Achievement.name).all()
+    earned_achievement_ids = {ua.achievement_id for ua in UserAchievement.query.filter_by(user_id=user.id).all()}
+
+    # For displaying earned achievements with dates
+    user_earned_achievements_details = UserAchievement.query.filter_by(user_id=user.id) \
+                                          .join(Achievement, UserAchievement.achievement_id == Achievement.id) \
+                                          .order_by(Achievement.name) \
+                                          .all()
+
+    return render_template('achievements.html',
+                           profile_user=user,
+                           all_system_achievements=all_system_achievements,
+                           earned_achievement_ids=earned_achievement_ids,
+                           user_earned_achievements_details=user_earned_achievements_details)

@@ -277,6 +277,35 @@ Users can share their current status or mood with a short message and/or an emoj
     *   A new route `/set_status` (POST) handles the creation of new status updates.
     *   The `User` model has a helper method `get_current_status()` to retrieve the most recent status for display.
 
+### User Achievements/Badges
+
+To make the platform more engaging, a User Achievements/Badges system has been implemented. Users can earn badges for performing various actions and reaching certain milestones.
+
+*   **How it Works**:
+    *   Achievements are automatically awarded when a user's actions meet predefined criteria (e.g., number of posts created, friends made, comments written).
+    *   The system periodically checks for new achievements earned by users after relevant actions.
+
+*   **Viewing Achievements**:
+    *   **User Profile**: Earned achievements are displayed as badges on each user's profile page (`/user/<username>`). Hovering over a badge shows its description and award date.
+    *   **Dedicated Achievements Page**: Users can view a more detailed list of their achievements, as well as all available achievements in the system (marked as earned or not earned), on their personal achievements page, accessible via a link on their profile or by navigating to `/user/<username>/achievements`.
+
+*   **Example Achievements**:
+    Some of the achievements you can earn include:
+    *   **First Post**: For creating your first blog post.
+    *   **Say What?!**: For posting your first comment.
+    *   **Post Prolific**: For publishing 10 blog posts.
+    *   **Master Communicator**: For writing 25 insightful comments.
+    *   **Friendly**: For making your first friend.
+    *   **Well-Connected**: For building a network of 5 friends.
+    *   **Event Enthusiast**: For organizing your first event.
+    *   **Pollster**: For creating your first poll.
+    *   **Opinion Leader**: For voting in 5 different polls.
+    *   **Rising Star**: For receiving 10 likes across all your posts.
+    *   **Community Contributor**: For joining your first group.
+    *   **Bookworm**: For bookmarking 5 posts.
+
+    Explore the platform to discover all available achievements!
+
 ### Blog Post Comments
 
 To enhance interactivity, users can now add comments to blog posts.

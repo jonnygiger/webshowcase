@@ -109,3 +109,46 @@ body {
 .user-creations ul li:last-child, .user-events ul li:last-child {
     border-bottom: none; /* Remove border for the last item */
 }
+
+/* Achievements Grid Styling */
+.achievements-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-top: 10px;
+}
+.achievement-item {
+  border: 1px solid #ccc;
+  padding: 10px;
+  border-radius: 5px;
+  text-align: center;
+  width: 120px; /* Adjust as needed */
+}
+.achievement-icon {
+  font-size: 2em; /* Adjust if using text/font icons */
+  display: block;
+}
+.achievement-name {
+  font-weight: bold;
+  margin-top: 5px;
+  font-size: 0.9em;
+}
+
+/* Styles for dedicated achievements page */
+.achievement-icon-page {
+    font-size: 1.5em; /* Or adjust as needed */
+    margin-right: 10px;
+}
+.achievement-earned-bg {
+    background-color: #e6ffed; /* Light green for earned */
+}
+.achievement-not-earned-bg {
+    background-color: #f8f9fa; /* Light grey for not earned */
+}
+/* Ensure badges are visible */
+.badge.bg-success {
+    color: white;
+}
+.badge.bg-secondary {
+    color: white;
+}

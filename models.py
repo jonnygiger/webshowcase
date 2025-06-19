@@ -515,3 +515,53 @@ class UserStatus(db.Model):
 
     def __repr__(self):
         return f'<UserStatus {self.id} by User {self.user_id}>'
+
+
+class Achievement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    icon_url = db.Column(db.String(255), nullable=True) # Placeholder for icon path or class
+    criteria_type = db.Column(db.String(50), nullable=False) # e.g., 'num_posts', 'num_comments_given'
+    criteria_value = db.Column(db.Integer, nullable=False) # e.g., 1, 10, 25
+
+    # Relationship to users who earned this achievement
+    earned_by_users = db.relationship('UserAchievement', back_populates='achievement', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<Achievement {self.name}>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'icon_url': self.icon_url,
+            'criteria_type': self.criteria_type,
+            'criteria_value': self.criteria_value
+        }
+
+class UserAchievement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    achievement_id = db.Column(db.Integer, db.ForeignKey('achievement.id'), nullable=False)
+    awarded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    # Relationships
+    user = db.relationship('User', back_populates='achievements')
+    achievement = db.relationship('Achievement', back_populates='earned_by_users')
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'achievement_id', name='_user_achievement_uc'),)
+
+    def __repr__(self):
+        return f'<UserAchievement User {self.user_id} earned Achievement {self.achievement_id} at {self.awarded_at}>'
+
+    def to_dict(self):
+        return {
+            'user_id': self.user_id,
+            'achievement_id': self.achievement_id,
+            'achievement_name': self.achievement.name if self.achievement else None,
+            'achievement_description': self.achievement.description if self.achievement else None,
+            'achievement_icon_url': self.achievement.icon_url if self.achievement else None,
+            'awarded_at': self.awarded_at.isoformat()
+        }

@@ -21,6 +21,38 @@
     </div>
     {% endif %}
 
+    {# Friendship Actions & Links #}
+    <div class="mb-3 text-center">
+        {% if current_user and current_user.id != user.id %}
+            {# Current user is logged in and viewing someone else's profile #}
+            {% if friendship_status == 'friends' %}
+                <form action="{{ url_for('remove_friend', friend_user_id=user.id) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-danger btn-sm">Remove Friend</button>
+                </form>
+            {% elif friendship_status == 'pending_sent' %}
+                <span class="text-muted">Friend request pending</span>
+            {% elif friendship_status == 'pending_received' and pending_request_id %}
+                <form action="{{ url_for('accept_friend_request', request_id=pending_request_id) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-success btn-sm">Accept Friend Request</button>
+                </form>
+                <form action="{{ url_for('reject_friend_request', request_id=pending_request_id) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-warning btn-sm ms-1">Reject Friend Request</button>
+                </form>
+            {% elif friendship_status in ['not_friends', 'rejected_sent', 'rejected_received'] %}
+                <form action="{{ url_for('send_friend_request', target_user_id=user.id) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-info btn-sm">Send Friend Request</button>
+                </form>
+            {% endif %}
+        {% elif current_user and current_user.id == user.id %}
+             {# Current user is viewing their own profile #}
+             <a href="{{ url_for('view_friend_requests') }}" class="btn btn-outline-primary btn-sm">View My Friend Requests</a>
+        {% endif %}
+    </div>
+
+    <div class="mb-3 text-center">
+        <a href="{{ url_for('friends_list', username=user.username) }}" class="btn btn-outline-info btn-sm">{{ user.username }}'s Friends</a>
+    </div>
+
     {% if session['logged_in'] and session['username'] != username %}
         <div class="mb-3">
             <a href="{{ url_for('send_message', receiver_username=username) }}" class="btn btn-primary">Send Message to {{ username }}</a>

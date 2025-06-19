@@ -47,6 +47,22 @@ class User(db.Model):
     event_rsvps = db.relationship('EventRSVP', backref='attendee', lazy=True)
     reactions = db.relationship('Reaction', backref='user', lazy=True, cascade="all, delete-orphan")
 
+    # Friendship relationships
+    sent_friend_requests = db.relationship(
+        'Friendship',
+        foreign_keys='Friendship.user_id',
+        backref='requester', # This will add a 'requester' attribute to Friendship instances
+        lazy='dynamic',
+        cascade='all, delete-orphan' # If a User is deleted, their sent requests are deleted
+    )
+    received_friend_requests = db.relationship(
+        'Friendship',
+        foreign_keys='Friendship.friend_id',
+        backref='requested', # This will add a 'requested' attribute to Friendship instances
+        lazy='dynamic',
+        cascade='all, delete-orphan' # If a User is deleted, their received requests are deleted
+    )
+
     # Group relationships
     created_groups = db.relationship('Group', back_populates='creator', lazy=True, foreign_keys='Group.creator_id')
     joined_groups = db.relationship('Group', secondary=group_members,
@@ -64,6 +80,23 @@ class User(db.Model):
             'uploaded_images': self.uploaded_images
             # Add other fields if they are simple and non-sensitive
         }
+
+    def get_friends(self):
+        friends = []
+        # Friendships this user initiated and were accepted
+        # Accessing User model via fs.requested.id (or fs.requested directly)
+        accepted_sent_requests = Friendship.query.filter_by(user_id=self.id, status='accepted').all()
+        for fs in accepted_sent_requests:
+            friends.append(fs.requested) # fs.requested should be the User instance
+
+        # Friendships this user received and accepted
+        # Accessing User model via fs.requester.id (or fs.requester directly)
+        accepted_received_requests = Friendship.query.filter_by(friend_id=self.id, status='accepted').all()
+        for fs in accepted_received_requests:
+            friends.append(fs.requester) # fs.requester should be the User instance
+
+        # Deduplicate in case of any unforeseen issues, though logic should prevent it
+        return list(set(friends))
 
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -272,3 +305,20 @@ class Bookmark(db.Model):
 
     def __repr__(self):
         return f'<Bookmark User {self.user_id} Post {self.post_id}>'
+
+class Friendship(db.Model):
+    __tablename__ = 'friendship' # Explicitly name the table
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    friend_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='pending') # e.g., pending, accepted, rejected
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    # To prevent a user from being their own friend or having duplicate requests
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'friend_id', name='uq_user_friend'),
+        db.CheckConstraint('user_id != friend_id', name='ck_user_not_friend_self')
+    )
+
+    def __repr__(self):
+        return f'<Friendship {self.user_id} to {self.friend_id} - {self.status}>'

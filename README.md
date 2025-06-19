@@ -542,6 +542,11 @@ The recommendations feature has been enhanced to also suggest relevant events an
     *   **Logic**: Recommendations are derived from the most frequently used hashtags across all posts, carefully filtered to exclude hashtags the current user has already used in their own posts.
     *   **Accessibility**: These hashtag suggestions are displayed on the main `/recommendations` page for logged-in users.
 
+*   **Trending Hashtags on Blog Page**:
+    *   **Functionality**: Displays a list of the most popular hashtags, calculated from all posts, directly on the main blog page.
+    *   **Discovery**: Allows all users (including those not logged in) to quickly see trending topics and navigate to posts associated with them.
+    *   **Accessibility**: Visible in the sidebar of the `/blog` page.
+
 These new recommendations are available on the main `/recommendations` page.
 
 You can find dedicated recommendations on the `/recommendations` page (accessible when logged in). Additionally, a snippet of user suggestions is displayed on the main blog page to help you connect with others more easily.

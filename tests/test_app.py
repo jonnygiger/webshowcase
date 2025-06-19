@@ -2819,6 +2819,138 @@ def test_like_post_creates_user_activity(client):
 
 # --- Test Refined suggest_posts_to_read Logic ---
 from app import recommendations # Import the recommendations module
+from recommendations import get_trending_hashtags # Import for direct testing
+
+
+class TestGetTrendingHashtagsLogic:
+    def test_get_trending_hashtags_scenarios(self, client): # Use the client fixture
+        test_user = create_user_directly("hashtag_test_user", "password")
+        user_id = test_user.id
+
+        with app.app_context(): # Ensure operations are within app context
+            # Scenario 1: Basic top N & Case Insensitivity & Stripping
+            create_post_directly(user_id=user_id, title="P1", hashtags="python,flask,webdev")
+            create_post_directly(user_id=user_id, title="P2", hashtags="python,cool,awesome")
+            create_post_directly(user_id=user_id, title="P3", hashtags="flask,python")
+            create_post_directly(user_id=user_id, title="P4", hashtags="webdev,python,coding")
+            create_post_directly(user_id=user_id, title="P5", hashtags="unique,tags")
+            create_post_directly(user_id=user_id, title="P6", hashtags=" PYTHON, Flask ,  webdev  ") # Test case insensitivity & stripping
+
+            # Expected counts: python: 5, flask: 3, webdev: 3, cool:1, awesome:1, coding:1, unique:1, tags:1
+            # Sorted by count desc, then alpha asc for ties (Counter default behavior not guaranteed for alpha tie-break)
+
+            suggestions = get_trending_hashtags(top_n=3)
+            # python (5), flask (3), webdev (3). Order of flask/webdev might vary if counts are same.
+            # Let's make counts distinct for easier assertion or check set equality for ties.
+            # Post P6 made webdev count = 3.
+            # python:5, flask:3, webdev:3.
+            # If Counter's tie-breaking is insertion order based (last seen for update), then webdev might come before flask.
+            # To be safe, let's check presence for ties.
+            assert len(suggestions) == 3
+            assert suggestions[0] == 'python'
+            assert 'flask' in suggestions[1:]
+            assert 'webdev' in suggestions[1:]
+
+
+            # Scenario 2: More Hashtags than top_n
+            suggestions_limit_2 = get_trending_hashtags(top_n=2)
+            assert len(suggestions_limit_2) == 2
+            assert suggestions_limit_2[0] == 'python'
+            assert suggestions_limit_2[1] in ['flask', 'webdev']
+
+
+            # Scenario 3: top_n greater than available unique hashtags
+            # Expected unique tags: python, flask, webdev, cool, awesome, coding, unique, tags (8 tags)
+            suggestions_limit_10 = get_trending_hashtags(top_n=10)
+            assert len(suggestions_limit_10) == 8
+            assert suggestions_limit_10[0] == 'python'
+            # Check set for the rest to handle potential order variations for equal counts
+            assert set(suggestions_limit_10[1:3]) == {'flask', 'webdev'}
+            assert set(suggestions_limit_10[3:]) == {'cool', 'awesome', 'coding', 'unique', 'tags'}
+
+
+            # Clean up posts for next scenarios
+            Post.query.delete()
+            db.session.commit()
+
+            # Scenario 4: Edge Case - No Posts
+            suggestions_no_posts = get_trending_hashtags(top_n=5)
+            assert suggestions_no_posts == []
+
+            # Scenario 5: Edge Case - Posts with no hashtags
+            create_post_directly(user_id=user_id, title="P7_no_hash", hashtags=None)
+            create_post_directly(user_id=user_id, title="P8_empty_hash", hashtags="")
+            create_post_directly(user_id=user_id, title="P9_space_hash", hashtags="   ")
+            suggestions_no_hashtags = get_trending_hashtags(top_n=5)
+            assert suggestions_no_hashtags == []
+
+            # Scenario 6: Test comma with space and mixed cases, and empty tags from split
+            Post.query.delete()
+            db.session.commit()
+            create_post_directly(user_id=user_id, title="P10", hashtags="TagOne, tagTwo,,TAGTHREE") # Extra comma
+            create_post_directly(user_id=user_id, title="P11", hashtags="TagOne, tagtwo , tagfour ")
+            # Expected counts: tagone (2), tagtwo (2), tagthree (1), tagfour (1)
+            suggestions_mixed = get_trending_hashtags(top_n=4)
+
+            assert len(suggestions_mixed) == 4
+            assert "tagone" in suggestions_mixed
+            assert "tagtwo" in suggestions_mixed
+            assert "tagthree" in suggestions_mixed
+            assert "tagfour" in suggestions_mixed
+            # Check that top 2 are tagone and tagtwo (order between them might vary)
+            assert set(suggestions_mixed[:2]) == {"tagone", "tagtwo"}
+            # Check that next 2 are tagthree and tagfour (order between them might vary)
+            assert set(suggestions_mixed[2:]) == {"tagthree", "tagfour"}
+
+            assert suggestions_mixed.count("tagone") == 1 # Ensure uniqueness in output
+            assert suggestions_mixed.count("tagtwo") == 1
+
+
+@patch('app.get_trending_hashtags') # Patch where it's used in app.py's blog route
+def test_blog_route_calls_get_trending_hashtags(mock_get_trending_hashtags, client):
+    mock_get_trending_hashtags.return_value = ['mocktag1', 'mocktag2']
+    # login_test_user(client) # Not strictly necessary for this test if blog page is public
+
+    client.get('/blog')
+
+    mock_get_trending_hashtags.assert_called_once_with(top_n=10)
+
+
+def test_blog_page_renders_trending_hashtags(client):
+    user = create_user_directly("blogger_hashtags", "password")
+    with app.app_context():
+        # Clear posts to ensure clean state for this test's hashtag counts
+        Post.query.delete()
+        db.session.commit()
+
+        create_post_directly(user_id=user.id, title="P1", hashtags="testtag1,common,super")
+        create_post_directly(user_id=user.id, title="P2", hashtags="testtag2,common,super")
+        create_post_directly(user_id=user.id, title="P3", hashtags="testtag1,common")
+        create_post_directly(user_id=user.id, title="P4", hashtags="super")
+        # Expected trending by count: super (3), common (3), testtag1 (2), testtag2 (1)
+        # (Actual order of 'super' and 'common' might vary if Counter doesn't sort alphabetically for ties)
+
+    response = client.get('/blog')
+    assert response.status_code == 200
+    response_data = response.data.decode()
+
+    assert "Trending Hashtags" in response_data
+    assert '<a href="/hashtag/super">#super</a>' in response_data
+    assert '<a href="/hashtag/common">#common</a>' in response_data
+    assert '<a href="/hashtag/testtag1">#testtag1</a>' in response_data
+    # testtag2 is called with top_n=10 in app.py blog route, so it should be present
+    assert '<a href="/hashtag/testtag2">#testtag2</a>' in response_data
+
+
+def test_blog_page_no_trending_hashtags_section_if_none(client):
+    with app.app_context():
+        Post.query.delete() # Ensure no posts, thus no hashtags
+        db.session.commit()
+
+    response = client.get('/blog')
+    assert response.status_code == 200
+    assert "Trending Hashtags" not in response.data.decode()
+
 
 def test_suggest_posts_to_read_with_comments_and_likes(client):
     """Test the refined suggest_posts_to_read logic, considering both likes and comments, and recency."""

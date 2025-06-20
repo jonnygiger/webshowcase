@@ -55,6 +55,10 @@ class AppTestCase(unittest.TestCase):
         cls.app.config["SECRET_KEY"] = "test-secret-key"
         cls.app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"  # Added as per requirements
         cls.app.config["SOCKETIO_MESSAGE_QUEUE"] = None
+        cls.app.config["SHARED_FILES_UPLOAD_FOLDER"] = "shared_files_test_folder" # Added for subtask
+        shared_folder = cls.app.config["SHARED_FILES_UPLOAD_FOLDER"]
+        if not os.path.exists(shared_folder):
+            os.makedirs(shared_folder)
         cls.app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False # Often set for SQLAlchemy
 
         # Initialize extensions with the test app

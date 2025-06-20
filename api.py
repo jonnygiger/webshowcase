@@ -23,7 +23,7 @@ class UserResource(Resource):
 class PostListResource(Resource):
     @jwt_required()
     def post(self):
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         user = User.query.get(current_user_id)  # Use actual User model query
         if not user:
             return {"message": "User not found for provided token"}, 404
@@ -52,7 +52,7 @@ class PostListResource(Resource):
 class CommentListResource(Resource):
     @jwt_required()
     def post(self, post_id):
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         user = User.query.get(current_user_id)
         if not user:
             return {"message": "User not found"}, 404
@@ -106,7 +106,7 @@ class PollListResource(Resource):
 
     @jwt_required()
     def post(self):
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         user = User.query.get(current_user_id)
         if not user:
             return {"message": "User not found"}, 404
@@ -161,7 +161,7 @@ class PollResource(Resource):
 
     @jwt_required()
     def delete(self, poll_id):
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         poll = Poll.query.get(poll_id)
         if not poll:
             return {"message": "Poll not found"}, 404
@@ -179,7 +179,7 @@ class PollVoteResource(Resource):
     def post(
         self, poll_id
     ):  # The option_id was in the original plan, but typically it's in the request body.
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         user = User.query.get(
             current_user_id
         )  # Query user to ensure they exist, though jwt implies it.
@@ -221,7 +221,7 @@ class PollVoteResource(Resource):
 class PostLockResource(Resource):
     @jwt_required()
     def post(self, post_id):
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         user = User.query.get(current_user_id)
         if not user:
             return {"message": "User not found for provided token"}, 404
@@ -288,7 +288,7 @@ class PostLockResource(Resource):
 
     @jwt_required()
     def delete(self, post_id):
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         user = User.query.get(current_user_id)
         if not user:
             return {"message": "User not found for provided token"}, 404

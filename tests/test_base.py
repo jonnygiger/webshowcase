@@ -76,7 +76,7 @@ class AppTestCase(unittest.TestCase):
 
         # Import necessary components for routes
         from app import api_login # As per app.py, this handles /api/login
-        from api import PostLockResource
+        from api import PostLockResource, CommentListResource, PostListResource
 
         # Register essential routes and resources
         # Note: The _get_jwt_token helper uses '/login_api', but app.py defines '/api/login'.
@@ -85,6 +85,8 @@ class AppTestCase(unittest.TestCase):
         # If _get_jwt_token specifically needs /login_api, that's a separate issue to address in that helper or related tests.
         cls.app.add_url_rule('/api/login', view_func=api_login, methods=['POST'])
         cls.api.add_resource(PostLockResource, '/api/posts/<int:post_id>/lock')
+        cls.api.add_resource(PostListResource, '/api/posts')
+        cls.api.add_resource(CommentListResource, '/api/posts/<int:post_id>/comments')
 
         # Example for other routes/blueprints if needed:
         # from app import main_routes_blueprint
@@ -131,11 +133,12 @@ class AppTestCase(unittest.TestCase):
 
     def tearDown(self):
         """Executed after each test."""
-        # Use the class's db instance
-        self.db.session.remove()
-        for table in reversed(self.db.metadata.sorted_tables):
-            self.db.session.execute(table.delete())
-        self.db.session.commit()
+        with self.app.app_context(): # Ensure app context for DB operations
+            # Use the class's db instance
+            self.db.session.remove()
+            for table in reversed(self.db.metadata.sorted_tables):
+                self.db.session.execute(table.delete())
+            self.db.session.commit()
 
         # Use the class's app instance for config
         shared_files_folder = self.app.config.get(
@@ -177,25 +180,27 @@ class AppTestCase(unittest.TestCase):
 
     def _create_friendship(self, user1_id, user2_id, status="accepted"):
         # Requires live Friendship model and db session
-        friendship = Friendship(user_id=user1_id, friend_id=user2_id, status=status)
-        self.db.session.add(friendship) # Use class's db
-        self.db.session.commit() # Use class's db
-        return friendship
+        with self.app.app_context(): # Ensure app context for DB operations
+            friendship = Friendship(user_id=user1_id, friend_id=user2_id, status=status)
+            self.db.session.add(friendship) # Use class's db
+            self.db.session.commit() # Use class's db
+            return friendship
         # return unittest.mock.MagicMock(user_id=user1_id, friend_id=user2_id, status=status)
 
     def _create_db_post(
         self, user_id, title="Test Post", content="Test Content", timestamp=None
     ):
         # Requires live Post model and db session
-        post = Post(
-            user_id=user_id,
-            title=title,
-            content=content,
-            timestamp=timestamp or datetime.utcnow(),
-        )
-        self.db.session.add(post) # Use class's db
-        self.db.session.commit() # Use class's db
-        return post
+        with self.app.app_context(): # Ensure app context for DB operations
+            post = Post(
+                user_id=user_id,
+                title=title,
+                content=content,
+                timestamp=timestamp or datetime.utcnow(),
+            )
+            self.db.session.add(post) # Use class's db
+            self.db.session.commit() # Use class's db
+            return post.id # Return the ID directly
         # mock_post = unittest.mock.MagicMock(id=unittest.mock.sentinel.post_id, user_id=user_id, title=title, content=content, timestamp=timestamp or datetime.utcnow())
         # mock_post.author = unittest.mock.MagicMock(username=f"user{user_id}") # Simulate author relationship
         # return mock_post
@@ -226,16 +231,17 @@ class AppTestCase(unittest.TestCase):
         self, sender_id, receiver_id, content, timestamp=None, is_read=False
     ):
         # Requires live Message model and db session
-        msg = Message(
-            sender_id=sender_id,
-            receiver_id=receiver_id,
-            content=content,
-            timestamp=timestamp or datetime.utcnow(),
-            is_read=is_read,
-        )
-        self.db.session.add(msg) # Use class's db
-        self.db.session.commit() # Use class's db
-        return msg
+        with self.app.app_context(): # Ensure app context for DB operations
+            msg = Message(
+                sender_id=sender_id,
+                receiver_id=receiver_id,
+                content=content,
+                timestamp=timestamp or datetime.utcnow(),
+                is_read=is_read,
+            )
+            self.db.session.add(msg) # Use class's db
+            self.db.session.commit() # Use class's db
+            return msg
         # return unittest.mock.MagicMock(sender_id=sender_id, receiver_id=receiver_id, content=content)
 
     def _get_jwt_token(self, username, password):
@@ -260,10 +266,11 @@ class AppTestCase(unittest.TestCase):
         self, creator_id, name="Test Group", description="A group for testing"
     ):
         # Requires live Group model and db session
-        group = Group(name=name, description=description, creator_id=creator_id)
-        self.db.session.add(group) # Use class's db
-        self.db.session.commit() # Use class's db
-        return group
+        with self.app.app_context(): # Ensure app context for DB operations
+            group = Group(name=name, description=description, creator_id=creator_id)
+            self.db.session.add(group) # Use class's db
+            self.db.session.commit() # Use class's db
+            return group
         # return unittest.mock.MagicMock(id=unittest.mock.sentinel.group_id, name=name, creator_id=creator_id)
 
     def _create_db_event(
@@ -277,18 +284,19 @@ class AppTestCase(unittest.TestCase):
         created_at=None,
     ):
         # Requires live Event model and db session
-        event_datetime = datetime.strptime(f"{date_str} {time}", "%Y-%m-%d %H:%M")
-        event = Event(
-            user_id=user_id,
-            title=title,
-            description=description,
-            date=event_datetime,
-            location=location,
-            created_at=created_at or datetime.utcnow(),
-        )
-        self.db.session.add(event) # Use class's db
-        self.db.session.commit() # Use class's db
-        return event
+        with self.app.app_context(): # Ensure app context for DB operations
+            event_datetime = datetime.strptime(f"{date_str} {time}", "%Y-%m-%d %H:%M")
+            event = Event(
+                user_id=user_id,
+                title=title,
+                description=description,
+                date=event_datetime,
+                location=location,
+                created_at=created_at or datetime.utcnow(),
+            )
+            self.db.session.add(event) # Use class's db
+            self.db.session.commit() # Use class's db
+            return event
         # return unittest.mock.MagicMock(id=unittest.mock.sentinel.event_id, title=title, user_id=user_id, date=date_str, created_at=created_at or datetime.utcnow())
 
     def _create_db_poll(
@@ -297,18 +305,19 @@ class AppTestCase(unittest.TestCase):
         if options_texts is None:
             options_texts = ["Option 1", "Option 2"]
         # Requires live Poll, PollOption models and db session
-        poll = Poll(
-            user_id=user_id,
-            question=question,
-            created_at=created_at or datetime.utcnow(),
-        )
-        self.db.session.add(poll) # Use class's db
-        self.db.session.commit()  # Commit to get poll.id, use class's db
-        for text in options_texts:
-            option = PollOption(text=text, poll_id=poll.id)
-            self.db.session.add(option) # Use class's db
-        self.db.session.commit() # Use class's db
-        return poll
+        with self.app.app_context(): # Ensure app context for DB operations
+            poll = Poll(
+                user_id=user_id,
+                question=question,
+                created_at=created_at or datetime.utcnow(),
+            )
+            self.db.session.add(poll) # Use class's db
+            self.db.session.commit()  # Commit to get poll.id, use class's db
+            for text in options_texts:
+                option = PollOption(text=text, poll_id=poll.id)
+                self.db.session.add(option) # Use class's db
+            self.db.session.commit() # Use class's db
+            return poll
         # mock_poll = unittest.mock.MagicMock(id=unittest.mock.sentinel.poll_id, question=question, user_id=user_id, options=[])
         # for i, text in enumerate(options_texts):
         # mock_option = unittest.mock.MagicMock(id=i+1, text=text, poll_id=mock_poll.id, vote_count=0)
@@ -318,12 +327,13 @@ class AppTestCase(unittest.TestCase):
     def _create_db_like(self, user_id, post_id, timestamp=None):
         from models import Like  # Local import to avoid circular if not using live DB
 
-        like = Like(
-            user_id=user_id, post_id=post_id, timestamp=timestamp or datetime.utcnow()
-        )
-        self.db.session.add(like) # Use class's db
-        self.db.session.commit() # Use class's db
-        return like
+        with self.app.app_context(): # Ensure app context for DB operations
+            like = Like(
+                user_id=user_id, post_id=post_id, timestamp=timestamp or datetime.utcnow()
+            )
+            self.db.session.add(like) # Use class's db
+            self.db.session.commit() # Use class's db
+            return like
         # return unittest.mock.MagicMock(user_id=user_id, post_id=post_id)
 
     def _create_db_comment(
@@ -331,15 +341,16 @@ class AppTestCase(unittest.TestCase):
     ):
         from models import Comment
 
-        comment = Comment(
-            user_id=user_id,
-            post_id=post_id,
-            content=content,
-            timestamp=timestamp or datetime.utcnow(),
-        )
-        self.db.session.add(comment) # Use class's db
-        self.db.session.commit() # Use class's db
-        return comment
+        with self.app.app_context(): # Ensure app context for DB operations
+            comment = Comment(
+                user_id=user_id,
+                post_id=post_id,
+                content=content,
+                timestamp=timestamp or datetime.utcnow(),
+            )
+            self.db.session.add(comment) # Use class's db
+            self.db.session.commit() # Use class's db
+            return comment
         # return unittest.mock.MagicMock(id=unittest.mock.sentinel.comment_id, user_id=user_id, post_id=post_id, content=content)
 
     def _create_db_event_rsvp(
@@ -347,29 +358,31 @@ class AppTestCase(unittest.TestCase):
     ):
         from models import EventRSVP
 
-        rsvp = EventRSVP(
-            user_id=user_id,
-            event_id=event_id,
-            status=status,
-            timestamp=timestamp or datetime.utcnow(),
-        )
-        self.db.session.add(rsvp) # Use class's db
-        self.db.session.commit() # Use class's db
-        return rsvp
+        with self.app.app_context(): # Ensure app context for DB operations
+            rsvp = EventRSVP(
+                user_id=user_id,
+                event_id=event_id,
+                status=status,
+                timestamp=timestamp or datetime.utcnow(),
+            )
+            self.db.session.add(rsvp) # Use class's db
+            self.db.session.commit() # Use class's db
+            return rsvp
         # return unittest.mock.MagicMock(user_id=user_id, event_id=event_id, status=status)
 
     def _create_db_poll_vote(self, user_id, poll_id, poll_option_id, created_at=None):
         from models import PollVote
 
-        vote = PollVote(
-            user_id=user_id,
-            poll_id=poll_id,
-            poll_option_id=poll_option_id,
-            created_at=created_at or datetime.utcnow(),
-        )
-        self.db.session.add(vote) # Use class's db
-        self.db.session.commit() # Use class's db
-        return vote
+        with self.app.app_context(): # Ensure app context for DB operations
+            vote = PollVote(
+                user_id=user_id,
+                poll_id=poll_id,
+                poll_option_id=poll_option_id,
+                created_at=created_at or datetime.utcnow(),
+            )
+            self.db.session.add(vote) # Use class's db
+            self.db.session.commit() # Use class's db
+            return vote
         # return unittest.mock.MagicMock(user_id=user_id, poll_id=poll_id, poll_option_id=poll_option_id)
 
     def _create_series(
@@ -381,16 +394,17 @@ class AppTestCase(unittest.TestCase):
         updated_at=None,
     ):
         # Requires Series model and db session
-        series = Series(
-            user_id=user_id,
-            title=title,
-            description=description,
-            created_at=created_at or datetime.utcnow(),
-            updated_at=updated_at or datetime.utcnow(),
-        )
-        self.db.session.add(series) # Use class's db
-        self.db.session.commit() # Use class's db
-        return series
+        with self.app.app_context(): # Ensure app context for DB operations
+            series = Series(
+                user_id=user_id,
+                title=title,
+                description=description,
+                created_at=created_at or datetime.utcnow(),
+                updated_at=updated_at or datetime.utcnow(),
+            )
+            self.db.session.add(series) # Use class's db
+            self.db.session.commit() # Use class's db
+            return series
         # return unittest.mock.MagicMock(id=unittest.mock.sentinel.series_id, title=title, user_id=user_id)
 
     def assertInHTML(self, needle, haystack, achievement_name):
@@ -412,9 +426,10 @@ class AppTestCase(unittest.TestCase):
     def _create_db_lock(self, post_id, user_id, minutes_offset=0):
         from models import PostLock
 
-        expires_at = datetime.utcnow() + timedelta(minutes=minutes_offset)
-        lock = PostLock(post_id=post_id, user_id=user_id, expires_at=expires_at)
-        self.db.session.add(lock) # Use class's db
-        self.db.session.commit() # Use class's db
-        return lock
+        with self.app.app_context(): # Ensure app context for DB operations
+            expires_at = datetime.utcnow() + timedelta(minutes=minutes_offset)
+            lock = PostLock(post_id=post_id, user_id=user_id, expires_at=expires_at)
+            self.db.session.add(lock) # Use class's db
+            self.db.session.commit() # Use class's db
+            return lock
         # return unittest.mock.MagicMock(post_id=post_id, user_id=user_id)

@@ -1,5 +1,4 @@
-from app import db
-from models import User, Post, Comment, Friendship, Event, PollVote, Achievement, UserAchievement, Group, Poll, Bookmark
+from models import db, User, Post, Comment, Friendship, Event, PollVote, Achievement, UserAchievement, Group, Poll, Bookmark
 from sqlalchemy import func
 
 def get_user_stat(user, stat_type):

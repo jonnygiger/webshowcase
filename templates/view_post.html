@@ -13,6 +13,34 @@
   {% if post %}
     <h2 id="post-title">{{ post.title }}</h2>
     <p><small>By <a href="{{ url_for('user_profile', username=post.author_username) }}">{{ post.author_username }}</a> on {{ post.timestamp }}</small></p>
+
+    {# Series Information and Next/Previous Navigation #}
+    {% if post.series_associated_with.all() %}
+        <div class="series-info mb-3 p-2 border rounded bg-light">
+            <p class="mb-1"><strong>Part of Series:</strong>
+                {% for series_item in post.series_associated_with.all() %}
+                    <a href="{{ url_for('view_series', series_id=series_item.id) }}">{{ series_item.title }}</a>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            </p>
+
+            {# Next/Previous Post Navigation within a specific series context #}
+            {% if current_series_id and (previous_post_in_series or next_post_in_series) %}
+            <div class="series-navigation mt-2">
+                {% if previous_post_in_series %}
+                    <a href="{{ url_for('view_post', post_id=previous_post_in_series.id, series_id=current_series_id) }}" class="btn btn-outline-secondary btn-sm">
+                        &laquo; Previous in series: {{ previous_post_in_series.title | truncate(30) }}
+                    </a>
+                {% endif %}
+                {% if next_post_in_series %}
+                    <a href="{{ url_for('view_post', post_id=next_post_in_series.id, series_id=current_series_id) }}" class="btn btn-outline-secondary btn-sm {% if previous_post_in_series %}ms-2{% endif %}">
+                        Next in series: {{ next_post_in_series.title | truncate(30) }} &raquo;
+                    </a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    {% endif %}
+
     <p id="post-content">{{ post.content | safe }}</p> {# Assuming content is safe or will be sanitized later #}
 
     {% if post.hashtags %}

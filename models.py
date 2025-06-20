@@ -1,11 +1,26 @@
-from app import db
+from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+
+db = SQLAlchemy()
 
 # Association table for User-Group many-to-many relationship
 group_members = db.Table('group_members',
     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
     db.Column('group_id', db.Integer, db.ForeignKey('group.id'), primary_key=True)
 )
+
+# Association table for Series and Post
+class SeriesPost(db.Model):
+    __tablename__ = 'series_posts'
+    series_id = db.Column(db.Integer, db.ForeignKey('series.id'), primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), primary_key=True)
+    order = db.Column(db.Integer, nullable=False) # Order of the post in the series
+
+    series = db.relationship('Series', backref=db.backref('series_post_associations', cascade='all, delete-orphan'))
+    post = db.relationship('Post', backref=db.backref('series_post_associations', cascade='all, delete-orphan'))
+
+    def __repr__(self):
+        return f'<SeriesPost series_id={self.series_id} post_id={self.post_id} order={self.order}>'
 
 class Group(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -98,9 +113,15 @@ class User(db.Model):
     # UserStatus relationship
     statuses = db.relationship('UserStatus', backref='user', lazy='dynamic', cascade='all, delete-orphan', order_by="UserStatus.timestamp.desc()")
 
+    # Series relationship
+    series_created = db.relationship('Series', back_populates='author', lazy='dynamic', cascade="all, delete-orphan")
+
     # SharedFile relationships
     sent_files = db.relationship('SharedFile', foreign_keys='SharedFile.sender_id', back_populates='sender', lazy='dynamic', cascade='all, delete-orphan')
     received_files = db.relationship('SharedFile', foreign_keys='SharedFile.receiver_id', back_populates='receiver', lazy='dynamic', cascade='all, delete-orphan')
+
+    # UserAchievements relationship
+    achievements = db.relationship('UserAchievement', back_populates='user', lazy='dynamic')
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -157,7 +178,7 @@ class UserActivity(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     activity_type = db.Column(db.String(50), nullable=False)  # e.g., "new_post", "new_comment", "new_event"
     related_id = db.Column(db.Integer, nullable=True)  # e.g., post_id, comment_id, event_id
-    target_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Added target_user_id
+    target_user_id = db.Column(db.Integer, db.ForeignKey('user.id', name='fk_user_activity_target_user_id_user'), nullable=True)  # Added target_user_id and FK name
     content_preview = db.Column(db.Text, nullable=True)  # e.g., a snippet of the post or comment
     link = db.Column(db.String(255), nullable=True)  # e.g., URL to the post or event
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -184,6 +205,9 @@ class Post(db.Model):
     reactions = db.relationship('Reaction', backref='post', lazy=True, cascade="all, delete-orphan")
     bookmarked_by = db.relationship('Bookmark', backref='post', lazy=True, cascade="all, delete-orphan")
 
+    # Relationship to Series via series_posts association table
+    series_associated_with = db.relationship('Series', secondary='series_posts', back_populates='posts', lazy='dynamic')
+
     def __repr__(self):
         return f'<Post {self.title}>'
 
@@ -200,6 +224,13 @@ class Post(db.Model):
             'is_featured': self.is_featured,
             'featured_at': self.featured_at.isoformat() if self.featured_at else None
             # Consider adding comment count or like count if simple to compute
+        }
+
+    def to_dict_simple(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'author_username': self.author.username if self.author else None,
         }
 
 class Comment(db.Model):
@@ -387,6 +418,36 @@ class TodoItem(db.Model):
 # Login_required decorator remains the same.
 # Route logic will change significantly to use DB queries.
 
+class Series(db.Model):
+    __tablename__ = 'series'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationship to User (author)
+    author = db.relationship('User', back_populates='series_created')
+
+    # Relationship to Posts via series_posts association table
+    posts = db.relationship('Post', secondary='series_posts', back_populates='series_associated_with', order_by='SeriesPost.order')
+
+    def __repr__(self):
+        return f'<Series "{self.title}">'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'description': self.description,
+            'user_id': self.user_id,
+            'author_username': self.author.username if self.author else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'posts': [post.to_dict_simple() for post in self.posts] # Assuming a simpler post representation
+        }
+
 class Bookmark(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -565,3 +626,17 @@ class UserAchievement(db.Model):
             'achievement_icon_url': self.achievement.icon_url if self.achievement else None,
             'awarded_at': self.awarded_at.isoformat()
         }
+
+# Ensure User.achievements relationship is correctly defined if it was intended for UserAchievement
+# Example: In User model:
+# achievements = db.relationship('UserAchievement', back_populates='user', lazy='dynamic')
+# This seems to be the case in the provided User model already:
+# class User(db.Model):
+# ...
+#    achievements = db.relationship('UserActivity', backref='user', lazy=True) # THIS IS WRONG, should be UserAchievement
+# This is outside the direct scope of Series, but good to note.
+# The provided User model has:
+#    activities = db.relationship('UserActivity', backref='user', lazy=True) # This is correct for activities
+# The UserAchievement model has:
+#    user = db.relationship('User', back_populates='achievements') # This correctly implies User needs 'achievements'
+# The User model now has the 'achievements' relationship added in this commit.

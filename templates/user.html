@@ -184,6 +184,23 @@
         {% endif %}
     </div>
 
+    <!-- Content Series Created by User -->
+    <div class="content-box mt-4 user-series-created">
+        <h3>Content Series Created by {{ user.username }}</h3>
+        {% if user_series and user_series|length > 0 %}
+            <ul class="list-unstyled">
+                {% for series_item in user_series %}
+                    <li class="mb-2">
+                        <a href="{{ url_for('view_series', series_id=series_item.id) }}">{{ series_item.title }}</a>
+                        <span class="text-muted small"> - Created: {{ series_item.created_at.strftime('%Y-%m-%d %H:%M') if series_item.created_at else 'N/A' }}</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>{{ user.username }} has not created any series yet.</p>
+        {% endif %}
+    </div>
+
     <!-- Joined Groups -->
     <div class="mt-4 content-box"> {# Added content-box for consistency #}
         <h4>Joined Groups</h4>

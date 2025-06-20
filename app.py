@@ -2357,7 +2357,7 @@ def api_login():
     user = User.query.filter_by(username=username).first()
 
     if user and check_password_hash(user.password_hash, password):
-        access_token = create_access_token(identity=user.id)  # Use user.id as identity
+        access_token = create_access_token(identity=str(user.id))  # Use str(user.id) as identity
         return {"access_token": access_token}, 200
     else:
         return {"message": "Invalid credentials"}, 401

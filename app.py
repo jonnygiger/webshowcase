@@ -28,7 +28,7 @@ migrate = Migrate()
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
 # Models are already imported above now
-from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource, UserStatsResource, SeriesListResource, SeriesResource # Added Series Resources
+from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource, UserStatsResource, SeriesListResource, SeriesResource, CommentListResource # Added CommentListResource
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
     suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags,
@@ -141,6 +141,7 @@ api.add_resource(OnThisDayResource, '/api/onthisday') # Added OnThisDayResource 
 api.add_resource(UserStatsResource, '/api/users/<int:user_id>/stats')
 api.add_resource(SeriesListResource, '/api/series')
 api.add_resource(SeriesResource, '/api/series/<int:series_id>')
+api.add_resource(CommentListResource, '/api/posts/<int:post_id>/comments')
 
 # Scheduler for periodic tasks
 scheduler = BackgroundScheduler()

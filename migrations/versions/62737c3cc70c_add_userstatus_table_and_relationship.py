@@ -5,13 +5,14 @@ Revises: c5ef2f9a13b2
 Create Date: 2025-06-19 21:48:46.673111
 
 """
+
 from alembic import op
 import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '62737c3cc70c'
-down_revision = 'c5ef2f9a13b2'
+revision = "62737c3cc70c"
+down_revision = "c5ef2f9a13b2"
 branch_labels = None
 depends_on = None
 
@@ -32,14 +33,18 @@ def upgrade():
     # sa.PrimaryKeyConstraint('id'),
     # sa.UniqueConstraint('saved_filename')
     # )
-    op.create_table('user_status',
-    sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('status_text', sa.String(length=280), nullable=True),
-    sa.Column('emoji', sa.String(length=10), nullable=True),
-    sa.Column('timestamp', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    op.create_table(
+        "user_status",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("status_text", sa.String(length=280), nullable=True),
+        sa.Column("emoji", sa.String(length=10), nullable=True),
+        sa.Column("timestamp", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["user.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
     )
     # with op.batch_alter_table('user_activity', schema=None) as batch_op:
     #     batch_op.add_column(sa.Column('target_user_id', sa.Integer(), nullable=True))
@@ -54,6 +59,6 @@ def downgrade():
     #     batch_op.drop_constraint('fk_user_activity_user_target_user_id', type_='foreignkey')
     #     batch_op.drop_column('target_user_id')
 
-    op.drop_table('user_status')
+    op.drop_table("user_status")
     # op.drop_table('shared_file')
     # ### end Alembic commands ###

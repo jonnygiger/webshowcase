@@ -1,10 +1,15 @@
 import unittest
 import json
-from unittest.mock import patch, ANY # Kept patch and ANY for potential future use or AppTestCase interactions
+from unittest.mock import (
+    patch,
+    ANY,
+)  # Kept patch and ANY for potential future use or AppTestCase interactions
 from datetime import datetime, timedelta
+
 # from app import app, db, socketio # COMMENTED OUT
 # from models import User, Post, Friendship, Event, Poll, PollOption, Like, Comment, EventRSVP, PollVote # COMMENTED OUT - Added Friendship, PollOption
 from tests.test_base import AppTestCase
+
 
 class TestPersonalizedFeedAPI(AppTestCase):
 
@@ -15,122 +20,165 @@ class TestPersonalizedFeedAPI(AppTestCase):
 
     def test_personalized_feed_unauthorized(self):
         # with app.app_context(): # Context likely handled by AppTestCase or client calls
-            response = self.client.get('/api/personalized-feed')
-            self.assertEqual(response.status_code, 401) # JWT errors are usually 401 or 422 if malformed
-            # Flask-JWT-Extended typically returns 401 for missing token
-            data = json.loads(response.data)
-            self.assertIn('msg', data) # Default message key for flask-jwt-extended
-            self.assertEqual(data['msg'], 'Missing Authorization Header')
+        response = self.client.get("/api/personalized-feed")
+        self.assertEqual(
+            response.status_code, 401
+        )  # JWT errors are usually 401 or 422 if malformed
+        # Flask-JWT-Extended typically returns 401 for missing token
+        data = json.loads(response.data)
+        self.assertIn("msg", data)  # Default message key for flask-jwt-extended
+        self.assertEqual(data["msg"], "Missing Authorization Header")
 
     def test_personalized_feed_success_and_structure(self):
         # with app.app_context():
-            # 1. Setup Data
-            # Friendships: user1 is friends with user2
-            self._create_friendship(self.user1_id, self.user2_id, status='accepted')
+        # 1. Setup Data
+        # Friendships: user1 is friends with user2
+        self._create_friendship(self.user1_id, self.user2_id, status="accepted")
 
-            # Posts:
-            # Post by user3 (not friend), liked by user2 (friend of user1) -> should be recommended
-            post1_by_user3 = self._create_db_post(user_id=self.user3_id, title="Post by User3, Liked by User2", timestamp=datetime.utcnow() - timedelta(hours=1))
-            self._create_db_like(user_id=self.user2_id, post_id=post1_by_user3.id, timestamp=datetime.utcnow() - timedelta(minutes=30))
+        # Posts:
+        # Post by user3 (not friend), liked by user2 (friend of user1) -> should be recommended
+        post1_by_user3 = self._create_db_post(
+            user_id=self.user3_id,
+            title="Post by User3, Liked by User2",
+            timestamp=datetime.utcnow() - timedelta(hours=1),
+        )
+        self._create_db_like(
+            user_id=self.user2_id,
+            post_id=post1_by_user3.id,
+            timestamp=datetime.utcnow() - timedelta(minutes=30),
+        )
 
-            # Post by user3 (not friend), commented by user2 (friend of user1)
-            post2_by_user3 = self._create_db_post(user_id=self.user3_id, title="Another Post by User3, Commented by User2", timestamp=datetime.utcnow() - timedelta(hours=3))
-            self._create_db_comment(user_id=self.user2_id, post_id=post2_by_user3.id, content="Friend comment", timestamp=datetime.utcnow() - timedelta(hours=2))
+        # Post by user3 (not friend), commented by user2 (friend of user1)
+        post2_by_user3 = self._create_db_post(
+            user_id=self.user3_id,
+            title="Another Post by User3, Commented by User2",
+            timestamp=datetime.utcnow() - timedelta(hours=3),
+        )
+        self._create_db_comment(
+            user_id=self.user2_id,
+            post_id=post2_by_user3.id,
+            content="Friend comment",
+            timestamp=datetime.utcnow() - timedelta(hours=2),
+        )
 
-            # Events:
-            # Event by user3, user2 (friend of user1) RSVP'd 'Attending' -> should be recommended
-            event1_by_user3 = self._create_db_event(user_id=self.user3_id, title="Event by User3, User2 Attending", date_str=(datetime.utcnow() + timedelta(days=1)).strftime('%Y-%m-%d'))
-            # event1_by_user3.created_at = datetime.utcnow() - timedelta(days=1) # Set created_at for sorting - _create_db_event in AppTestCase should handle this
-            # db.session.commit() # commit is in _create_db_event
-            self._create_db_event_rsvp(user_id=self.user2_id, event_id=event1_by_user3.id, status="Attending")
+        # Events:
+        # Event by user3, user2 (friend of user1) RSVP'd 'Attending' -> should be recommended
+        event1_by_user3 = self._create_db_event(
+            user_id=self.user3_id,
+            title="Event by User3, User2 Attending",
+            date_str=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d"),
+        )
+        # event1_by_user3.created_at = datetime.utcnow() - timedelta(days=1) # Set created_at for sorting - _create_db_event in AppTestCase should handle this
+        # db.session.commit() # commit is in _create_db_event
+        self._create_db_event_rsvp(
+            user_id=self.user2_id, event_id=event1_by_user3.id, status="Attending"
+        )
 
-            # Polls:
-            # Poll by user2 (friend of user1) -> should be recommended
-            poll1_by_user2 = self._create_db_poll(user_id=self.user2_id, question="Poll by User2 (Friend)?")
-            # poll1_by_user2.created_at = datetime.utcnow() - timedelta(days=2) # Set created_at - _create_db_poll in AppTestCase should handle this
-            # db.session.commit() # commit is in _create_db_poll
-            # Add a vote from user3 to make it seem active
-            option_for_poll1 = poll1_by_user2.options[0] # Assumes options are created by _create_db_poll
-            self._create_db_poll_vote(user_id=self.user3_id, poll_id=poll1_by_user2.id, poll_option_id=option_for_poll1.id)
+        # Polls:
+        # Poll by user2 (friend of user1) -> should be recommended
+        poll1_by_user2 = self._create_db_poll(
+            user_id=self.user2_id, question="Poll by User2 (Friend)?"
+        )
+        # poll1_by_user2.created_at = datetime.utcnow() - timedelta(days=2) # Set created_at - _create_db_poll in AppTestCase should handle this
+        # db.session.commit() # commit is in _create_db_poll
+        # Add a vote from user3 to make it seem active
+        option_for_poll1 = poll1_by_user2.options[
+            0
+        ]  # Assumes options are created by _create_db_poll
+        self._create_db_poll_vote(
+            user_id=self.user3_id,
+            poll_id=poll1_by_user2.id,
+            poll_option_id=option_for_poll1.id,
+        )
 
+        # 2. Login as user1 and get token
+        token = self._get_jwt_token(self.user1.username, "password")
+        headers = {"Authorization": f"Bearer {token}"}
 
-            # 2. Login as user1 and get token
-            token = self._get_jwt_token(self.user1.username, 'password')
-            headers = {'Authorization': f'Bearer {token}'}
+        # 3. Make request
+        response = self.client.get("/api/personalized-feed", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn("feed_items", data)
+        feed_items = data["feed_items"]
+        self.assertIsInstance(feed_items, list)
 
-            # 3. Make request
-            response = self.client.get('/api/personalized-feed', headers=headers)
-            self.assertEqual(response.status_code, 200)
-            data = json.loads(response.data)
-            self.assertIn('feed_items', data)
-            feed_items = data['feed_items']
-            self.assertIsInstance(feed_items, list)
+        # We expect at least one of each type based on setup (if DB is live)
+        # self.assertTrue(len(feed_items) >= 3, f"Expected at least 3 items, got {len(feed_items)}: {feed_items}")
 
-            # We expect at least one of each type based on setup (if DB is live)
-            # self.assertTrue(len(feed_items) >= 3, f"Expected at least 3 items, got {len(feed_items)}: {feed_items}")
+        found_post = False
+        found_event = False
+        found_poll = False
 
-            found_post = False
-            found_event = False
-            found_poll = False
+        timestamps = []
 
-            timestamps = []
+        for item in feed_items:
+            self.assertIn("type", item)
+            self.assertIn("id", item)
+            self.assertIn("timestamp", item)
+            self.assertIsNotNone(item["timestamp"])
+            ts_str = item["timestamp"]
+            if ts_str.endswith("Z"):
+                ts_str = ts_str[:-1] + "+00:00"
+                timestamps.append(datetime.fromisoformat(ts_str).replace(tzinfo=None))
+            else:
+                timestamps.append(datetime.fromisoformat(ts_str))
 
-            for item in feed_items:
-                self.assertIn('type', item)
-                self.assertIn('id', item)
-                self.assertIn('timestamp', item)
-                self.assertIsNotNone(item['timestamp'])
-                ts_str = item['timestamp']
-                if ts_str.endswith('Z'):
-                    ts_str = ts_str[:-1] + '+00:00'
-                    timestamps.append(datetime.fromisoformat(ts_str).replace(tzinfo=None))
-                else:
-                     timestamps.append(datetime.fromisoformat(ts_str))
+            if item["type"] == "post":
+                found_post = True
+                self.assertIn("title", item)
+                self.assertIn("content", item)
+                self.assertIn("author_username", item)
+                self.assertIn("reason", item)
+                if (
+                    post1_by_user3 and item["id"] == post1_by_user3.id
+                ):  # Check if post1_by_user3 is not None
+                    self.assertEqual(item["title"], "Post by User3, Liked by User2")
+            elif item["type"] == "event":
+                found_event = True
+                self.assertIn("title", item)
+                self.assertIn("description", item)
+                self.assertIn("organizer_username", item)
+                if (
+                    event1_by_user3 and item["id"] == event1_by_user3.id
+                ):  # Check if event1_by_user3 is not None
+                    self.assertEqual(item["title"], "Event by User3, User2 Attending")
+            elif item["type"] == "poll":
+                found_poll = True
+                self.assertIn("question", item)
+                self.assertIn("creator_username", item)
+                self.assertIn("options", item)
+                self.assertIsInstance(item["options"], list)
+                if item["options"]:
+                    self.assertIn("text", item["options"][0])
+                    self.assertIn("vote_count", item["options"][0])
+                if (
+                    poll1_by_user2 and item["id"] == poll1_by_user2.id
+                ):  # Check if poll1_by_user2 is not None
+                    self.assertEqual(item["question"], "Poll by User2 (Friend)?")
 
+        # These assertions might fail if DB helpers are not creating items due to missing live DB
+        # self.assertTrue(found_post, "No post found in feed")
+        # self.assertTrue(found_event, "No event found in feed")
+        # self.assertTrue(found_poll, "No poll found in feed")
 
-                if item['type'] == 'post':
-                    found_post = True
-                    self.assertIn('title', item)
-                    self.assertIn('content', item)
-                    self.assertIn('author_username', item)
-                    self.assertIn('reason', item)
-                    if post1_by_user3 and item['id'] == post1_by_user3.id: # Check if post1_by_user3 is not None
-                        self.assertEqual(item['title'], "Post by User3, Liked by User2")
-                elif item['type'] == 'event':
-                    found_event = True
-                    self.assertIn('title', item)
-                    self.assertIn('description', item)
-                    self.assertIn('organizer_username', item)
-                    if event1_by_user3 and item['id'] == event1_by_user3.id: # Check if event1_by_user3 is not None
-                        self.assertEqual(item['title'], "Event by User3, User2 Attending")
-                elif item['type'] == 'poll':
-                    found_poll = True
-                    self.assertIn('question', item)
-                    self.assertIn('creator_username', item)
-                    self.assertIn('options', item)
-                    self.assertIsInstance(item['options'], list)
-                    if item['options']:
-                        self.assertIn('text', item['options'][0])
-                        self.assertIn('vote_count', item['options'][0])
-                    if poll1_by_user2 and item['id'] == poll1_by_user2.id: # Check if poll1_by_user2 is not None
-                         self.assertEqual(item['question'], "Poll by User2 (Friend)?")
-
-            # These assertions might fail if DB helpers are not creating items due to missing live DB
-            # self.assertTrue(found_post, "No post found in feed")
-            # self.assertTrue(found_event, "No event found in feed")
-            # self.assertTrue(found_poll, "No poll found in feed")
-
-            if timestamps: # Only check sorting if there are items
-                for i in range(len(timestamps) - 1):
-                    self.assertGreaterEqual(timestamps[i], timestamps[i+1], "Feed items are not sorted correctly by timestamp")
+        if timestamps:  # Only check sorting if there are items
+            for i in range(len(timestamps) - 1):
+                self.assertGreaterEqual(
+                    timestamps[i],
+                    timestamps[i + 1],
+                    "Feed items are not sorted correctly by timestamp",
+                )
 
     def test_personalized_feed_empty(self):
         # with app.app_context():
-            token = self._get_jwt_token(self.user3.username, 'password') # user3 has no relevant activity
-            headers = {'Authorization': f'Bearer {token}'}
+        token = self._get_jwt_token(
+            self.user3.username, "password"
+        )  # user3 has no relevant activity
+        headers = {"Authorization": f"Bearer {token}"}
 
-            response = self.client.get('/api/personalized-feed', headers=headers)
-            self.assertEqual(response.status_code, 200)
-            data = json.loads(response.data)
-            self.assertIn('feed_items', data)
-            self.assertEqual(data['feed_items'], [])
+        response = self.client.get("/api/personalized-feed", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn("feed_items", data)
+        self.assertEqual(data["feed_items"], [])

@@ -1,36 +1,57 @@
-from models import db, User, Post, Comment, Friendship, Event, PollVote, Achievement, UserAchievement, Group, Poll, Bookmark
+from models import (
+    db,
+    User,
+    Post,
+    Comment,
+    Friendship,
+    Event,
+    PollVote,
+    Achievement,
+    UserAchievement,
+    Group,
+    Poll,
+    Bookmark,
+)
 from sqlalchemy import func
+
 
 def get_user_stat(user, stat_type):
     """Helper function to get a specific stat for a user."""
-    if stat_type == 'num_posts':
+    if stat_type == "num_posts":
         return Post.query.filter_by(user_id=user.id).count()
-    elif stat_type == 'num_comments_given':
+    elif stat_type == "num_comments_given":
         return Comment.query.filter_by(user_id=user.id).count()
-    elif stat_type == 'num_friends':
+    elif stat_type == "num_friends":
         # This relies on the User.get_friends() method being accurate
         return len(user.get_friends())
-    elif stat_type == 'num_events_created':
+    elif stat_type == "num_events_created":
         return Event.query.filter_by(user_id=user.id).count()
-    elif stat_type == 'num_polls_created':
-        return Poll.query.filter_by(user_id=user.id).count() # Assuming Poll model has user_id
-    elif stat_type == 'num_polls_voted':
+    elif stat_type == "num_polls_created":
+        return Poll.query.filter_by(
+            user_id=user.id
+        ).count()  # Assuming Poll model has user_id
+    elif stat_type == "num_polls_voted":
         # Counts distinct polls a user has voted in
-        return PollVote.query.filter_by(user_id=user.id).distinct(PollVote.poll_id).count()
-    elif stat_type == 'num_likes_received':
+        return (
+            PollVote.query.filter_by(user_id=user.id).distinct(PollVote.poll_id).count()
+        )
+    elif stat_type == "num_likes_received":
         # Sum of likes on all posts by the user
         total_likes = 0
         user_posts = Post.query.filter_by(user_id=user.id).all()
         for post in user_posts:
-            total_likes += len(post.likes) # Relies on Post.likes relationship
+            total_likes += len(post.likes)  # Relies on Post.likes relationship
         return total_likes
-    elif stat_type == 'num_groups_joined':
+    elif stat_type == "num_groups_joined":
         # User.joined_groups is a dynamic query
         return user.joined_groups.count()
-    elif stat_type == 'num_bookmarks_created':
-        return Bookmark.query.filter_by(user_id=user.id).count() # Assuming Bookmark model exists
+    elif stat_type == "num_bookmarks_created":
+        return Bookmark.query.filter_by(
+            user_id=user.id
+        ).count()  # Assuming Bookmark model exists
     # Add more stat types as needed
     return 0
+
 
 def check_and_award_achievements(user_id):
     """
@@ -47,12 +68,11 @@ def check_and_award_achievements(user_id):
     for achievement in all_achievements:
         # Check if user already has this achievement
         existing_user_achievement = UserAchievement.query.filter_by(
-            user_id=user.id,
-            achievement_id=achievement.id
+            user_id=user.id, achievement_id=achievement.id
         ).first()
 
         if existing_user_achievement:
-            continue # User already has this achievement
+            continue  # User already has this achievement
 
         # Get the current stat value for the user based on achievement criteria
         current_stat_value = get_user_stat(user, achievement.criteria_type)
@@ -60,8 +80,7 @@ def check_and_award_achievements(user_id):
         if current_stat_value >= achievement.criteria_value:
             # Award the achievement
             new_user_achievement = UserAchievement(
-                user_id=user.id,
-                achievement_id=achievement.id
+                user_id=user.id, achievement_id=achievement.id
             )
             db.session.add(new_user_achievement)
             awarded_new_achievements.append(achievement.name)
@@ -70,15 +89,20 @@ def check_and_award_achievements(user_id):
     if awarded_new_achievements:
         try:
             db.session.commit()
-            print(f"User {user.username} awarded achievements: {', '.join(awarded_new_achievements)}")
+            print(
+                f"User {user.username} awarded achievements: {', '.join(awarded_new_achievements)}"
+            )
             # TODO: Consider returning info about awarded achievements for immediate feedback/notification
-            return {"message": f"Awarded achievements: {', '.join(awarded_new_achievements)}"}, 200
+            return {
+                "message": f"Awarded achievements: {', '.join(awarded_new_achievements)}"
+            }, 200
         except Exception as e:
             db.session.rollback()
             print(f"Error awarding achievements for user {user.username}: {e}")
             return {"error": f"Error awarding achievements: {str(e)}"}, 500
 
     return {"message": "No new achievements awarded."}, 200
+
 
 # Example of how this might be extended or used:
 # def check_first_post_achievement(user):

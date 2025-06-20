@@ -1,62 +1,75 @@
 import unittest
 from unittest.mock import patch, ANY, MagicMock
-from datetime import datetime # Removed timedelta
+from datetime import datetime  # Removed timedelta
+
 # from app import app, db, socketio # COMMENTED OUT
 # from models import User, Post # COMMENTED OUT (add other models if this class uses them)
 from tests.test_base import AppTestCase
 
+
 class TestDiscoverPageViews(AppTestCase):
 
-    @patch('app.get_personalized_feed_posts') # Assuming get_personalized_feed_posts is in app.py
-    def test_discover_page_shows_recommendation_reasons(self, mock_get_personalized_feed_posts):
+    @patch(
+        "app.get_personalized_feed_posts"
+    )  # Assuming get_personalized_feed_posts is in app.py
+    def test_discover_page_shows_recommendation_reasons(
+        self, mock_get_personalized_feed_posts
+    ):
         # with app.app_context(): # App context is likely handled by AppTestCase or test client calls
-            # Setup: Login as a user
-            self.login(self.user1.username, 'password') # Assumes user1 is created in AppTestCase.setUp
+        # Setup: Login as a user
+        self.login(
+            self.user1.username, "password"
+        )  # Assumes user1 is created in AppTestCase.setUp
 
-            # Mocking get_personalized_feed_posts
-            # Create a mock author object that behaves like a User model instance for the template
-            mock_author = MagicMock(spec=User) # If User model is complex, provide more spec details
-            mock_author.username = 'author_username'
+        # Mocking get_personalized_feed_posts
+        # Create a mock author object that behaves like a User model instance for the template
+        mock_author = MagicMock(
+            spec=User
+        )  # If User model is complex, provide more spec details
+        mock_author.username = "author_username"
 
-            # Create a mock post object that behaves like a Post model instance for the template
-            mock_post = MagicMock(spec=Post) # If Post model is complex, provide more spec details
-            mock_post.id = 123
-            mock_post.title = "Mocked Post Title"
-            # Ensure content is not None for slicing in template (post.content[:200])
-            mock_post.content = "Mocked post content here that is long enough."
-            mock_post.author = mock_author
-            # Add other attributes that might be accessed if post.to_dict() was called, or by template directly
-            mock_post.user_id = self.user2_id # Assuming user2 might be an author
-            mock_post.timestamp = datetime.utcnow()
-            mock_post.comments = [] # For len(post.comments) if used
-            mock_post.likes = []    # For len(post.likes) if used
-            # mock_post.reviews = []  # For len(post.reviews) if used # Assuming reviews is not used or part of Post spec
-            mock_post.hashtags = "" # Assuming hashtags is an attribute
-            # mock_post.is_featured = False # Assuming is_featured is an attribute
-            # mock_post.featured_at = None # Assuming featured_at is an attribute
-            # mock_post.last_edited = None # Assuming last_edited is an attribute
+        # Create a mock post object that behaves like a Post model instance for the template
+        mock_post = MagicMock(
+            spec=Post
+        )  # If Post model is complex, provide more spec details
+        mock_post.id = 123
+        mock_post.title = "Mocked Post Title"
+        # Ensure content is not None for slicing in template (post.content[:200])
+        mock_post.content = "Mocked post content here that is long enough."
+        mock_post.author = mock_author
+        # Add other attributes that might be accessed if post.to_dict() was called, or by template directly
+        mock_post.user_id = self.user2_id  # Assuming user2 might be an author
+        mock_post.timestamp = datetime.utcnow()
+        mock_post.comments = []  # For len(post.comments) if used
+        mock_post.likes = []  # For len(post.likes) if used
+        # mock_post.reviews = []  # For len(post.reviews) if used # Assuming reviews is not used or part of Post spec
+        mock_post.hashtags = ""  # Assuming hashtags is an attribute
+        # mock_post.is_featured = False # Assuming is_featured is an attribute
+        # mock_post.featured_at = None # Assuming featured_at is an attribute
+        # mock_post.last_edited = None # Assuming last_edited is an attribute
 
+        mock_reason = "Test reason for this post."
+        # The function is expected to return a list of (Post, reason_string) tuples
+        mock_get_personalized_feed_posts.return_value = [(mock_post, mock_reason)]
 
-            mock_reason = "Test reason for this post."
-            # The function is expected to return a list of (Post, reason_string) tuples
-            mock_get_personalized_feed_posts.return_value = [(mock_post, mock_reason)]
+        # Execution: Make a GET request to /discover
+        response = self.client.get("/discover")
 
-            # Execution: Make a GET request to /discover
-            response = self.client.get('/discover')
+        # Assertions
+        self.assertEqual(response.status_code, 200)
+        response_data = response.get_data(as_text=True)
 
-            # Assertions
-            self.assertEqual(response.status_code, 200)
-            response_data = response.get_data(as_text=True)
+        # Check for the reason string
+        self.assertIn(f"Recommended because: {mock_reason}", response_data)
+        # Check for post details
+        self.assertIn(mock_post.title, response_data)
+        self.assertIn(mock_post.author.username, response_data)
+        # Check a snippet of content if it's displayed
+        self.assertIn(mock_post.content[:50], response_data)
 
-            # Check for the reason string
-            self.assertIn(f"Recommended because: {mock_reason}", response_data)
-            # Check for post details
-            self.assertIn(mock_post.title, response_data)
-            self.assertIn(mock_post.author.username, response_data)
-            # Check a snippet of content if it's displayed
-            self.assertIn(mock_post.content[:50], response_data)
+        # Assert that the mock was called correctly
+        mock_get_personalized_feed_posts.assert_called_once_with(
+            self.user1_id, limit=15
+        )
 
-            # Assert that the mock was called correctly
-            mock_get_personalized_feed_posts.assert_called_once_with(self.user1_id, limit=15)
-
-            self.logout()
+        self.logout()

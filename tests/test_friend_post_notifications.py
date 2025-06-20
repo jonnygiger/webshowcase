@@ -1,12 +1,14 @@
 import unittest
 from unittest.mock import patch, ANY
 from datetime import datetime, timedelta
+
 # from app import app, db, socketio # COMMENTED OUT
 # from models import User, Post, FriendPostNotification # COMMENTED OUT
 from tests.test_base import AppTestCase
 
-class TestFriendPostNotifications(AppTestCase): # Inherit from AppTestCase for setup
-    pass # All tests commented out for now to isolate timeout issues
+
+class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for setup
+    pass  # All tests commented out for now to isolate timeout issues
 
     # @patch('app.socketio.emit') # Patch socketio.emit from the app instance
     # def test_notification_creation_and_socketio_emit(self, mock_socketio_emit):

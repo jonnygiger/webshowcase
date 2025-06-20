@@ -460,6 +460,15 @@ Enhancing the private communication capabilities, the application now supports r
 *   **Technology Stack**: This feature is powered by Flask, Flask-SocketIO for real-time bidirectional communication, and SQLAlchemy for database interactions with the `Message` model.
 *   **User Experience**: Provides a seamless and interactive messaging experience, similar to modern chat applications.
 
+### User Notifications (Real-time via SSE)
+
+To keep users immediately informed of important social interactions, the application now features a real-time notification system built with Server-Sent Events (SSE). This system delivers non-intrusive toast notifications directly to the user's active browser session for the following events:
+
+*   **Friend Request Received**: When another user sends you a friend request, you'll receive an instant notification. The alert includes the sender's username and a direct link to their profile, allowing for quick interaction.
+*   **Friend Request Accepted (New Follower)**: When a user accepts your friend request, you'll be notified immediately that they are now following you. This notification also includes the new follower's username and a link to their profile.
+
+This SSE-based system complements other real-time features, providing lightweight, unidirectional updates from the server for timely alerts. The client-side JavaScript listens for these specific events and displays the information in a temporary toast message on the screen.
+
 ### Real-time Friend Post Notifications
 *   **Instant Alerts**: Users receive immediate toast notifications when a friend they are connected with creates a new blog post. This allows for timely discovery of content shared by friends.
 *   **Dedicated Activity Page**: A "Friend Activity" page (`/friend_post_notifications`) provides a chronological history of these notifications. Users can view details, link directly to the friend's post, and manage the read status of each notification (mark as read individually or mark all as read).

@@ -16,6 +16,7 @@ from flask_restful import Api
 from flask_jwt_extended import JWTManager, create_access_token
 import uuid # For generating unique filenames
 import random
+import queue
 from achievements_logic import check_and_award_achievements
 
 db = SQLAlchemy()
@@ -34,6 +35,7 @@ from recommendations import (
 
 app = Flask(__name__)
 app.sse_listeners = {}
+app.user_notification_queues = {}
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
@@ -2281,8 +2283,37 @@ def send_friend_request(target_user_id):
     new_request = Friendship(user_id=current_user_id, friend_id=target_user_id, status='pending')
     db.session.add(new_request)
     db.session.commit()
-
     flash('Friend request sent successfully.', 'success')
+
+    # Dispatch SSE notification
+    current_user = User.query.get(current_user_id)
+    if current_user:
+        notification_payload = {
+            'type': 'friend_request_received',
+            'payload': {
+                'message': f'{current_user.username} sent you a friend request.',
+                'sender_username': current_user.username,
+                'profile_link': url_for('user_profile', username=current_user.username, _external=True)
+            }
+        }
+        if target_user_id in app.user_notification_queues:
+            user_queues = app.user_notification_queues[target_user_id]
+            if user_queues:
+                for q_item in user_queues:
+                    try:
+                        q_item.put_nowait(notification_payload)
+                        app.logger.info(f"Dispatched 'friend_request_received' SSE to a queue for user {target_user_id}")
+                    except queue.Full:
+                        app.logger.error(f"SSE queue full for user {target_user_id} when trying to send 'friend_request_received'. Notification lost.")
+                    except Exception as e:
+                        app.logger.error(f"Error putting 'friend_request_received' SSE into queue for user {target_user_id}: {e}")
+            else:
+                app.logger.info(f"User {target_user_id} has an empty queue list, skipping 'friend_request_received' SSE.")
+        else:
+            app.logger.info(f"User {target_user_id} not found in SSE notification queues, skipping 'friend_request_received' SSE.")
+    else:
+        app.logger.error(f"Could not find current_user (sender) with ID {current_user_id} to build friend request notification.")
+
     return redirect(url_for('user_profile', username=target_user.username))
 
 
@@ -2336,6 +2367,37 @@ def accept_friend_request(request_id):
             check_and_award_achievements(friend_request.requester.id)
 
         flash('Friend request accepted successfully!', 'success')
+
+        # Dispatch SSE Notification to the original sender
+        accepting_user = User.query.get(current_user_id)
+        original_sender_id = friend_request.user_id # ID of the user who sent the request
+
+        if accepting_user:
+            notification_payload = {
+                'type': 'new_follower', # Or 'friend_request_accepted'
+                'payload': {
+                    'message': f'{accepting_user.username} accepted your friend request.',
+                    'follower_username': accepting_user.username,
+                    'profile_link': url_for('user_profile', username=accepting_user.username, _external=True)
+                }
+            }
+            if original_sender_id in app.user_notification_queues:
+                user_queues = app.user_notification_queues[original_sender_id]
+                if user_queues:
+                    for q_item in user_queues:
+                        try:
+                            q_item.put_nowait(notification_payload)
+                            app.logger.info(f"Dispatched 'new_follower' SSE to a queue for user {original_sender_id}")
+                        except queue.Full:
+                            app.logger.error(f"SSE queue full for user {original_sender_id} when trying to send 'new_follower'. Notification lost.")
+                        except Exception as e:
+                            app.logger.error(f"Error putting 'new_follower' SSE into queue for user {original_sender_id}: {e}")
+                else:
+                    app.logger.info(f"User {original_sender_id} has an empty queue list, skipping 'new_follower' SSE.")
+            else:
+                app.logger.info(f"User {original_sender_id} not found in SSE notification queues, skipping 'new_follower' SSE.")
+        else:
+            app.logger.error(f"Could not find accepting_user (current user) with ID {current_user_id} to build 'new_follower' notification.")
 
         # Log 'new_follow' activity
         try:
@@ -2945,3 +3007,51 @@ def view_user_achievements(username):
                            all_system_achievements=all_system_achievements,
                            earned_achievement_ids=earned_achievement_ids,
                            user_earned_achievements_details=user_earned_achievements_details)
+
+
+@app.route('/user/notifications/stream')
+@login_required
+def user_notification_stream():
+    current_user_id = session.get('user_id')
+    if not current_user_id:
+        # This should ideally be caught by @login_required,
+        # but as a safeguard.
+        return Response("Unauthorized", status=401)
+
+    q = queue.Queue()
+    if current_user_id not in app.user_notification_queues:
+        app.user_notification_queues[current_user_id] = []
+    app.user_notification_queues[current_user_id].append(q)
+    app.logger.info(f"User {current_user_id} connected to notification stream. Total queues for user: {len(app.user_notification_queues[current_user_id])}")
+
+    def event_stream():
+        try:
+            while True:
+                data = q.get() # Blocking call, waits for data
+                if data is None: # Allow graceful shutdown of the stream
+                    app.logger.info(f"Stream for user {current_user_id} received None, closing.")
+                    break
+                # Format as SSE message: event: type\ndata: json_payload\n\n
+                event_type = data.get('type', 'message')
+                payload = data.get('payload', {})
+                sse_message = f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+                yield sse_message
+                app.logger.debug(f"Sent event {event_type} to user {current_user_id}")
+        except GeneratorExit:
+            app.logger.info(f"User {current_user_id} disconnected from notification stream (GeneratorExit).")
+        except Exception as e:
+            app.logger.error(f"Error in event stream for user {current_user_id}: {e}")
+        finally:
+            app.logger.info(f"Cleaning up queue for user {current_user_id}.")
+            if current_user_id in app.user_notification_queues:
+                if q in app.user_notification_queues[current_user_id]:
+                    app.user_notification_queues[current_user_id].remove(q)
+                    app.logger.info(f"Removed queue for user {current_user_id}. Remaining queues: {len(app.user_notification_queues[current_user_id])}")
+                if not app.user_notification_queues[current_user_id]: # If list is empty
+                    del app.user_notification_queues[current_user_id]
+                    app.logger.info(f"Removed user {current_user_id} from notification_queues dict as it's empty.")
+            else:
+                app.logger.warning(f"User {current_user_id} not found in notification_queues during cleanup. This might indicate an issue.")
+
+
+    return Response(event_stream(), mimetype='text/event-stream')

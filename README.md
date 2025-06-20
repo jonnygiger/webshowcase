@@ -368,6 +368,9 @@ Users can now interact with blog posts by liking or unliking them, providing a s
     *   Conditional rendering in Jinja templates to display different buttons ("Like" or "Unlike") based on application state.
     *   Handling POST requests for actions that modify data.
 
+### Real-time Like Notifications
+*   **Real-time Like Notifications**: When a user's post is liked by another user, the author of the post receives an instant notification. This is implemented using SocketIO for real-time communication and also creates a persistent notification in their notification list.
+
 ### Post Reactions
 
 Users can now express a wider range of sentiments on blog posts using emoji reactions.

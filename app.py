@@ -1187,6 +1187,37 @@ def like_post(post_id):
             db.session.commit()
             flash('Post liked!', 'success')
 
+            # <<< INSERT NEW NOTIFICATION LOGIC HERE >>>
+            if user_id != post.user_id: # Check: liker is not post author
+                liker = User.query.get(user_id)
+                # post.author is implicitly available if post object is loaded correctly
+                if liker and post.author:
+                    notification_message = f"{liker.username} liked your post: '{post.title}'"
+                    new_notification = Notification(
+                        user_id=post.author.id, # The recipient is the post author
+                        message=notification_message,
+                        type="new_like",
+                        related_id=post.id
+                    )
+                    try:
+                        db.session.add(new_notification)
+                        db.session.commit() # Save the notification
+
+                        socketio.emit('new_like_notification', {
+                            'liker_username': liker.username,
+                            'post_id': post.id,
+                            'post_title': post.title,
+                            'message': notification_message,
+                            'notification_id': new_notification.id
+                        }, room=f'user_{post.author.id}')
+                        app.logger.info(f"Sent new_like_notification to user_{post.author.id} for post {post.id}")
+                    except Exception as e_notify:
+                        db.session.rollback()
+                        app.logger.error(f"Error creating/sending like notification: {e_notify}")
+                else:
+                    app.logger.error(f"Could not send like notification: Liker (ID: {user_id}) or Post Author (User object: {post.author}) not fully available.")
+            # <<< END OF NEW NOTIFICATION LOGIC >>>
+
             # After successfully liking, create UserActivity
             try:
                 activity = UserActivity(
@@ -1199,13 +1230,13 @@ def like_post(post_id):
                 db.session.add(activity)
                 db.session.commit()
                 emit_new_activity_event(activity) # Emit SocketIO event
-            except Exception as e:
-                app.logger.error(f"Error creating UserActivity for new_like or emitting event: {e}")
+            except Exception as e_activity: # Changed variable name to avoid conflict
                 db.session.rollback()
+                app.logger.error(f"Error creating UserActivity for new_like or emitting event: {e_activity}")
 
-        except Exception as e:
+        except Exception as e_like: # Catch error from liking post or notification logic
             db.session.rollback()
-            app.logger.error(f"Error liking post or creating UserActivity: {e}")
+            app.logger.error(f"Error liking post or processing related actions: {e_like}") # Modified log message
             flash('An error occurred while liking the post.', 'danger')
 
     else:

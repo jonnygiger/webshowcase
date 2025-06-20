@@ -106,7 +106,7 @@
 </div>
 
 {% block scripts %}
-{{ super() }}
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const hashtagsList = document.getElementById('trending-hashtags-list');
@@ -150,3 +150,4 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endblock %}
+{% endblock %} {# Closes content block #}

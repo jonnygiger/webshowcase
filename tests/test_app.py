@@ -2853,5 +2853,250 @@ class TestCommentAPI(AppTestCase):
             self.assertIn('content', data['message'])
             self.assertIn('cannot be blank', data['message']['content'].lower())
 
+    # Helper for creating polls in DB for test setup
+    def _create_db_poll(self, user_id, question="Test Poll?", options_texts=None, created_at=None):
+        if options_texts is None:
+            options_texts = ["Option 1", "Option 2"]
+        poll = Poll(question=question, user_id=user_id, created_at=created_at or datetime.utcnow())
+        db.session.add(poll)
+        db.session.flush()  # So poll gets an ID before adding options
+        for text in options_texts:
+            option = PollOption(text=text, poll_id=poll.id)
+            db.session.add(option)
+        db.session.commit()
+        return poll
+
+    # Helper for creating poll votes in DB
+    def _create_db_poll_vote(self, user_id, poll_id, poll_option_id, created_at=None):
+        # Note: PollVote model in the provided models.py doesn't have a timestamp/created_at.
+        # If it were added, it would be: timestamp=created_at or datetime.utcnow()
+        vote = PollVote(user_id=user_id, poll_id=poll_id, poll_option_id=poll_option_id)
+        db.session.add(vote)
+        db.session.commit()
+        return vote
+
+
+class TestPollAPI(AppTestCase):
+
+    def test_create_poll_success(self):
+        with app.app_context():
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+            poll_data = {'question': 'What is your favorite color?', 'options': ['Red', 'Green', 'Blue']}
+
+            response = self.client.post('/api/polls', headers=headers, json=poll_data)
+            self.assertEqual(response.status_code, 201)
+            data = response.get_json()
+            self.assertEqual(data['message'], 'Poll created successfully')
+            self.assertIn('poll', data)
+            self.assertEqual(data['poll']['question'], poll_data['question'])
+            self.assertEqual(len(data['poll']['options']), 3)
+            self.assertEqual(data['poll']['author_username'], self.user1.username)
+
+            # Verify in DB
+            poll_in_db = Poll.query.get(data['poll']['id'])
+            self.assertIsNotNone(poll_in_db)
+            self.assertEqual(poll_in_db.question, poll_data['question'])
+            self.assertEqual(len(poll_in_db.options), 3)
+            self.assertEqual(poll_in_db.options[0].text, 'Red')
+
+    def test_create_poll_missing_data(self):
+        with app.app_context():
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+
+            # Missing question
+            response = self.client.post('/api/polls', headers=headers, json={'options': ['Yes', 'No']})
+            self.assertEqual(response.status_code, 400)
+            data = response.get_json()
+            self.assertIn('question', data['message']) # reqparse error format
+
+            # Missing options
+            response = self.client.post('/api/polls', headers=headers, json={'question': 'Is this a test?'})
+            self.assertEqual(response.status_code, 400)
+            data = response.get_json()
+            self.assertIn('options', data['message'])
+
+    def test_create_poll_too_few_options(self):
+        with app.app_context():
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+            poll_data = {'question': 'Need more options?', 'options': ['Just one']}
+
+            response = self.client.post('/api/polls', headers=headers, json=poll_data)
+            self.assertEqual(response.status_code, 400)
+            data = response.get_json()
+            self.assertEqual(data['message'], 'A poll must have at least two options')
+
+    def test_create_poll_unauthenticated(self):
+        with app.app_context():
+            headers = {'Content-Type': 'application/json'}
+            poll_data = {'question': 'Who can post this?', 'options': ['Me', 'You']}
+            response = self.client.post('/api/polls', headers=headers, json=poll_data)
+            self.assertEqual(response.status_code, 401) # JWT Missing
+
+    def test_list_polls_success(self):
+        with app.app_context():
+            self._create_db_poll(user_id=self.user1.id, question="Poll 1")
+            self._create_db_poll(user_id=self.user2.id, question="Poll 2")
+
+            token = self._get_jwt_token(self.user1.username, 'password') # Listing requires auth
+            headers = {'Authorization': f'Bearer {token}'}
+            response = self.client.get('/api/polls', headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIn('polls', data)
+            self.assertEqual(len(data['polls']), 2)
+            self.assertEqual(data['polls'][0]['question'], "Poll 1") # Assuming default order by ID or creation time (Poll 1 older)
+
+    def test_list_polls_empty(self):
+        with app.app_context():
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {'Authorization': f'Bearer {token}'}
+            response = self.client.get('/api/polls', headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIn('polls', data)
+            self.assertEqual(len(data['polls']), 0)
+
+    def test_get_poll_success(self):
+        with app.app_context():
+            poll = self._create_db_poll(user_id=self.user1.id, question="Specific Poll")
+            token = self._get_jwt_token(self.user1.username, 'password') # Get requires auth
+            headers = {'Authorization': f'Bearer {token}'}
+            response = self.client.get(f'/api/polls/{poll.id}', headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIn('poll', data)
+            self.assertEqual(data['poll']['question'], "Specific Poll")
+            self.assertEqual(data['poll']['id'], poll.id)
+
+    def test_get_poll_not_found(self):
+        with app.app_context():
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {'Authorization': f'Bearer {token}'}
+            response = self.client.get('/api/polls/99999', headers=headers) # Non-existent ID
+            self.assertEqual(response.status_code, 404)
+
+    def test_delete_poll_success(self):
+        with app.app_context():
+            poll = self._create_db_poll(user_id=self.user1.id, question="To Be Deleted")
+            poll_id = poll.id
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {'Authorization': f'Bearer {token}'}
+
+            response = self.client.delete(f'/api/polls/{poll_id}', headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data['message'], 'Poll deleted')
+            self.assertIsNone(Poll.query.get(poll_id))
+
+    def test_delete_poll_unauthorized(self):
+        with app.app_context():
+            poll_by_user1 = self._create_db_poll(user_id=self.user1.id, question="User1's Poll")
+            poll_id = poll_by_user1.id
+
+            # Log in as user2
+            token_user2 = self._get_jwt_token(self.user2.username, 'password')
+            headers = {'Authorization': f'Bearer {token_user2}'}
+
+            response = self.client.delete(f'/api/polls/{poll_id}', headers=headers)
+            self.assertEqual(response.status_code, 403) # Forbidden
+            data = response.get_json()
+            self.assertEqual(data['message'], 'You are not authorized to delete this poll')
+            self.assertIsNotNone(Poll.query.get(poll_id)) # Still in DB
+
+    def test_delete_poll_unauthenticated(self):
+        with app.app_context():
+            poll = self._create_db_poll(user_id=self.user1.id, question="Unauth Delete Test")
+            poll_id = poll.id
+            response = self.client.delete(f'/api/polls/{poll_id}') # No token
+            self.assertEqual(response.status_code, 401)
+            self.assertIsNotNone(Poll.query.get(poll_id))
+
+    def test_delete_poll_not_found(self):
+        with app.app_context():
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {'Authorization': f'Bearer {token}'}
+            response = self.client.delete('/api/polls/99999', headers=headers) # Non-existent ID
+            self.assertEqual(response.status_code, 404)
+
+    def test_vote_on_poll_success(self):
+        with app.app_context():
+            poll = self._create_db_poll(user_id=self.user1.id, question="Vote Test Poll", options_texts=['OptA', 'OptB'])
+            option_to_vote_on = poll.options[0]
+            token = self._get_jwt_token(self.user2.username, 'password') # user2 votes
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+
+            response = self.client.post(f'/api/polls/{poll.id}/vote', headers=headers, json={'option_id': option_to_vote_on.id})
+            self.assertEqual(response.status_code, 201)
+            data = response.get_json()
+            self.assertEqual(data['message'], 'Vote cast successfully')
+
+            vote_in_db = PollVote.query.filter_by(user_id=self.user2.id, poll_id=poll.id, poll_option_id=option_to_vote_on.id).first()
+            self.assertIsNotNone(vote_in_db)
+
+    def test_vote_on_poll_already_voted(self):
+        with app.app_context():
+            poll = self._create_db_poll(user_id=self.user1.id)
+            option1 = poll.options[0]
+            option2 = poll.options[1]
+            # user2 already voted for option1
+            self._create_db_poll_vote(user_id=self.user2.id, poll_id=poll.id, poll_option_id=option1.id)
+
+            token = self._get_jwt_token(self.user2.username, 'password')
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+            # Try to vote again (for option2 or option1)
+            response = self.client.post(f'/api/polls/{poll.id}/vote', headers=headers, json={'option_id': option2.id})
+            self.assertEqual(response.status_code, 400)
+            data = response.get_json()
+            self.assertEqual(data['message'], 'You have already voted on this poll')
+
+    def test_vote_on_poll_invalid_option_id_for_poll(self):
+        with app.app_context():
+            poll1 = self._create_db_poll(user_id=self.user1.id, question="Poll 1")
+            # poll2 = self._create_db_poll(user_id=self.user1.id, question="Poll 2") # Not needed for this specific variant
+
+            token = self._get_jwt_token(self.user2.username, 'password')
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+
+            non_existent_option_id = 9999
+            response = self.client.post(f'/api/polls/{poll1.id}/vote', headers=headers, json={'option_id': non_existent_option_id})
+            self.assertEqual(response.status_code, 404) # Option not found for this poll
+            data = response.get_json()
+            self.assertEqual(data['message'], 'Poll option not found or does not belong to this poll')
+
+    def test_vote_on_poll_option_not_in_specific_poll(self):
+        with app.app_context():
+            poll1 = self._create_db_poll(user_id=self.user1.id, question="Poll One", options_texts=["P1Opt1"])
+            poll2 = self._create_db_poll(user_id=self.user1.id, question="Poll Two", options_texts=["P2Opt1"])
+            option_from_poll2 = poll2.options[0]
+
+            token = self._get_jwt_token(self.user2.username, 'password')
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+
+            # Try to vote on poll1 using an option from poll2
+            response = self.client.post(f'/api/polls/{poll1.id}/vote', headers=headers, json={'option_id': option_from_poll2.id})
+            self.assertEqual(response.status_code, 404) # Option does not belong to poll1
+            data = response.get_json()
+            self.assertEqual(data['message'], 'Poll option not found or does not belong to this poll')
+
+    def test_vote_on_poll_unauthenticated(self):
+        with app.app_context():
+            poll = self._create_db_poll(user_id=self.user1.id)
+            option_id = poll.options[0].id
+            headers = {'Content-Type': 'application/json'}
+            response = self.client.post(f'/api/polls/{poll.id}/vote', headers=headers, json={'option_id': option_id})
+            self.assertEqual(response.status_code, 401)
+
+    def test_vote_on_poll_non_existent_poll(self):
+        with app.app_context():
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+            response = self.client.post('/api/polls/99999/vote', headers=headers, json={'option_id': 1}) # Non-existent poll
+            self.assertEqual(response.status_code, 404)
+            data = response.get_json()
+            self.assertEqual(data['message'], 'Poll not found')
+
 
 # Helper function to seed achievements for tests

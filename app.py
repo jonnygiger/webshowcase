@@ -3400,9 +3400,9 @@ def user_notification_stream():
 
     return Response(event_stream(), mimetype='text/event-stream')
 
-@app.route('/api/posts/stream')
-def post_stream():
-    q_client = queue.Queue() # Renamed to q_client to avoid conflict with import queue variable name
+@app.route('/api/posts/stream', endpoint='api_post_stream') # Added unique endpoint name
+def post_stream_api_global(): # Also renamed function for clarity, though endpoint arg is key
+    q_client = queue.Queue()
     new_post_sse_queues.append(q_client)
     app.logger.info(f"Client connected to /api/posts/stream. Total clients: {len(new_post_sse_queues)}")
 

@@ -2676,4 +2676,94 @@ class TestSeriesFeature(AppTestCase):
         self.assertNotIn(b'Previous in series', response.data)
         self.assertNotIn(b'Next in series', response.data)
 
+
+class TestCommentAPI(AppTestCase):
+
+    def test_create_comment_success(self):
+        with app.app_context():
+            # 1. Create a test user and a test post.
+            # user1 is created in AppTestCase's setUp
+            test_post = self._create_db_post(user_id=self.user1_id, title="Post for Commenting")
+            post_id = test_post.id
+
+            # 2. Log in as the test user to get a JWT token.
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+
+            # 3. Make a POST request to /api/posts/{post_id}/comments
+            comment_content = "This is a test comment."
+            response = self.client.post(f'/api/posts/{post_id}/comments', headers=headers, json={'content': comment_content})
+
+            # 4. Assert that the response status code is 201.
+            self.assertEqual(response.status_code, 201, f"Response data: {response.data.decode()}")
+
+            # 5. Assert that the response JSON contains the correct message and comment details.
+            data = json.loads(response.data)
+            self.assertEqual(data['message'], 'Comment created successfully')
+            self.assertIn('comment', data)
+            comment_data = data['comment']
+            self.assertEqual(comment_data['content'], comment_content)
+            self.assertEqual(comment_data['user_id'], self.user1_id)
+            self.assertEqual(comment_data['author_username'], self.user1.username)
+            self.assertEqual(comment_data['post_id'], post_id)
+            self.assertIsNotNone(comment_data['id'])
+            self.assertIsNotNone(comment_data['timestamp'])
+
+            # 6. Verify that the comment is actually created in the database.
+            comment_in_db = Comment.query.get(comment_data['id'])
+            self.assertIsNotNone(comment_in_db)
+            self.assertEqual(comment_in_db.content, comment_content)
+            self.assertEqual(comment_in_db.user_id, self.user1_id)
+            self.assertEqual(comment_in_db.post_id, post_id)
+
+    def test_create_comment_unauthenticated(self):
+        with app.app_context():
+            test_post = self._create_db_post(user_id=self.user1_id, title="Post for Unauth Comment")
+            post_id = test_post.id
+
+            # Make request WITHOUT token
+            headers = {'Content-Type': 'application/json'}
+            response = self.client.post(f'/api/posts/{post_id}/comments', headers=headers, json={'content': "A comment attempt"})
+
+            self.assertEqual(response.status_code, 401) # Expecting 401 for missing JWT
+
+    def test_create_comment_post_not_found(self):
+        with app.app_context():
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+            non_existent_post_id = 99999
+
+            response = self.client.post(f'/api/posts/{non_existent_post_id}/comments', headers=headers, json={'content': "Commenting on nothing"})
+
+            self.assertEqual(response.status_code, 404)
+            data = json.loads(response.data)
+            self.assertEqual(data['message'], 'Post not found')
+
+    def test_create_comment_missing_content(self):
+        with app.app_context():
+            test_post = self._create_db_post(user_id=self.user1_id, title="Post for Invalid Comment")
+            post_id = test_post.id
+
+            token = self._get_jwt_token(self.user1.username, 'password')
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+
+            response = self.client.post(f'/api/posts/{post_id}/comments', headers=headers, json={}) # Empty JSON body
+
+            self.assertEqual(response.status_code, 400)
+            data = json.loads(response.data)
+            # The exact message depends on reqparse error formatting.
+            # It usually returns a dict where keys are problematic arguments.
+            self.assertIn('content', data['message'])
+            self.assertIn('cannot be blank', data['message']['content'].lower())
+
+
 # Helper function to seed achievements for tests

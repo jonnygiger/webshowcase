@@ -1288,6 +1288,54 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
             }
             ```
 
+*   **POST /api/posts/{post_id}/comments**
+    *   **Description:** Adds a new comment to a specific post.
+    *   **Authentication:** Required (JWT Bearer token in Authorization header).
+    *   **Path Parameters:**
+        *   `post_id` (integer): The ID of the post to comment on.
+    *   **Request Body:** JSON object with:
+        *   `content` (string, required): The text content of the comment.
+    *   **Example Request:**
+        ```json
+        {
+            "content": "This is a great post!"
+        }
+        ```
+    *   **Success Response (201 Created):**
+        ```json
+        {
+            "message": "Comment created successfully",
+            "comment": {
+                "id": 123,
+                "content": "This is a great post!",
+                "user_id": 1,
+                "author_username": "testuser",
+                "post_id": 1,
+                "timestamp": "YYYY-MM-DDTHH:MM:SS.ffffff"
+            }
+        }
+        ```
+    *   **Error Responses:**
+        *   `400 Bad Request`: If 'content' is missing.
+            ```json
+            {
+                "message": "Comment content cannot be blank"
+            }
+            ```
+        *   `401 Unauthorized`: If JWT token is missing or invalid.
+        *   `404 Not Found`: If the post or user (from token) is not found.
+            ```json
+            {
+                "message": "Post not found"
+            }
+            ```
+            or
+            ```json
+            {
+                "message": "User not found"
+            }
+            ```
+
 ### Events API
 
 *   **GET /api/events**

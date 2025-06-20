@@ -16,8 +16,11 @@
     </div>
     <div class="form-group">
       <label for="content">Content</label>
-      <textarea class="form-control" id="content" name="content" rows="10" required>{{ post.content }}</textarea>
+      <textarea class="form-control" id="post-content-editor" name="content" rows="10" required disabled>{{ post.content }}</textarea> {# Disabled initially, changed ID #}
     </div>
+    <div id="lock-status-message" style="margin-bottom: 10px; font-style: italic;"></div>
+    <div id="last-edited-by" style="margin-bottom: 10px; font-size: 0.9em; color: #555;"></div>
+    <button type="button" id="toggle-lock-button" class="btn btn-info mb-2">Acquire Lock to Edit</button>
     <div class="form-group">
         <label for="hashtags">Hashtags (comma-separated)</label>
         <input type="text" class="form-control" id="hashtags" name="hashtags" value="{{ post.hashtags if post.hashtags else '' }}">
@@ -28,4 +31,288 @@
           <form method="POST" action="{{ url_for('delete_post', post_id=post.id) }}" style="display: inline-block; margin-top: 10px;" onsubmit="return confirm('Are you sure you want to delete this post?');">
               <button type="submit" class="btn btn-danger">Delete Post</button>
   </form>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }} {# Include scripts from base.html, like Socket.IO client #}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Ensure current_user is available and has id/username (passed from Flask template)
+    const currentUserId = {{ current_user.id | tojson if current_user and current_user.is_authenticated else 'null' }};
+    const currentUsername = {{ current_user.username | tojson if current_user and current_user.is_authenticated else 'null' }};
+    const postId = {{ post.id | tojson }};
+
+    if (!currentUserId || !postId) {
+        console.error("User not logged in or Post ID missing. Real-time editing disabled.");
+        const lockStatusMsgEl = document.getElementById('lock-status-message');
+        if(lockStatusMsgEl) lockStatusMsgEl.textContent = "You must be logged in to use real-time editing features.";
+        const toggleLockButton = document.getElementById('toggle-lock-button');
+        if(toggleLockButton) toggleLockButton.disabled = true;
+        const contentEditor = document.getElementById('post-content-editor');
+        if(contentEditor) contentEditor.disabled = true;
+        return;
+    }
+
+    // Assume Socket.IO client (socket) is loaded from base.html
+    if (typeof socket === 'undefined' || !socket) {
+        console.error('Socket.IO client (socket) not loaded globally from base.html.');
+        alert('Real-time features are unavailable. Please refresh or contact support.');
+        return;
+    }
+
+    const contentEditor = document.getElementById('post-content-editor');
+    const titleEditor = document.getElementById('title');
+    const hashtagsEditor = document.getElementById('hashtags');
+    const lockStatusMsgEl = document.getElementById('lock-status-message');
+    const toggleLockButton = document.getElementById('toggle-lock-button');
+    const lastEditedByEl = document.getElementById('last-edited-by');
+    const submitButton = document.querySelector('form button[type="submit"]');
+
+    let hasLock = false;
+    let lockExpiresAt = null;
+    let lockOwnerUsername = null;
+    let lockUpdateTimer = null;
+
+    function debounce(func, delay) {
+        let timeout;
+        return function(...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), delay);
+        };
+    }
+
+    function formatTimeRemaining(expiryTimestamp) {
+        if (!expiryTimestamp) return "";
+        const totalSeconds = Math.max(0, Math.floor((new Date(expiryTimestamp) - new Date()) / 1000));
+        if (totalSeconds === 0) return "expired";
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${minutes}m ${seconds < 10 ? '0' : ''}${seconds}s`;
+    }
+
+    function updateLockStatusDisplay() {
+        clearInterval(lockUpdateTimer); // Clear existing timer before setting a new one or none
+
+        if (hasLock) { // Current user has the lock
+            contentEditor.disabled = false;
+            submitButton.disabled = false;
+            toggleLockButton.textContent = 'Release Lock';
+            toggleLockButton.classList.remove('btn-info', 'btn-secondary');
+            toggleLockButton.classList.add('btn-warning');
+            toggleLockButton.disabled = false;
+
+            const updateTimer = () => {
+                const timeRemaining = formatTimeRemaining(lockExpiresAt);
+                if (timeRemaining === "expired") {
+                    lockStatusMsgEl.textContent = `Your lock has expired.`;
+                    clearInterval(lockUpdateTimer);
+                    hasLock = false; // Update state
+                    contentEditor.disabled = true;
+                    submitButton.disabled = true;
+                    toggleLockButton.textContent = 'Acquire Lock to Edit';
+                    toggleLockButton.classList.remove('btn-warning');
+                    toggleLockButton.classList.add('btn-info');
+                    // Consider emitting a client-side event or calling releaseLock if server doesn't auto-handle expired locks for this user
+                } else {
+                    lockStatusMsgEl.textContent = `You have the lock. Expires in: ${timeRemaining}`;
+                }
+            };
+            updateTimer();
+            lockUpdateTimer = setInterval(updateTimer, 1000);
+
+        } else if (lockOwnerUsername) { // Locked by someone else
+            contentEditor.disabled = true;
+            submitButton.disabled = true;
+            toggleLockButton.textContent = 'Acquire Lock to Edit'; // Or "View Only"
+            toggleLockButton.disabled = true; // Can't acquire if someone else has it (unless it expires)
+            toggleLockButton.classList.remove('btn-warning');
+            toggleLockButton.classList.add('btn-secondary'); // Visually distinct from "can acquire"
+
+            const updateTimer = () => {
+                 const timeRemaining = formatTimeRemaining(lockExpiresAt);
+                 if (timeRemaining === "expired"){
+                    lockStatusMsgEl.textContent = `Lock by ${lockOwnerUsername} has expired. You can try to acquire it.`;
+                    clearInterval(lockUpdateTimer);
+                    toggleLockButton.disabled = false; // Enable button to acquire
+                    toggleLockButton.classList.remove('btn-secondary');
+                    toggleLockButton.classList.add('btn-info');
+                    lockOwnerUsername = null; // Reset lock owner
+                 } else {
+                    lockStatusMsgEl.textContent = `Post locked by ${lockOwnerUsername}. Edit disabled. Expires in: ${timeRemaining}`;
+                 }
+            };
+            updateTimer();
+            lockUpdateTimer = setInterval(updateTimer, 1000);
+        } else { // No active lock, available
+            contentEditor.disabled = true;
+            submitButton.disabled = true;
+            toggleLockButton.textContent = 'Acquire Lock to Edit';
+            toggleLockButton.disabled = false;
+            toggleLockButton.classList.remove('btn-warning', 'btn-secondary');
+            toggleLockButton.classList.add('btn-info');
+            lockStatusMsgEl.textContent = 'Post is available. Acquire lock to edit.';
+        }
+    }
+
+    async function callLockAPI(method) {
+        const url = `/api/posts/${postId}/lock`;
+        const jwtToken = "{{ session.get('jwt_token', '') }}"; // Get JWT token if available from session for API calls
+        if (!jwtToken) { // This is a fallback, real JWT should be handled more robustly
+            console.warn("JWT token not found in session for API call. Using potentially unauthenticated request.");
+            // Depending on app's auth, this might fail or proceed if API allows some unauth access
+        }
+
+        try {
+            const response = await fetch(url, {
+                method: method,
+                headers: {
+                    'Authorization': `Bearer ${jwtToken}`,
+                    'Content-Type': 'application/json' // Important for POST/DELETE if they expect JSON
+                }
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                console.log(`Lock API call (${method}) successful:`, data);
+                // SocketIO events should handle UI updates primarily
+                if (method === 'POST') {
+                    // data.lock_details should contain new lock info
+                    // UI will be updated by 'post_lock_acquired' via SocketIO
+                } else if (method === 'DELETE') {
+                    // UI will be updated by 'post_lock_released' via SocketIO
+                }
+            } else {
+                console.error(`Failed to ${method} lock:`, data);
+                alert(`Could not ${method === 'POST' ? 'acquire' : 'release'} lock: ${data.message}`);
+                if (data.locked_by_username) { // If locked by someone else on acquire attempt
+                    lockOwnerUsername = data.locked_by_username;
+                    lockExpiresAt = data.expires_at;
+                } else if (method === 'POST') { // Failed to acquire, not locked by someone else
+                    lockOwnerUsername = null;
+                    lockExpiresAt = null;
+                }
+                // If DELETE failed, we assume the current user might still hold the lock or it's an error
+                // The UI update reflects the server's reported state or maintains current if server error
+                updateLockStatusDisplay();
+            }
+        } catch (error) {
+            console.error(`Error ${method === 'POST' ? 'acquiring' : 'releasing'} lock:`, error);
+            alert(`Network or client-side error ${method === 'POST' ? 'acquiring' : 'releasing'} lock. See console.`);
+            // Revert UI to a safe state, possibly reflecting current known state before the call
+            updateLockStatusDisplay();
+        }
+    }
+
+    toggleLockButton.addEventListener('click', () => {
+        if (hasLock) { // User wants to release their lock
+            callLockAPI('DELETE');
+        } else if (!lockOwnerUsername) { // Post is available or lock expired, user wants to acquire
+            callLockAPI('POST');
+        } else { // Post is locked by someone else (button should be disabled if lock is active)
+            alert("This post is currently locked by " + lockOwnerUsername + ". Please wait.");
+        }
+    });
+
+    // SocketIO event listeners
+    socket.on('connect', () => {
+        console.log('Socket.IO connected for edit page.');
+        socket.emit('join_room', { room: `post_${postId}` });
+        // It might be good to request current lock status from server here
+        // For now, UI defaults to "unlocked" and relies on user action or incoming events
+        updateLockStatusDisplay();
+    });
+
+    socket.on('post_lock_acquired', (data) => {
+        console.log('Socket event: post_lock_acquired', data);
+        if (data.post_id === postId) {
+            lockExpiresAt = data.expires_at;
+            if (data.user_id === currentUserId) {
+                hasLock = true;
+                lockOwnerUsername = currentUsername; // or data.username
+            } else {
+                hasLock = false;
+                lockOwnerUsername = data.username;
+            }
+            updateLockStatusDisplay();
+        }
+    });
+
+    socket.on('post_lock_released', (data) => {
+        console.log('Socket event: post_lock_released', data);
+        if (data.post_id === postId) {
+            hasLock = false;
+            lockOwnerUsername = null;
+            lockExpiresAt = null;
+            updateLockStatusDisplay();
+            lastEditedByEl.textContent = data.username ? `Lock released by ${data.username}.` : 'Lock released.';
+        }
+    });
+
+    const debouncedEmitEdit = debounce((content) => {
+        if (hasLock) {
+            console.log('Emitting edit_post_content for post_id:', postId);
+            socket.emit('edit_post_content', {
+                post_id: postId,
+                new_content: content
+            });
+        }
+    }, 750); // 750ms debounce
+
+    contentEditor.addEventListener('input', () => {
+        if (hasLock) {
+            debouncedEmitEdit(contentEditor.value);
+        }
+    });
+
+    socket.on('post_content_updated', (data) => {
+        console.log('Socket event: post_content_updated', data);
+        if (data.post_id === postId) {
+            // Update content only if it's not from the current user to avoid cursor jump,
+            // unless the version from server is considered more canonical.
+            if (data.edited_by_user_id !== currentUserId) {
+                const currentCursorPosition = contentEditor.selectionStart;
+                contentEditor.value = data.new_content;
+                // Try to restore cursor position if content length hasn't changed drastically
+                // This is a very basic way and might not work well with significant changes
+                if (contentEditor.value.length === data.new_content.length) {
+                     contentEditor.setSelectionRange(currentCursorPosition, currentCursorPosition);
+                }
+            }
+            lastEditedByEl.textContent = `Last edit by ${data.edited_by_username || 'a user'} at ${new Date(data.last_edited).toLocaleTimeString()}`;
+        }
+    });
+
+    socket.on('edit_error', (data) => {
+        console.error('Server edit_error:', data.message);
+        alert(`Editing Error: ${data.message}`);
+        // If error is related to lock, refresh lock status display
+        if (data.message && data.message.toLowerCase().includes('lock')) {
+            hasLock = false; // Assume lock is lost or invalid
+            lockOwnerUsername = null;
+            updateLockStatusDisplay();
+        }
+    });
+
+    socket.on('edit_success', (data) => {
+        console.log('Server edit_success:', data.message);
+        // Optionally provide subtle feedback, e.g., a temporary "changes saved" message
+    });
+
+    // Best-effort lock release on page unload
+    window.addEventListener('beforeunload', () => {
+        if (hasLock) {
+            // This API call is asynchronous and not guaranteed to complete.
+            // For more reliable release, server-side expiration is key.
+            callLockAPI('DELETE');
+        }
+    });
+
+    // Initial state: editor disabled, button says "Acquire Lock"
+    updateLockStatusDisplay();
+    // To get initial lock state if any:
+    // One strategy: client could emit a 'request_lock_status' event on connect,
+    // server responds with current lock details if any for this post.
+    // For now, this example starts "fresh" and user must click to lock.
+});
+</script>
 {% endblock %}

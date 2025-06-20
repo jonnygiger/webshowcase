@@ -33,7 +33,7 @@ from api import (
     EventListResource, EventResource, RecommendationResource,
     PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource,
     UserStatsResource, SeriesListResource, SeriesResource, CommentListResource,
-    PollListResource, PollResource, PollVoteResource # Added Poll resources
+    PollListResource, PollResource, PollVoteResource, PostLockResource # Added Poll resources
 )
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
@@ -153,6 +153,7 @@ api.add_resource(CommentListResource, '/api/posts/<int:post_id>/comments')
 api.add_resource(PollListResource, '/api/polls')
 api.add_resource(PollResource, '/api/polls/<int:poll_id>')
 api.add_resource(PollVoteResource, '/api/polls/<int:poll_id>/vote')
+api.add_resource(PostLockResource, '/api/posts/<int:post_id>/lock') # Route for locking/unlocking posts
 
 # Scheduler for periodic tasks
 scheduler = BackgroundScheduler()
@@ -1767,6 +1768,80 @@ def handle_send_group_message_event(data):
 #             print("Demo user created as it was missing from existing DB.")
 #         else:
 #             print("Demo user confirmed to exist in existing DB.")
+
+@socketio.on('edit_post_content')
+def handle_edit_post_content(data):
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('edit_error', {'message': 'Authentication required. Please log in.'}, room=request.sid)
+        return
+
+    post_id = data.get('post_id')
+    new_content = data.get('new_content') # Frontend should send this
+
+    if not post_id or new_content is None: # new_content can be an empty string
+        emit('edit_error', {'message': 'Invalid data: Post ID and new content are required.'}, room=request.sid)
+        return
+
+    post = Post.query.get(post_id)
+    if not post:
+        emit('edit_error', {'message': 'Post not found.'}, room=request.sid)
+        return
+
+    # Verify lock status
+    # The Post model has lock_info = db.relationship('PostLock', uselist=False, backref='post_locked')
+    lock = post.lock_info
+
+    if not lock:
+        emit('edit_error', {'message': 'Post is not locked for editing. Please acquire a lock first.'}, room=request.sid)
+        return
+
+    if lock.user_id != user_id:
+        # Check if lock is expired. If so, another user might be able to take it.
+        if lock.expires_at <= datetime.utcnow():
+             emit('edit_error', {'message': 'Post lock by another user has expired. Try acquiring the lock.'}, room=request.sid)
+        else:
+             emit('edit_error', {'message': 'Post is locked by another user.'}, room=request.sid)
+        return
+
+    if lock.expires_at <= datetime.utcnow():
+        # Though the current user holds the lock, it has expired.
+        # Depending on policy, we could auto-renew, or force them to re-acquire.
+        # For now, let's treat it as an error and they should re-acquire.
+        db.session.delete(lock) # Delete the expired lock
+        try:
+            db.session.commit()
+            socketio.emit('post_lock_released', {'post_id': post_id, 'released_by_user_id': None, 'username': 'System (Expired)'}, room=f'post_{post_id}')
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Error deleting expired lock during edit attempt: {e}")
+        emit('edit_error', {'message': 'Your lock on the post has expired. Please acquire a new lock.'}, room=request.sid)
+        return
+
+    # All checks passed, proceed with update
+    post.content = new_content
+    post.last_edited = datetime.utcnow() # Update last_edited timestamp
+
+    try:
+        db.session.commit()
+        # Broadcast to all clients in the post's room
+        update_payload = {
+            'post_id': post.id,
+            'new_content': post.content,
+            'last_edited': post.last_edited.isoformat(),
+            'edited_by_user_id': user_id, # Optionally send who edited
+            'edited_by_username': User.query.get(user_id).username # Optionally send who edited
+        }
+        socketio.emit('post_content_updated', update_payload, room=f'post_{post.id}')
+        app.logger.info(f"User {user_id} successfully updated post {post.id}. New content broadcasted.")
+        # Optionally, send a success ack to the editor
+        emit('edit_success', {'message': 'Content updated successfully.', 'post_id': post.id}, room=request.sid)
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error committing post content update by user {user_id} for post {post.id}: {e}")
+        emit('edit_error', {'message': 'A server error occurred while saving changes. Please try again.'}, room=request.sid)
+
 
 @app.route('/api/login', methods=['POST'])
 def api_login():

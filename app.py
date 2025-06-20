@@ -1556,7 +1556,7 @@ def like_post(post_id):
                     new_notification = Notification(
                         user_id=post.author.id,  # The recipient is the post author
                         message=notification_message,
-                        type="new_like",
+                        type="like",
                         related_id=post.id,
                     )
                     try:

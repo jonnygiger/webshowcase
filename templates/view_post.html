@@ -15,10 +15,10 @@
     <p><small>By <a href="{{ url_for('user_profile', username=post.author_username) }}">{{ post.author_username }}</a> on {{ post.timestamp }}</small></p>
 
     {# Series Information and Next/Previous Navigation #}
-    {% if post.series_associated_with.all() %}
+    {% if post.series_associated_with %}
         <div class="series-info mb-3 p-2 border rounded bg-light">
             <p class="mb-1"><strong>Part of Series:</strong>
-                {% for series_item in post.series_associated_with.all() %}
+                {% for series_item in post.series_associated_with %}
                     <a href="{{ url_for('view_series', series_id=series_item.id) }}">{{ series_item.title }}</a>{% if not loop.last %}, {% endif %}
                 {% endfor %}
             </p>

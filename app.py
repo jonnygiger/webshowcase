@@ -39,6 +39,42 @@ from recommendations import (
 app = Flask(__name__)
 app.sse_listeners = {}
 app.user_notification_queues = {}
+
+new_post_sse_queues = []
+
+def broadcast_new_post(post_data):
+    # This function will be called when a new post is created.
+    # It sends the post data to all connected SSE clients.
+
+    post_data_with_url = post_data.copy() # Work with a copy
+
+    if 'id' in post_data_with_url:
+        try:
+            # url_for needs an active app context to work.
+            # If broadcast_new_post is called outside of a request context where app context is not available
+            # (e.g. from a background task not set up with app context), this will fail.
+            # Assuming it's called from within a request context (e.g. after a post is made via an API endpoint)
+            # or the Flask app instance 'app' is globally available and configured.
+            # If this function is called from a different context (e.g., a Celery task or a script),
+            # it might require `with app.app_context():` around the url_for call.
+            # For now, we assume the context is available as this is a common pattern in Flask.
+            post_data_with_url['url'] = url_for('view_post', post_id=post_data_with_url['id'], _external=True)
+        except Exception as e:
+            app.logger.error(f"Error generating URL for post ID {post_data_with_url.get('id')}: {e}. Sending notification without URL.")
+            # post_data_with_url will not have the 'url' key if url_for fails, or it can be explicitly removed:
+            # if 'url' in post_data_with_url: del post_data_with_url['url']
+            # For this case, not having 'url' is the outcome of the error.
+    else:
+        app.logger.warning("Post data missing 'id' field, cannot generate URL for SSE notification. Sending notification without URL.")
+
+    app.logger.info(f"Broadcasting new post: ID {post_data_with_url.get('id')}, Title: {post_data_with_url.get('title')} to {len(new_post_sse_queues)} clients. URL: {post_data_with_url.get('url', 'N/A')}")
+    for q_item in new_post_sse_queues:
+        try:
+            q_item.put(post_data_with_url) # Send the copy (potentially with URL)
+        except Exception as e:
+            app.logger.error(f"Error putting post_data_with_url into a queue: {e}")
+
+
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
@@ -3243,5 +3279,32 @@ def user_notification_stream():
             else:
                 app.logger.warning(f"User {current_user_id} not found in notification_queues during cleanup. This might indicate an issue.")
 
+
+    return Response(event_stream(), mimetype='text/event-stream')
+
+@app.route('/api/posts/stream')
+def post_stream():
+    q_client = queue.Queue() # Renamed to q_client to avoid conflict with import queue variable name
+    new_post_sse_queues.append(q_client)
+    app.logger.info(f"Client connected to /api/posts/stream. Total clients: {len(new_post_sse_queues)}")
+
+    def event_stream():
+        try:
+            while True:
+                post_data = q_client.get(block=True) # Wait for a new post
+                # Send event in SSE format
+                yield f"event: new_post\ndata: {json.dumps(post_data)}\n\n"
+                app.logger.info(f"Sent new_post event for post ID: {post_data.get('id')} to a client.")
+        except GeneratorExit:
+            # Client disconnected
+            app.logger.info(f"Client disconnected from /api/posts/stream (GeneratorExit).")
+            pass
+        except Exception as e:
+            app.logger.error(f"Error in post_stream event_stream for a client: {e}")
+        finally:
+            # Remove queue from the list when client disconnects
+            if q_client in new_post_sse_queues:
+                new_post_sse_queues.remove(q_client)
+                app.logger.info(f"Removed client queue from new_post_sse_queues. Remaining clients: {len(new_post_sse_queues)}")
 
     return Response(event_stream(), mimetype='text/event-stream')

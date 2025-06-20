@@ -4,7 +4,7 @@ import json # For checking JSON responses
 import io # For BytesIO
 from unittest.mock import patch, call, ANY
 from app import app, db, socketio # Import socketio from app
-from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus, Achievement, UserAchievement, Comment, Series, SeriesPost # Added Series, SeriesPost
+from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus, Achievement, UserAchievement, Comment, Series, SeriesPost, Notification, Like # Added Series, SeriesPost, Notification, Like
 from recommendations import update_trending_hashtags # For testing the job logic
 from achievements_logic import check_and_award_achievements, get_user_stat
 from datetime import datetime, timedelta
@@ -2026,6 +2026,94 @@ class TestRealtimePostNotifications(AppTestCase):
             self.assertTrue(response.is_streamed, "Response from /api/posts/stream should be streamed.")
             # Closing the response explicitly after checking it's streamed
             response.close()
+
+
+class TestLikeNotifications(AppTestCase):
+
+    def setUp(self):
+        super().setUp()
+        # self.user1 (author), self.user2 (liker) are created by AppTestCase._setup_base_users()
+        self.author = self.user1
+        self.liker = self.user2
+
+    @patch('app.socketio.emit')
+    def test_like_post_sends_notification_and_emits_event(self, mock_socketio_emit):
+        with app.app_context():
+            # 1. Setup Post by author
+            post_by_author = self._create_db_post(user_id=self.author.id, title="Author's Likable Post")
+
+            # 2. Login as liker
+            self.login(self.liker.username, 'password')
+
+            # 3. Liker likes the post
+            response = self.client.post(f'/blog/post/{post_by_author.id}/like', follow_redirects=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Post liked!", response.data)
+
+            # 4. Verify Database Notification for author
+            notification = Notification.query.filter_by(
+                user_id=self.author.id,
+                type="new_like",
+                related_id=post_by_author.id
+            ).first()
+            self.assertIsNotNone(notification, "Database notification was not created for the author.")
+            expected_message = f"{self.liker.username} liked your post: '{post_by_author.title}'"
+            self.assertEqual(notification.message, expected_message)
+
+            # 5. Verify SocketIO Emission to author's room
+            expected_payload = {
+                'liker_username': self.liker.username,
+                'post_id': post_by_author.id,
+                'post_title': post_by_author.title,
+                'message': expected_message,
+                'notification_id': notification.id
+            }
+            # Check if the specific call was made.
+            # Iterating through call_args_list is more robust if other emits might happen.
+            found_call = False
+            for call_args_tuple in mock_socketio_emit.call_args_list:
+                args, kwargs = call_args_tuple
+                if args[0] == 'new_like_notification' and kwargs.get('room') == f'user_{self.author.id}':
+                    self.assertEqual(args[1], expected_payload)
+                    found_call = True
+                    break
+            self.assertTrue(found_call, "Expected 'new_like_notification' event was not emitted to the author's room with correct payload.")
+
+            self.logout()
+
+    @patch('app.socketio.emit')
+    def test_like_own_post_does_not_send_notification_or_emit_event(self, mock_socketio_emit):
+        with app.app_context():
+            # 1. Setup Post by author
+            post_by_author = self._create_db_post(user_id=self.author.id, title="Author's Own Post to Like")
+
+            # 2. Login as author
+            self.login(self.author.username, 'password')
+
+            # 3. Author likes their own post
+            response = self.client.post(f'/blog/post/{post_by_author.id}/like', follow_redirects=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Post liked!", response.data) # The like itself should still work
+
+            # 4. Verify NO Database Notification for author
+            notification = Notification.query.filter_by(
+                user_id=self.author.id,
+                type="new_like",
+                related_id=post_by_author.id
+            ).first()
+            self.assertIsNone(notification, "Notification should NOT be created when a user likes their own post.")
+
+            # 5. Verify NO SocketIO Emission of 'new_like_notification'
+            like_notification_event_found = False
+            for call_args_tuple in mock_socketio_emit.call_args_list:
+                args, kwargs = call_args_tuple
+                if args[0] == 'new_like_notification' and kwargs.get('room') == f'user_{self.author.id}':
+                    like_notification_event_found = True
+                    break
+            self.assertFalse(like_notification_event_found, "new_like_notification event should NOT be emitted when a user likes their own post.")
+
+            self.logout()
+
 
 def seed_test_achievements():
     achievements_data = [

@@ -19,13 +19,16 @@ import random
 import queue
 from achievements_logic import check_and_award_achievements
 
-db = SQLAlchemy()
+from flask_migrate import Migrate # Keep Migrate here
+
+# Import db object from models.py FIRST, then other models
+from models import db, User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus, UserAchievement, Achievement, Series, SeriesPost
 migrate = Migrate()
 
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
-from models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus, UserAchievement, Achievement # Add UserActivity, FlaggedContent, GroupMessage, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus, UserAchievement, Achievement
-from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource, UserStatsResource # Added OnThisDayResource
+# Models are already imported above now
+from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource, UserStatsResource, SeriesListResource, SeriesResource # Added Series Resources
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
     suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags,
@@ -100,6 +103,8 @@ api.add_resource(PersonalizedFeedResource, '/api/users/<int:user_id>/feed')
 api.add_resource(TrendingHashtagsResource, '/api/trending_hashtags') # Added TrendingHashtagsResource endpoint
 api.add_resource(OnThisDayResource, '/api/onthisday') # Added OnThisDayResource endpoint
 api.add_resource(UserStatsResource, '/api/users/<int:user_id>/stats')
+api.add_resource(SeriesListResource, '/api/series')
+api.add_resource(SeriesResource, '/api/series/<int:series_id>')
 
 # Scheduler for periodic tasks
 scheduler = BackgroundScheduler()
@@ -349,6 +354,9 @@ def user_profile(username):
     # Fetch user's achievements
     user_achievements = UserAchievement.query.filter_by(user_id=user.id).order_by(UserAchievement.awarded_at.desc()).all()
 
+    # Fetch series created by the user
+    user_series = Series.query.filter_by(user_id=user.id).order_by(Series.created_at.desc()).all()
+
     # Pass the whole user object to the template, which includes user.profile_picture
     return render_template('user.html',
                            user=user,
@@ -360,7 +368,8 @@ def user_profile(username):
                            bookmarked_post_ids=bookmarked_post_ids,
                            friendship_status=friendship_status,
                            pending_request_id=pending_request_id,
-                           user_achievements=user_achievements) # Add this
+                           user_achievements=user_achievements,
+                           user_series=user_series) # Add user_series
 
 @app.route('/todo', methods=['GET', 'POST'])
 @login_required
@@ -833,10 +842,9 @@ def blog():
                            suggested_users_snippet=suggested_users_snippet,
                            trending_hashtags=trending_hashtags_list) # Pass snippet to template
 
-@app.route('/blog/post/<int:post_id>')
+@app.route('/blog/post/<int:post_id>') # Accepts optional series_id for navigation context
 def view_post(post_id):
     post = Post.query.get_or_404(post_id)
-    # Use relationship for comments, ensure ordering if not default in model
     post_comments = Comment.query.with_parent(post).order_by(Comment.timestamp.asc()).all()
 
     # Reaction data
@@ -872,6 +880,40 @@ def view_post(post_id):
         db.session.expire_all() # Force refresh from DB for the session
         user_has_bookmarked = Bookmark.query.filter_by(user_id=current_user_id, post_id=post.id).first() is not None
 
+    # Series Navigation Logic
+    current_series_id = request.args.get('series_id', type=int)
+    previous_post_in_series = None
+    next_post_in_series = None
+
+    if current_series_id:
+        current_series = Series.query.get(current_series_id)
+        if current_series:
+            # Find the current post's association entry in this specific series
+            current_series_post_entry = SeriesPost.query.filter_by(
+                series_id=current_series_id,
+                post_id=post.id
+            ).first()
+
+            if current_series_post_entry:
+                current_order = current_series_post_entry.order
+
+                # Find previous post in the same series
+                prev_assoc = SeriesPost.query.filter_by(series_id=current_series_id, order=current_order - 1).first()
+                if prev_assoc:
+                    previous_post_in_series = Post.query.get(prev_assoc.post_id)
+
+                # Find next post in the same series
+                next_assoc = SeriesPost.query.filter_by(series_id=current_series_id, order=current_order + 1).first()
+                if next_assoc:
+                    next_post_in_series = Post.query.get(next_assoc.post_id)
+            else:
+                # Post is not part of the specified series_id, so clear it
+                current_series_id = None
+        else:
+            # Invalid series_id passed, so clear it
+            current_series_id = None
+
+
     return render_template('view_post.html',
                            post=post,
                            comments=post_comments,
@@ -881,7 +923,10 @@ def view_post(post_id):
                            can_submit_review=can_submit_review,
                            reactions=post_reactions, # Pass all reactions for detailed display if needed
                            reaction_counts=dict(reaction_counts), # Pass emoji counts
-                           user_has_bookmarked=user_has_bookmarked) # Pass bookmark status
+                           user_has_bookmarked=user_has_bookmarked,
+                           current_series_id=current_series_id,
+                           previous_post_in_series=previous_post_in_series,
+                           next_post_in_series=next_post_in_series)
 
 @app.route('/blog/edit/<int:post_id>', methods=['GET', 'POST'])
 @login_required
@@ -2495,6 +2540,151 @@ def user_activity_feed(username):
                                    .order_by(UserActivity.timestamp.desc())\
                                    .all()
     return render_template('user_activity.html', user=user, activities=activities)
+
+
+@app.route('/series/create', methods=['GET', 'POST'])
+@login_required
+def create_series():
+    if request.method == 'POST':
+        title = request.form.get('title')
+        description = request.form.get('description')
+        user_id = session.get('user_id')
+
+        if not title or not title.strip():
+            flash('Series title cannot be empty.', 'danger')
+            return render_template('create_series.html') # Stay on page, show error
+
+        if not user_id: # Should be caught by @login_required
+            flash('You must be logged in to create a series.', 'danger')
+            return redirect(url_for('login'))
+
+        new_series = Series(
+            title=title.strip(),
+            description=description.strip() if description else None,
+            user_id=user_id
+        )
+        db.session.add(new_series)
+        db.session.commit()
+
+        flash('Series created successfully!', 'success')
+        return redirect(url_for('view_series', series_id=new_series.id))
+
+    return render_template('create_series.html')
+
+@app.route('/series/<int:series_id>')
+def view_series(series_id):
+    series = Series.query.get_or_404(series_id)
+    # The series.posts relationship should be ordered by SeriesPost.order as defined in models.py
+    # No explicit sorting needed here if model definition is correct.
+    return render_template('view_series.html', series=series)
+
+
+@app.route('/series/<int:series_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_series(series_id):
+    series = Series.query.get_or_404(series_id)
+    if series.user_id != session.get('user_id'):
+        flash('You are not authorized to edit this series.', 'danger')
+        return redirect(url_for('view_series', series_id=series.id))
+
+    if request.method == 'POST':
+        title = request.form.get('title')
+        description = request.form.get('description')
+
+        if not title or not title.strip():
+            flash('Series title cannot be empty.', 'danger')
+            # Need to pass available_posts and posts_in_series_ids again for GET render
+            user_posts = Post.query.filter_by(user_id=series.user_id).order_by(Post.timestamp.desc()).all()
+            posts_in_series_ids = {sp.post_id for sp in series.series_post_associations}
+            available_posts = [post for post in user_posts if post.id not in posts_in_series_ids]
+            return render_template('edit_series.html', series=series, available_posts=available_posts, posts_in_series=series.posts)
+
+
+        series.title = title.strip()
+        series.description = description.strip() if description else None
+        series.updated_at = datetime.utcnow()
+
+        db.session.commit()
+        flash('Series details updated successfully!', 'success')
+        return redirect(url_for('edit_series', series_id=series.id)) # Redirect to edit_series to see changes and continue managing posts
+
+    # GET request
+    user_posts = Post.query.filter_by(user_id=series.user_id).order_by(Post.timestamp.desc()).all()
+    # series.posts is already ordered by SeriesPost.order
+    posts_in_series_ids = {p.id for p in series.posts} # Get IDs from the already ordered posts in the series
+    available_posts = [post for post in user_posts if post.id not in posts_in_series_ids]
+
+    return render_template('edit_series.html', series=series, available_posts=available_posts, posts_in_series=series.posts)
+
+@app.route('/series/<int:series_id>/add_post/<int:post_id>', methods=['POST'])
+@login_required
+def add_post_to_series(series_id, post_id):
+    series = Series.query.get_or_404(series_id)
+    if series.user_id != session.get('user_id'):
+        flash('You are not authorized to modify this series.', 'danger')
+        return redirect(url_for('view_series', series_id=series.id))
+
+    post_to_add = Post.query.get_or_404(post_id)
+    if post_to_add.user_id != series.user_id: # Ensure post is by the same author as the series
+        flash('You can only add your own posts to your series.', 'warning')
+        return redirect(url_for('edit_series', series_id=series.id))
+
+    existing_entry = SeriesPost.query.filter_by(series_id=series_id, post_id=post_id).first()
+    if existing_entry:
+        flash('This post is already in the series.', 'info')
+        return redirect(url_for('edit_series', series_id=series.id))
+
+    # Determine the next order number
+    max_order = db.session.query(db.func.max(SeriesPost.order)).filter_by(series_id=series_id).scalar()
+    next_order_num = (max_order or 0) + 1
+
+    new_series_post = SeriesPost(series_id=series_id, post_id=post_id, order=next_order_num)
+    db.session.add(new_series_post)
+    db.session.commit()
+    flash(f"Post '{post_to_add.title}' added to series '{series.title}'.", 'success')
+    return redirect(url_for('edit_series', series_id=series.id))
+
+@app.route('/series/<int:series_id>/remove_post/<int:post_id>', methods=['POST'])
+@login_required
+def remove_post_from_series(series_id, post_id):
+    series = Series.query.get_or_404(series_id)
+    if series.user_id != session.get('user_id'):
+        flash('You are not authorized to modify this series.', 'danger')
+        return redirect(url_for('view_series', series_id=series.id))
+
+    post_to_remove = Post.query.get_or_404(post_id) # Ensure post exists
+
+    series_post_entry = SeriesPost.query.filter_by(series_id=series_id, post_id=post_id).first()
+    if not series_post_entry:
+        flash('This post is not in the series.', 'info')
+        return redirect(url_for('edit_series', series_id=series.id))
+
+    db.session.delete(series_post_entry)
+    db.session.commit()
+
+    # Reorder remaining posts
+    remaining_associations = SeriesPost.query.filter_by(series_id=series_id).order_by(SeriesPost.order).all()
+    for index, assoc in enumerate(remaining_associations):
+        assoc.order = index + 1
+    db.session.commit()
+
+    flash(f"Post '{post_to_remove.title}' removed from series '{series.title}'.", 'success')
+    return redirect(url_for('edit_series', series_id=series.id))
+
+@app.route('/series/<int:series_id>/delete', methods=['POST'])
+@login_required
+def delete_series(series_id):
+    series = Series.query.get_or_404(series_id)
+    if series.user_id != session.get('user_id'):
+        flash('You are not authorized to delete this series.', 'danger')
+        return redirect(url_for('view_series', series_id=series.id))
+
+    # SQLAlchemy cascade should handle deleting associated series_posts entries
+    db.session.delete(series)
+    db.session.commit()
+    flash('Series deleted successfully.', 'success')
+    # Redirect to user's profile page after deleting a series
+    return redirect(url_for('user_profile', username=series.author.username))
 
 
 @app.route('/live_feed')

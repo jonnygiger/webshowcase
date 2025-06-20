@@ -414,7 +414,7 @@ Enhancing user interaction and feedback, users can now rate blog posts (1-5 star
     *   Demonstrates dynamic calculation and display of aggregate data (average ratings).
     *   Further practice in managing and displaying user-generated content.
 
-## Private Messaging
+### Private Messaging
 
 This application now supports private messaging between registered users, allowing for direct, one-on-one communication.
 
@@ -644,10 +644,31 @@ To keep users informed about recent activity on the platform, an in-app notifica
 *   **Purpose**: Alerts users to new content such as new blog posts, upcoming events, or recently created polls.
 *   **How it Works**: A background task runs periodically (e.g., every minute) to scan for new content. When new items are found, notifications are generated.
 *   **Accessing Notifications**: Logged-in users can find a "Notifications" link in the navigation bar, which leads to a page displaying all recent activity alerts, sorted by time.
-*   **Flask Functionalities Demonstrated**:
-    *   Integration with `APScheduler` for background task scheduling.
-    *   Dynamic generation of user-facing alerts based on application events.
-    *   New routes and templates for displaying notifications.
+
+### Content Series
+
+The "Content Series" feature allows users to group multiple blog posts into an ordered collection. This is useful for creating multi-part tutorials, chronological narratives, or any set of posts that benefit from a defined sequence.
+
+*   **Purpose**: To organize related blog posts into a cohesive, ordered series, making it easier for readers to follow along.
+*   **Key Functionalities**:
+    *   **Creation**: Logged-in users can create a new series by providing a title and an optional description.
+    *   **Adding Posts**: Authors can add their own existing blog posts to a series they created.
+    *   **Ordering**: Posts within a series maintain a specific order, which can be managed by the series author. (Currently, posts are added to the end, and removing a post re-calculates the order of subsequent posts).
+    *   **Editing Series Details**: Authors can update the title and description of their series.
+    *   **Removing Posts**: Authors can remove posts from their series. This does not delete the post itself, only its association with the series.
+    *   **Deleting Series**: Authors can delete an entire series. This action removes the series and its associations with posts but does not delete the posts themselves.
+*   **How to Use**:
+    *   **Creating a Series**: A "Create Series" link is available in the navigation bar for logged-in users, leading to the `/series/create` page.
+    *   **Viewing a Series**:
+        *   Series created by a user are listed on their profile page (`/user/<username>`).
+        *   Each series has a dedicated page (`/series/<series_id>`) that displays its title, description, author, and all its posts in their defined order.
+    *   **Managing Posts in a Series**:
+        *   From the "Edit Series" page (`/series/<series_id>/edit`), accessible to the author via the "View Series" page:
+            *   Authors can see a list of posts currently in the series, with options to remove them.
+            *   Authors can see a list of their other posts that are not yet in the series, with options to add them.
+    *   **Series Navigation on Post Pages**:
+        *   When viewing an individual blog post (`/blog/post/<post_id>`), if the post is part of one or more series, these series will be listed with links to their respective view pages.
+        *   If a post is viewed with a specific series context (e.g., by clicking through from a series page, via a URL like `/blog/post/<post_id>?series_id=<series_id>`), "Next" and "Previous" navigation links will appear on the post page, allowing the user to navigate to the next or previous post within that specific series.
 
 ### Recommendations Feature
 
@@ -825,6 +846,69 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
                 "id": 1,
                 "username": "demo",
                 "uploaded_images": null
+            }
+        }
+        ```
+
+### Series API
+
+*   **GET /api/series**
+    *   Description: Retrieves a list of all content series.
+    *   Authentication: Not required.
+    *   Response (Example):
+        ```json
+        {
+            "series": [
+                {
+                    "id": 1,
+                    "title": "My Flask Tutorial Series",
+                    "description": "A series of posts about Flask.",
+                    "author_username": "testuser1",
+                    "created_at": "2023-01-15T10:00:00",
+                    "updated_at": "2023-01-16T11:00:00",
+                    "posts": [
+                        {
+                            "id": 10,
+                            "title": "Flask Intro",
+                            "author_username": "testuser1"
+                        },
+                        {
+                            "id": 12,
+                            "title": "Flask Blueprints",
+                            "author_username": "testuser1"
+                        }
+                    ]
+                }
+                // ... other series
+            ]
+        }
+        ```
+
+*   **GET /api/series/<series_id>**
+    *   Description: Retrieves a specific content series by ID, including its ordered posts.
+    *   Authentication: Not required.
+    *   Response (Example):
+        ```json
+        {
+            "series": {
+                "id": 1,
+                "title": "My Flask Tutorial Series",
+                "description": "A series of posts about Flask.",
+                "author_username": "testuser1",
+                "created_at": "2023-01-15T10:00:00",
+                "updated_at": "2023-01-16T11:00:00",
+                "posts": [
+                    {
+                        "id": 10,
+                        "title": "Flask Intro",
+                        "author_username": "testuser1"
+                    },
+                    {
+                        "id": 12,
+                        "title": "Flask Blueprints",
+                        "author_username": "testuser1"
+                    }
+                ]
             }
         }
         ```

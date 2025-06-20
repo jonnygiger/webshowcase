@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}{{ series.title }} - Series - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    {% include '_flash_messages.html' %}
+
+    <div class="series-header mb-4">
+        <h1>{{ series.title }}</h1>
+        <p class="text-muted">
+            Created by:
+            {% if series.author %}
+                <a href="{{ url_for('user_profile', username=series.author.username) }}">{{ series.author.username }}</a>
+            {% else %}
+                Anonymo_user
+            {% endif %}
+            on {{ series.created_at.strftime('%Y-%m-%d %H:%M') if series.created_at else 'N/A' }}
+            {% if series.updated_at and series.updated_at != series.created_at %}
+                (Last updated: {{ series.updated_at.strftime('%Y-%m-%d %H:%M') }})
+            {% endif %}
+        </p>
+        {% if series.description %}
+            <p class="lead">{{ series.description }}</p>
+        {% endif %}
+    </div>
+
+    <hr>
+
+    <h3 class="mb-3">Posts in this Series</h3>
+    {% if series.posts %}
+        <ul class="list-group">
+            {% for post_in_series in series.posts %}
+                <li class="list-group-item d-flex justify-content-between align-items-start">
+                    <div class="ms-2 me-auto">
+                        <div class="fw-bold">
+                            <span class="me-2">#{{ loop.index }}</span> {# Using loop.index for order display based on query order #}
+                            <a href="{{ url_for('view_post', post_id=post_in_series.id) }}">{{ post_in_series.title }}</a>
+                        </div>
+                        <div>
+                            <small class="text-muted">
+                                Author:
+                                {% if post_in_series.author %}
+                                    <a href="{{ url_for('user_profile', username=post_in_series.author.username) }}">{{ post_in_series.author.username }}</a>
+                                {% else %}
+                                    Unknown
+                                {% endif %}
+                                - Published: {{ post_in_series.timestamp.strftime('%Y-%m-%d') if post_in_series.timestamp else 'N/A' }}
+                            </small>
+                        </div>
+                        {% if post_in_series.content %}
+                            <p class="mt-1 mb-1"><small>{{ post_in_series.content | truncate(150, True) }}</small></p>
+                        {% endif %}
+                    </div>
+                    {# Add actions like 'Remove from series' here in future subtasks #}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            This series currently has no posts.
+        </div>
+    {% endif %}
+
+    {# Placeholder for future actions like "Add Post to Series", "Edit Series", "Delete Series" #}
+    <div class="mt-4">
+        {% if current_user and current_user.id == series.user_id %}
+            <a href="{{ url_for('edit_series', series_id=series.id) }}" class="btn btn-warning">Edit Series</a>
+            <form method="POST" action="{{ url_for('delete_series', series_id=series.id) }}" style="display: inline-block; margin-left: 10px;">
+                <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this series? This action cannot be undone.');">Delete Series</button>
+            </form>
+        {% endif %}
+        <a href="{{ url_for('hello_world') }}" class="btn btn-outline-secondary" style="margin-left: 10px;">Back to Home</a>
+    </div>
+
+</div>
+{% endblock %}

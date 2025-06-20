@@ -4,7 +4,7 @@ import json # For checking JSON responses
 import io # For BytesIO
 from unittest.mock import patch, call, ANY
 from app import app, db, socketio # Import socketio from app
-from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus, Achievement, UserAchievement, Comment # Added Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus, Achievement, UserAchievement, Comment
+from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus, Achievement, UserAchievement, Comment, Series, SeriesPost # Added Series, SeriesPost
 from recommendations import update_trending_hashtags # For testing the job logic
 from achievements_logic import check_and_award_achievements, get_user_stat
 from datetime import datetime, timedelta
@@ -1953,8 +1953,20 @@ class TestFileSharing(AppTestCase):
             self.assertIn("File successfully deleted.", response.get_data(as_text=True))
 
             self.assertIsNone(SharedFile.query.get(shared_file.id))
-            self.assertFalse(os.path.exists(file_path))
+            self.assertFalse(os.path.exists(file_path)) # File should be gone
             self.logout()
+
+    def _create_series(self, user_id, title="Test Series", description="A series for testing.", created_at=None, updated_at=None):
+        series = Series(
+            title=title,
+            description=description,
+            user_id=user_id,
+            created_at=created_at or datetime.utcnow(),
+            updated_at=updated_at or datetime.utcnow()
+        )
+        db.session.add(series)
+        db.session.commit()
+        return series
 
 
 # Helper function to seed achievements for tests
@@ -2221,5 +2233,390 @@ class AchievementLogicTests(AppTestCase):
             self.assertIn("You are not authorized to delete this file.", response.get_data(as_text=True))
 
             self.assertIsNotNone(SharedFile.query.get(file_id)) # Still exists
-            self.assertTrue(os.path.exists(file_path)) # File still exists
+            self.assertFalse(os.path.exists(file_path)) # File should be gone
             self.logout()
+
+
+
+
+class TestSeriesFeature(AppTestCase):
+    # Model Tests
+    def test_series_model_creation(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id, title="My First Series", description="Test description.")
+            self.assertIsNotNone(series.id)
+            self.assertEqual(series.title, "My First Series")
+            self.assertEqual(series.author, self.user1)
+            self.assertIn(series, self.user1.series_created)
+
+    def test_series_post_association_and_order(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id)
+            post1 = self._create_db_post(user_id=self.user1_id, title="Post 1 for Series")
+            post2 = self._create_db_post(user_id=self.user1_id, title="Post 2 for Series")
+
+            sp1 = SeriesPost(series_id=series.id, post_id=post1.id, order=1)
+            sp2 = SeriesPost(series_id=series.id, post_id=post2.id, order=2)
+            db.session.add_all([sp1, sp2])
+            db.session.commit()
+
+            # Refresh series to ensure 'posts' relationship is loaded with new data
+            db.session.refresh(series)
+
+            self.assertEqual(len(series.posts), 2)
+            self.assertEqual(series.posts[0].id, post1.id)
+            self.assertEqual(series.posts[1].id, post2.id)
+
+            assoc1 = SeriesPost.query.filter_by(series_id=series.id, post_id=post1.id).first()
+            self.assertIsNotNone(assoc1)
+            self.assertEqual(assoc1.order, 1)
+
+    def test_cascade_delete_user_to_series(self):
+        with app.app_context():
+            user_to_delete = User(username="deleteme_series", email="del@series.com", password_hash=generate_password_hash("pw"))
+            db.session.add(user_to_delete)
+            db.session.commit()
+            # Re-fetch to ensure it's in the session before creating series
+            user_to_delete_from_session = User.query.filter_by(username="deleteme_series").first()
+
+
+            series = self._create_series(user_id=user_to_delete_from_session.id, title="Series to be deleted")
+            series_id = series.id
+
+            db.session.delete(user_to_delete_from_session)
+            db.session.commit()
+
+            self.assertIsNone(Series.query.get(series_id))
+
+    def test_cascade_delete_series_to_series_post(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id)
+            post = self._create_db_post(user_id=self.user1_id)
+            sp = SeriesPost(series_id=series.id, post_id=post.id, order=1)
+            db.session.add(sp)
+            db.session.commit()
+            sp_id_tuple = (series.id, post.id)
+
+            self.assertIsNotNone(SeriesPost.query.get(sp_id_tuple))
+
+            db.session.delete(series)
+            db.session.commit()
+            self.assertIsNone(SeriesPost.query.get(sp_id_tuple))
+
+    def test_cascade_delete_post_to_series_post(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id)
+            post_to_delete = self._create_db_post(user_id=self.user1_id)
+            post_id = post_to_delete.id
+            sp = SeriesPost(series_id=series.id, post_id=post_id, order=1)
+            db.session.add(sp)
+            db.session.commit()
+            sp_id_tuple = (series.id, post_id)
+
+            self.assertIsNotNone(SeriesPost.query.get(sp_id_tuple))
+
+            db.session.delete(post_to_delete)
+            db.session.commit()
+            self.assertIsNone(SeriesPost.query.get(sp_id_tuple))
+
+    # --- Route Tests ---
+    def test_create_series_page_load(self):
+        self.login(self.user1.username, 'password')
+        response = self.client.get('/series/create')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Create New Series', response.data)
+        self.logout()
+
+    def test_create_series_unauthenticated(self):
+        response = self.client.get('/series/create', follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/login', response.location)
+
+        response_post = self.client.post('/series/create', data={'title': 'Fail Series'}, follow_redirects=False)
+        self.assertEqual(response_post.status_code, 302)
+        self.assertIn('/login', response_post.location)
+
+    def test_create_series_post_success(self):
+        self.login(self.user1.username, 'password')
+        response = self.client.post('/series/create', data={
+            'title': 'My Awesome Series',
+            'description': 'A description of awesomeness.'
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Series created successfully!', response.data)
+        self.assertIn(b'My Awesome Series', response.data)
+
+        with app.app_context():
+            series = Series.query.filter_by(title='My Awesome Series').first()
+            self.assertIsNotNone(series)
+            self.assertEqual(series.user_id, self.user1_id)
+            self.assertEqual(series.description, 'A description of awesomeness.')
+        self.logout()
+
+    def test_create_series_post_no_title(self):
+        self.login(self.user1.username, 'password')
+        response = self.client.post('/series/create', data={
+            'title': '',
+            'description': 'This should fail.'
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Series title cannot be empty.', response.data)
+        self.assertIn(b'Create New Series', response.data)
+
+        with app.app_context():
+            self.assertIsNone(Series.query.filter_by(description='This should fail.').first())
+        self.logout()
+
+    def test_view_series_page(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id, title="Viewable Series", description="Desc")
+            post1 = self._create_db_post(user_id=self.user1_id, title="Post In Series")
+            sp1 = SeriesPost(series_id=series.id, post_id=post1.id, order=1)
+            db.session.add(sp1)
+            db.session.commit()
+
+        response = self.client.get(f'/series/{series.id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Viewable Series', response.data)
+        self.assertIn(b'Desc', response.data)
+        self.assertIn(b'Post In Series', response.data)
+        self.assertIn(b'#1', response.data)
+
+    def test_view_series_not_found(self):
+        response = self.client.get('/series/9999')
+        self.assertEqual(response.status_code, 404)
+
+    def test_edit_series_page_load_author(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id, title="Editable Series")
+
+        self.login(self.user1.username, 'password')
+        response = self.client.get(f'/series/{series.id}/edit')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Edit Series: Editable Series', response.data)
+        self.assertIn(b'value="Editable Series"', response.data)
+        self.logout()
+
+    def test_edit_series_page_load_non_author(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id, title="NonEditable Series")
+
+        self.login(self.user2.username, 'password')
+        response = self.client.get(f'/series/{series.id}/edit', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'You are not authorized to edit this series.', response.data)
+        self.assertIn(b'NonEditable Series', response.data)
+        self.logout()
+
+    def test_edit_series_post_success_author(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id, title="Original Title")
+
+        self.login(self.user1.username, 'password')
+        response = self.client.post(f'/series/{series.id}/edit', data={
+            'title': 'Updated Title',
+            'description': 'Updated Description.'
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Series details updated successfully!', response.data)
+        self.assertIn(b'Edit Series: Updated Title', response.data)
+
+        with app.app_context():
+            updated_series = Series.query.get(series.id)
+            self.assertEqual(updated_series.title, 'Updated Title')
+            self.assertEqual(updated_series.description, 'Updated Description.')
+        self.logout()
+
+    def test_edit_series_post_non_author(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id, title="Cannot Edit")
+
+        self.login(self.user2.username, 'password')
+        response = self.client.post(f'/series/{series.id}/edit', data={
+            'title': 'Attempted Update'
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'You are not authorized to edit this series.', response.data)
+
+        with app.app_context():
+            self.assertEqual(Series.query.get(series.id).title, 'Cannot Edit')
+        self.logout()
+
+    def test_delete_series_author(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id, title="To Be Deleted")
+            post = self._create_db_post(user_id=self.user1_id)
+            sp = SeriesPost(series_id=series.id, post_id=post.id, order=1)
+            db.session.add(sp)
+            db.session.commit()
+            series_id = series.id
+            sp_id_tuple = (series.id, post.id)
+
+        self.login(self.user1.username, 'password')
+        response = self.client.post(f'/series/{series_id}/delete', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Series deleted successfully.', response.data)
+        self.assertIn(f"{self.user1.username}'s Profile".encode(), response.data)
+
+        with app.app_context():
+            self.assertIsNone(Series.query.get(series_id))
+            self.assertIsNone(SeriesPost.query.get(sp_id_tuple))
+        self.logout()
+
+    def test_delete_series_non_author(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id, title="Cannot Delete")
+            series_id = series.id
+
+        self.login(self.user2.username, 'password')
+        response = self.client.post(f'/series/{series_id}/delete', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'You are not authorized to delete this series.', response.data)
+
+        with app.app_context():
+            self.assertIsNotNone(Series.query.get(series_id))
+        self.logout()
+
+    # --- Manage Posts in Series Route Tests ---
+    def test_add_post_to_series_success(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id)
+            post_to_add = self._create_db_post(user_id=self.user1_id, title="Post To Add")
+
+        self.login(self.user1.username, 'password')
+        response = self.client.post(f'/series/{series.id}/add_post/{post_to_add.id}', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"Post '{post_to_add.title}' added to series '{series.title}'.".encode(), response.data)
+
+        with app.app_context():
+            sp_entry = SeriesPost.query.filter_by(series_id=series.id, post_id=post_to_add.id).first()
+            self.assertIsNotNone(sp_entry)
+            self.assertEqual(sp_entry.order, 1)
+        self.logout()
+
+    def test_add_post_to_series_already_exists(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id)
+            post = self._create_db_post(user_id=self.user1_id)
+            sp = SeriesPost(series_id=series.id, post_id=post.id, order=1)
+            db.session.add(sp)
+            db.session.commit()
+
+        self.login(self.user1.username, 'password')
+        response = self.client.post(f'/series/{series.id}/add_post/{post.id}', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'This post is already in the series.', response.data)
+        self.logout()
+
+    def test_add_post_to_series_non_author_of_series(self):
+        with app.app_context():
+            series_by_user1 = self._create_series(user_id=self.user1_id)
+            post_by_user2 = self._create_db_post(user_id=self.user2_id, title="User2 Post")
+
+        self.login(self.user2.username, 'password')
+        response = self.client.post(f'/series/{series_by_user1.id}/add_post/{post_by_user2.id}', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'You are not authorized to modify this series.', response.data)
+
+        with app.app_context():
+            self.assertIsNone(SeriesPost.query.filter_by(series_id=series_by_user1.id, post_id=post_by_user2.id).first())
+        self.logout()
+
+    def test_add_post_to_series_post_not_owned_by_series_author(self):
+        with app.app_context():
+            series_by_user1 = self._create_series(user_id=self.user1_id)
+            post_by_user2 = self._create_db_post(user_id=self.user2_id, title="User2 Post")
+
+        self.login(self.user1.username, 'password')
+        response = self.client.post(f'/series/{series_by_user1.id}/add_post/{post_by_user2.id}', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'You can only add your own posts to your series.', response.data)
+
+        with app.app_context():
+            self.assertIsNone(SeriesPost.query.filter_by(series_id=series_by_user1.id, post_id=post_by_user2.id).first())
+        self.logout()
+
+    def test_remove_post_from_series_and_reorder(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id)
+            p1 = self._create_db_post(user_id=self.user1_id, title="P1")
+            p2 = self._create_db_post(user_id=self.user1_id, title="P2")
+            p3 = self._create_db_post(user_id=self.user1_id, title="P3")
+            db.session.add_all([
+                SeriesPost(series_id=series.id, post_id=p1.id, order=1),
+                SeriesPost(series_id=series.id, post_id=p2.id, order=2),
+                SeriesPost(series_id=series.id, post_id=p3.id, order=3)
+            ])
+            db.session.commit()
+
+        self.login(self.user1.username, 'password')
+        response = self.client.post(f'/series/{series.id}/remove_post/{p2.id}', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"Post '{p2.title}' removed from series '{series.title}'.".encode(), response.data)
+
+        with app.app_context():
+            self.assertIsNone(SeriesPost.query.filter_by(series_id=series.id, post_id=p2.id).first())
+            sp1 = SeriesPost.query.filter_by(series_id=series.id, post_id=p1.id).first()
+            sp3 = SeriesPost.query.filter_by(series_id=series.id, post_id=p3.id).first()
+            self.assertIsNotNone(sp1)
+            self.assertIsNotNone(sp3)
+            self.assertEqual(sp1.order, 1)
+            self.assertEqual(sp3.order, 2)
+        self.logout()
+
+    # --- UI/Content Tests (Simplified) ---
+    def test_user_profile_lists_series(self):
+        with app.app_context():
+            series1 = self._create_series(user_id=self.user1_id, title="User1 Series One")
+            series2 = self._create_series(user_id=self.user1_id, title="User1 Series Two")
+
+        response = self.client.get(f'/user/{self.user1.username}')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'User1 Series One', response.data)
+        self.assertIn(b'User1 Series Two', response.data)
+        self.assertIn(f'href="/series/{series1.id}"'.encode(), response.data)
+
+    def test_view_post_lists_series_and_navigation(self):
+        with app.app_context():
+            series = self._create_series(user_id=self.user1_id, title="Nav Series")
+            p1 = self._create_db_post(user_id=self.user1_id, title="Nav Post 1")
+            p2 = self._create_db_post(user_id=self.user1_id, title="Nav Post 2")
+            p3 = self._create_db_post(user_id=self.user1_id, title="Nav Post 3")
+            db.session.add_all([
+                SeriesPost(series_id=series.id, post_id=p1.id, order=1),
+                SeriesPost(series_id=series.id, post_id=p2.id, order=2),
+                SeriesPost(series_id=series.id, post_id=p3.id, order=3)
+            ])
+            db.session.commit()
+
+        # Test middle post (p2)
+        response = self.client.get(f'/blog/post/{p2.id}?series_id={series.id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Part of Series:', response.data)
+        self.assertIn(f'href="/series/{series.id}"'.encode(), response.data)
+        self.assertIn(b'Nav Series', response.data)
+        self.assertIn(b'Previous in series: Nav Post 1', response.data)
+        self.assertIn(f'href="/blog/post/{p1.id}?series_id={series.id}"'.encode(), response.data)
+        self.assertIn(b'Next in series: Nav Post 3', response.data)
+        self.assertIn(f'href="/blog/post/{p3.id}?series_id={series.id}"'.encode(), response.data)
+
+        # Test first post (p1)
+        response = self.client.get(f'/blog/post/{p1.id}?series_id={series.id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b'Previous in series', response.data)
+        self.assertIn(b'Next in series: Nav Post 2', response.data)
+
+        # Test last post (p3)
+        response = self.client.get(f'/blog/post/{p3.id}?series_id={series.id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Previous in series: Nav Post 2', response.data)
+        self.assertNotIn(b'Next in series', response.data)
+
+        # Test without series_id in query (no prev/next links)
+        response = self.client.get(f'/blog/post/{p2.id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Part of Series:', response.data)
+        self.assertNotIn(b'Previous in series', response.data)
+        self.assertNotIn(b'Next in series', response.data)
+
+# Helper function to seed achievements for tests

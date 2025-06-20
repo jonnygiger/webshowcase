@@ -208,6 +208,9 @@ class Post(db.Model):
     # Relationship to Series via series_posts association table
     series_associated_with = db.relationship('Series', secondary='series_posts', back_populates='posts', lazy='dynamic')
 
+    # Relationship to PostLock
+    lock_info = db.relationship('PostLock', uselist=False, backref='post_locked', cascade="all, delete-orphan")
+
     def __repr__(self):
         return f'<Post {self.title}>'
 
@@ -237,6 +240,12 @@ class Post(db.Model):
             'title': self.title,
             'author_username': self.author.username if self.author else None,
         }
+
+    def is_locked(self):
+        """Checks if the post is currently actively locked."""
+        if self.lock_info and self.lock_info.expires_at > datetime.utcnow():
+            return True
+        return False
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -645,3 +654,20 @@ class UserAchievement(db.Model):
 # The UserAchievement model has:
 #    user = db.relationship('User', back_populates='achievements') # This correctly implies User needs 'achievements'
 # The User model now has the 'achievements' relationship added in this commit.
+
+
+class PostLock(db.Model):
+    __tablename__ = 'post_lock'
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False, unique=True) # A post can only have one lock
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # User who holds the lock
+    locked_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False) # When the lock automatically expires
+
+    # Relationship to User who locked the post
+    user = db.relationship('User', backref=db.backref('post_locks', lazy='dynamic'))
+
+    # Note: The backref 'post_locked' is already defined in Post.lock_info
+
+    def __repr__(self):
+        return f'<PostLock id={self.id} post_id={self.post_id} user_id={self.user_id} expires_at={self.expires_at}>'

@@ -1,9 +1,11 @@
 # Assuming these are from common Flask libraries and local models
 from flask_restful import Resource, reqparse
+from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from datetime import datetime, timedelta
 
-from app import broadcast_new_post, socketio # Import the function and socketio from app.py
-from models import User, Post, Comment, db, Poll, PollOption, PollVote # Import actual models
+from app import broadcast_new_post, socketio
+from models import User, Post, Comment, db, Poll, PollOption, PollVote, PostLock
 
 class PostListResource(Resource):
     @jwt_required()
@@ -169,3 +171,102 @@ class PollVoteResource(Resource):
         db.session.commit()
 
         return {'message': 'Vote cast successfully'}, 201
+
+
+class PostLockResource(Resource):
+    @jwt_required()
+    def post(self, post_id):
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        if not user:
+            return {'message': 'User not found for provided token'}, 404
+
+        post = Post.query.get(post_id)
+        if not post:
+            return {'message': 'Post not found'}, 404
+
+        existing_lock = PostLock.query.filter_by(post_id=post.id).first()
+
+        if existing_lock:
+            if existing_lock.user_id != current_user_id and existing_lock.expires_at > datetime.utcnow():
+                return {
+                    'message': 'Post is currently locked by another user.',
+                    'locked_by_username': existing_lock.user.username,
+                    'expires_at': existing_lock.expires_at.isoformat()
+                }, 409
+            else:
+                db.session.delete(existing_lock)
+
+        lock_duration_minutes = 15
+        expires_at = datetime.utcnow() + timedelta(minutes=lock_duration_minutes)
+
+        new_lock = PostLock(post_id=post.id, user_id=current_user_id, expires_at=expires_at)
+        db.session.add(new_lock)
+
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            # app.logger.error(f"Error creating lock: {str(e)}") # app is not defined here
+            print(f"Error creating lock: {str(e)}") # Use print or proper logging setup for api module
+            return {'message': f'Error creating lock: {str(e)}'}, 500
+
+        # Emit SocketIO event for lock acquired
+        socketio.emit('post_lock_acquired', {
+            'post_id': new_lock.post_id,
+            'user_id': new_lock.user_id,
+            'username': user.username,
+            'expires_at': new_lock.expires_at.isoformat()
+        }, room=f'post_{new_lock.post_id}')
+
+        return {
+            'message': 'Post locked successfully.',
+            'lock_details': {
+                'post_id': new_lock.post_id,
+                'locked_by_user_id': new_lock.user_id,
+                'locked_by_username': user.username,
+                'locked_at': new_lock.locked_at.isoformat(),
+                'expires_at': new_lock.expires_at.isoformat()
+            }
+        }, 200
+
+    @jwt_required()
+    def delete(self, post_id):
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        if not user:
+            return {'message': 'User not found for provided token'}, 404
+
+        post = Post.query.get(post_id)
+        if not post:
+            return {'message': 'Post not found'}, 404
+
+        lock_to_delete = PostLock.query.filter_by(post_id=post.id).first()
+
+        if not lock_to_delete:
+            return {'message': 'Post is not currently locked.'}, 404
+
+        if lock_to_delete.user_id != current_user_id:
+            # Example: if user.role not in ['admin', 'moderator']:
+            return {
+                'message': 'You are not authorized to unlock this post as it is locked by another user.',
+                'locked_by_username': lock_to_delete.user.username
+            }, 403
+
+        db.session.delete(lock_to_delete)
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            # app.logger.error(f"Error unlocking post: {str(e)}")
+            print(f"Error unlocking post: {str(e)}")  # Use print or proper logging setup for api module
+            return {'message': f'Error unlocking post: {str(e)}'}, 500
+
+        # Emit SocketIO event for lock released
+        socketio.emit('post_lock_released', {
+            'post_id': post_id,
+            'released_by_user_id': current_user_id,
+            'username': user.username
+        }, room=f'post_{post_id}')
+
+        return {'message': 'Post unlocked successfully.'}, 200

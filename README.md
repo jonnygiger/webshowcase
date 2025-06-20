@@ -725,6 +725,20 @@ You can find dedicated recommendations on the `/recommendations` page (accessibl
 #### Enhanced Post Recommendations with Reasons
 The personalized feed, particularly for posts displayed on pages like the Discover page, now includes a specific reason why each post is being recommended to the user. This enhancement aims to provide transparency and help users understand the system's choices (e.g., "Liked by a friend," "Trending post," "From a group you joined," "From user you follow," etc.). This involves updates to the backend recommendation generation and how this information is passed to and displayed on the frontend.
 
+### Real-time Collaborative Post Editing
+
+This feature enables multiple users to see live updates when a post is being edited and ensures that only one user can edit a post at a time.
+
+*   **How it Works**:
+    *   **Locking Mechanism**: A user must acquire an "edit lock" on a post before they can make changes. This prevents simultaneous edits by different users. The lock is temporary and expires after a set duration (e.g., 15 minutes).
+    *   **Real-time Updates**: When the user holding the lock types, their changes are sent to the server and broadcast to all other users viewing or editing the same post. These updates appear live on their screens.
+    *   **Lock Status Display**: The UI clearly indicates if a post is locked, who is currently editing it, and when their lock expires.
+    *   **API for Locking**: Lock acquisition and release are handled via dedicated RESTful API endpoints.
+*   **Technologies Used**:
+    *   **Flask-SocketIO**: For real-time bidirectional communication between clients and the server, used for broadcasting content changes and lock status updates.
+    *   **Flask-RESTful**: For creating the API endpoints (`/api/posts/<post_id>/lock`) that manage the lifecycle of post locks.
+    *   **JavaScript (Client-Side)**: Handles acquiring/releasing locks, sending content changes, and updating the UI based on server events.
+
 ### On This Day
 
 This feature allows users to revisit their past posts and events that occurred on the same calendar day in previous years.
@@ -839,6 +853,90 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
         }
         ```
 
+## SocketIO Events Documentation
+
+This section outlines the key SocketIO events used for real-time features within the application.
+
+### Real-time Editing SocketIO Events
+
+These events facilitate the collaborative editing feature for posts.
+
+**Server-to-Client Events (Listen for these on the client):**
+
+*   **`post_lock_acquired`**
+    *   **Room**: `post_<post_id>` (Broadcast to all clients viewing/editing the specific post)
+    *   **Payload**:
+        ```json
+        {
+            "post_id": 123,
+            "user_id": 1,
+            "username": "testuser",
+            "expires_at": "YYYY-MM-DDTHH:MM:SS.ffffff" // ISO format UTC timestamp
+        }
+        ```
+    *   **Description**: Sent when a user successfully acquires an editing lock on a post. Clients should use this to update their UI (e.g., disable editing for others, show who has the lock).
+
+*   **`post_lock_released`**
+    *   **Room**: `post_<post_id>`
+    *   **Payload**:
+        ```json
+        {
+            "post_id": 123,
+            "released_by_user_id": 1, // User who released it, or null if system (e.g., expired)
+            "username": "testuser" // Username of user who released, or "System (Expired)"
+        }
+        ```
+    *   **Description**: Sent when a lock on a post is released (either manually or due to expiration). Clients should update their UI to show the post is now available for editing.
+
+*   **`post_content_updated`**
+    *   **Room**: `post_<post_id>`
+    *   **Payload**:
+        ```json
+        {
+            "post_id": 123,
+            "new_content": "The updated content of the post...",
+            "last_edited": "YYYY-MM-DDTHH:MM:SS.ffffff", // ISO format UTC timestamp of the edit
+            "edited_by_user_id": 1,
+            "edited_by_username": "testuser"
+        }
+        ```
+    *   **Description**: Broadcast when the content of a post is updated by the user holding the lock. Clients should update the displayed post content in real-time.
+
+*   **`edit_error`** (Emitted to a specific client, not a room)
+    *   **Recipient**: Sender of an `edit_post_content` event that failed.
+    *   **Payload**:
+        ```json
+        { "message": "Error description (e.g., 'You do not hold the lock for this post.')" }
+        ```
+    *   **Description**: Sent to a client if their attempt to edit content (via `edit_post_content`) fails due to server-side validation (e.g., not holding the lock, lock expired).
+
+*   **`edit_success`** (Emitted to a specific client, not a room)
+    *   **Recipient**: Sender of a successfully processed `edit_post_content` event.
+    *   **Payload**:
+        ```json
+        {
+            "message": "Content updated successfully.",
+            "post_id": 123
+        }
+        ```
+    *   **Description**: Confirms to the editing client that their content change was received and processed by the server.
+
+**Client-to-Server Events (Emit these from the client):**
+
+*   **`join_room`**
+    *   **Payload**: `{'room': 'post_<post_id>'}`
+    *   **Description**: Client sends this event when they start viewing/editing a specific post to join the dedicated SocketIO room for that post. This allows them to receive targeted updates. (This is a general event, its usage for post editing is noted here).
+
+*   **`edit_post_content`**
+    *   **Payload**:
+        ```json
+        {
+            "post_id": 123,
+            "new_content": "User's typed content..."
+        }
+        ```
+    *   **Description**: Sent by the client when a user (who holds the lock) modifies the content of the post in the editor. This event is typically debounced to avoid excessive emissions.
+
 *   **GET /api/users/<user_id>**
     *   Description: Retrieves a specific user by ID.
     *   Authentication: Not required.
@@ -851,6 +949,65 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
                 "uploaded_images": null
             }
         }
+        ```
+
+### Post Locking API
+
+*   **POST /api/posts/<int:post_id>/lock**
+    *   **Description**: Acquires an exclusive lock for editing a post.
+    *   **Authentication**: Required (JWT Bearer Token).
+    *   **Response (Success 200 OK)**: JSON object with lock details.
+        ```json
+        {
+            "message": "Post locked successfully.",
+            "lock_details": {
+                "post_id": 123,
+                "locked_by_user_id": 1,
+                "locked_by_username": "testuser",
+                "locked_at": "YYYY-MM-DDTHH:MM:SS.ffffff",
+                "expires_at": "YYYY-MM-DDTHH:MM:SS.ffffff"
+            }
+        }
+        ```
+    *   **Response (Error 401 Unauthorized)**: If token is missing or invalid.
+        ```json
+        { "msg": "Missing Authorization Header" }
+        ```
+    *   **Response (Error 404 Not Found)**: If the post does not exist.
+        ```json
+        { "message": "Post not found" }
+        ```
+    *   **Response (Error 409 Conflict)**: If the post is already actively locked by another user.
+        ```json
+        {
+            "message": "Post is currently locked by another user.",
+            "locked_by_username": "otheruser",
+            "expires_at": "YYYY-MM-DDTHH:MM:SS.ffffff"
+        }
+        ```
+
+*   **DELETE /api/posts/<int:post_id>/lock**
+    *   **Description**: Releases an existing lock on a post.
+    *   **Authentication**: Required (JWT Bearer Token). User must be the lock owner.
+    *   **Response (Success 200 OK)**:
+        ```json
+        { "message": "Post unlocked successfully." }
+        ```
+    *   **Response (Error 401 Unauthorized)**: If token is missing or invalid.
+    *   **Response (Error 403 Forbidden)**: If the user trying to release the lock is not the owner.
+        ```json
+        {
+            "message": "You are not authorized to unlock this post as it is locked by another user.",
+            "locked_by_username": "current_lock_owner"
+        }
+        ```
+    *   **Response (Error 404 Not Found)**: If the post does not exist or no active lock is found for the post.
+        ```json
+        { "message": "Post not found" }
+        ```
+        or
+        ```json
+        { "message": "Post is not currently locked." }
         ```
 
 ### Series API

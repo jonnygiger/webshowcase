@@ -3,7 +3,7 @@ from unittest.mock import patch, ANY, MagicMock
 from datetime import datetime  # Removed timedelta
 
 # from app import app, db, socketio # COMMENTED OUT
-# from models import User, Post # COMMENTED OUT (add other models if this class uses them)
+from models import User, Post # COMMENTED OUT (add other models if this class uses them)
 from tests.test_base import AppTestCase
 
 
@@ -42,7 +42,7 @@ class TestDiscoverPageViews(AppTestCase):
         mock_post.timestamp = datetime.utcnow()
         mock_post.comments = []  # For len(post.comments) if used
         mock_post.likes = []  # For len(post.likes) if used
-        # mock_post.reviews = []  # For len(post.reviews) if used # Assuming reviews is not used or part of Post spec
+        mock_post.reviews = []  # For len(post.reviews) if used # Assuming reviews is not used or part of Post spec
         mock_post.hashtags = ""  # Assuming hashtags is an attribute
         # mock_post.is_featured = False # Assuming is_featured is an attribute
         # mock_post.featured_at = None # Assuming featured_at is an attribute

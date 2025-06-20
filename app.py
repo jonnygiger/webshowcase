@@ -28,10 +28,16 @@ migrate = Migrate()
 # Import models after db and migrate are created, but before app context is needed for them usually
 # and definitely before db.init_app
 # Models are already imported above now
-from api import UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource, RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource, UserStatsResource, SeriesListResource, SeriesResource, CommentListResource # Added CommentListResource
+from api import (
+    UserListResource, UserResource, PostListResource, PostResource,
+    EventListResource, EventResource, RecommendationResource,
+    PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource,
+    UserStatsResource, SeriesListResource, SeriesResource, CommentListResource,
+    PollListResource, PollResource, PollVoteResource # Added Poll resources
+)
 from recommendations import (
     suggest_users_to_follow, suggest_posts_to_read, suggest_groups_to_join,
-    suggest_events_to_attend, suggest_polls_to_vote, suggest_hashtags,
+    suggest_events_to_attend, suggest_hashtags, # Removed suggest_polls_to_vote
     get_trending_hashtags, suggest_trending_posts, update_trending_hashtags, get_personalized_feed_posts,
     get_on_this_day_content
 )
@@ -142,6 +148,11 @@ api.add_resource(UserStatsResource, '/api/users/<int:user_id>/stats')
 api.add_resource(SeriesListResource, '/api/series')
 api.add_resource(SeriesResource, '/api/series/<int:series_id>')
 api.add_resource(CommentListResource, '/api/posts/<int:post_id>/comments')
+
+# Poll API Resources
+api.add_resource(PollListResource, '/api/polls')
+api.add_resource(PollResource, '/api/polls/<int:poll_id>')
+api.add_resource(PollVoteResource, '/api/polls/<int:poll_id>/vote')
 
 # Scheduler for periodic tasks
 scheduler = BackgroundScheduler()
@@ -2791,7 +2802,7 @@ def recommendations_view():
     suggested_posts = suggest_posts_to_read(user_id, limit=5)
     suggested_groups = suggest_groups_to_join(user_id, limit=5)
     suggested_events = suggest_events_to_attend(user_id, limit=5)
-    suggested_polls = suggest_polls_to_vote(user_id, limit=5)
+    # suggested_polls = suggest_polls_to_vote(user_id, limit=5) # This function is not defined
     suggested_hashtags = suggest_hashtags(user_id, limit=5)
 
     return render_template('recommendations.html',
@@ -2799,7 +2810,7 @@ def recommendations_view():
                            suggested_posts=suggested_posts,
                            suggested_groups=suggested_groups,
                            suggested_events=suggested_events,
-                           suggested_polls=suggested_polls,
+                           # suggested_polls=suggested_polls,
                            suggested_hashtags=suggested_hashtags)
 
 

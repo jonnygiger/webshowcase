@@ -89,6 +89,7 @@ from api import (
     PollResource,
     PollVoteResource,
     PostLockResource,  # Added Poll resources
+    SharedFileResource,
 )
 from recommendations import (
     suggest_users_to_follow,
@@ -257,6 +258,7 @@ api.add_resource(PollVoteResource, "/api/polls/<int:poll_id>/vote")
 api.add_resource(
     PostLockResource, "/api/posts/<int:post_id>/lock"
 )  # Route for locking/unlocking posts
+api.add_resource(SharedFileResource, '/api/files/<int:file_id>') # Route for deleting shared files
 
 # Scheduler for periodic tasks
 scheduler = BackgroundScheduler()

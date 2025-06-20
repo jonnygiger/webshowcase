@@ -1,11 +1,12 @@
 # Assuming these are from common Flask libraries and local models
 from flask_restful import Resource, reqparse
-from flask import request
+from flask import request, g
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
+import os
 
 import app as main_app  # Modified import
-from models import User, Post, Comment, db, Poll, PollOption, PollVote, PostLock
+from models import User, Post, Comment, db, Poll, PollOption, PollVote, PostLock, SharedFile
 
 
 # Placeholder for UserListResource
@@ -398,3 +399,60 @@ class SeriesResource(Resource):
         return {
             "message": f"Series resource placeholder for series_id {series_id}"
         }, 200
+
+
+class SharedFileResource(Resource):
+    @jwt_required()
+    def delete(self, file_id):
+        current_user_id = int(get_jwt_identity())
+        shared_file = SharedFile.query.get(file_id)
+
+        if not shared_file:
+            return {"message": "File not found"}, 404
+
+        # Authorization check: Current user must be sender or receiver
+        if not (shared_file.sender_id == current_user_id or shared_file.receiver_id == current_user_id):
+            return {"message": "You are not authorized to delete this file"}, 403
+
+        try:
+            # Assuming shared_file.filepath stores the path relative to a base upload folder
+            # or an absolute path. For this example, let's assume it's an absolute path
+            # or a path that os.remove can directly use.
+            # If UPLOAD_FOLDER is used, it should be like:
+            # file_path = os.path.join(main_app.app.config['UPLOAD_FOLDER'], shared_file.filename)
+            # For now, let's assume shared_file.filepath is the direct path needed.
+            # This might need adjustment based on how SharedFile.filepath is defined/populated.
+
+            # A placeholder for the actual file path construction.
+            # This needs to be correctly determined based on how files are stored.
+            # Let's assume `shared_file.filepath` contains the relevant path or filename
+            # and UPLOAD_FOLDER is accessible via main_app.app.config.
+
+            # Correct file path construction:
+            # Assuming 'filename' attribute stores the name of the file in the upload directory
+            if not hasattr(shared_file, 'filename'):
+                 return {"message": "File record is incomplete (missing filename)"}, 500
+
+            # It's safer to retrieve UPLOAD_FOLDER from the app's config.
+            # Make sure main_app.app is the Flask app instance and config is loaded.
+            upload_folder = main_app.app.config.get('SHARED_FILES_UPLOAD_FOLDER', 'shared_files_uploads') # Default to 'shared_files_uploads'
+            file_path = os.path.join(upload_folder, shared_file.filename)
+
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            else:
+                # Log this inconsistency but proceed to delete DB record
+                # Or, decide if this should be a hard error.
+                # For now, logging and proceeding.
+                print(f"Warning: File {file_path} not found on filesystem but DB record exists.")
+
+            db.session.delete(shared_file)
+            db.session.commit()
+
+            return {"message": "File deleted successfully"}, 200
+
+        except Exception as e:
+            db.session.rollback()
+            # Log the exception e
+            print(f"Error deleting file: {str(e)}") # Or use app logger
+            return {"message": f"An error occurred while deleting the file: {str(e)}"}, 500

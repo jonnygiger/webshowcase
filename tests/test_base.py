@@ -3,11 +3,13 @@ import unittest
 import json  # For checking JSON responses
 import io  # For BytesIO
 from unittest.mock import patch, call, ANY
-from app import (
-    app,
-    db,
-    socketio,
-)  # Import socketio from app ## COMMENTED OUT FOR TIMEOUT DEBUGGING
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+from flask_socketio import SocketIO
+from flask_jwt_extended import JWTManager
+from flask_restful import Api
+# Import db object directly, and other models
+from models import db as app_db  # Alias to avoid conflict if we define 'db' locally
 from models import (
     User,
     Message,
@@ -37,31 +39,76 @@ from werkzeug.security import generate_password_hash
 
 
 class AppTestCase(unittest.TestCase):
+    app = None  # Class attribute for the Flask app
+    db = None   # Class attribute for SQLAlchemy instance
+    socketio = None # Class attribute for SocketIO instance
 
     @classmethod
     def setUpClass(cls):
-        # Configuration that applies to the entire test class
-        app.config["TESTING"] = True  ## app IS NOT AVAILABLE
-        app.config["WTF_CSRF_ENABLED"] = False  ## app IS NOT AVAILABLE
-        app.config["SQLALCHEMY_DATABASE_URI"] = (
-            "sqlite:///:memory:"  ## app IS NOT AVAILABLE
-        )
-        app.config["SECRET_KEY"] = "test-secret-key"  ## app IS NOT AVAILABLE
-        app.config["SOCKETIO_MESSAGE_QUEUE"] = None  ## app IS NOT AVAILABLE
-        with app.app_context():
-            db.create_all()  # Create tables once per class
-        # pass # Simplified for timeout debugging
+        # Create a new Flask app instance for testing
+        cls.app = Flask(__name__)
+
+        # Apply test-specific configurations
+        cls.app.config["TESTING"] = True
+        cls.app.config["WTF_CSRF_ENABLED"] = False
+        cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+        cls.app.config["SECRET_KEY"] = "test-secret-key"
+        cls.app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"  # Added as per requirements
+        cls.app.config["SOCKETIO_MESSAGE_QUEUE"] = None
+        cls.app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False # Often set for SQLAlchemy
+
+        # Initialize extensions with the test app
+        # We use app_db which is the SQLAlchemy object from models.py
+        app_db.init_app(cls.app)
+        cls.db = app_db # Assign to class attribute for use in methods
+
+        # Initialize SocketIO with the test app if needed by tests
+        # For now, let's assume a new SocketIO instance is fine for tests
+        # if it doesn't rely on specific handlers from the main app.py socketio instance.
+        # If specific handlers are needed, this approach might need refinement.
+        cls.socketio = SocketIO(cls.app, message_queue=cls.app.config["SOCKETIO_MESSAGE_QUEUE"])
+
+        # Initialize JWTManager
+        JWTManager(cls.app)
+
+        # Initialize Flask-Restful Api, if routes tested through self.client need it
+        cls.api = Api(cls.app) # Assign to cls.api
+
+        # Import necessary components for routes
+        from app import api_login # As per app.py, this handles /api/login
+        from api import PostLockResource
+
+        # Register essential routes and resources
+        # Note: The _get_jwt_token helper uses '/login_api', but app.py defines '/api/login'.
+        # We will register '/api/login' as per app.py and assume the helper will be updated or tested against the actual route.
+        # For the purpose of this task, we register what's in app.py.
+        # If _get_jwt_token specifically needs /login_api, that's a separate issue to address in that helper or related tests.
+        cls.app.add_url_rule('/api/login', view_func=api_login, methods=['POST'])
+        cls.api.add_resource(PostLockResource, '/api/posts/<int:post_id>/lock')
+
+        # Example for other routes/blueprints if needed:
+        # from app import main_routes_blueprint
+        # cls.app.register_blueprint(main_routes_blueprint)
+
+        with cls.app.app_context():
+            cls.db.create_all()  # Create tables once per class
+
+        # Store app_context for easy use in tests if needed, though usually `with cls.app.app_context():` is preferred
+        # cls.app_context = cls.app.app_context()
+        # cls.app_context.push() # Not pushing here, do it in setUp if needed or use 'with'
 
     @classmethod
     def tearDownClass(cls):
-        with app.app_context():
-            db.drop_all()  # Drop tables once after all tests in the class
+        with cls.app.app_context():
+            cls.db.drop_all()  # Drop tables once after all tests in the class
+        # if hasattr(cls, 'app_context') and cls.app_context: # If we pushed context in setUpClass
+            # cls.app_context.pop()
         # pass # Simplified for timeout debugging
 
     def setUp(self):
         """Set up for each test."""
-        self.client = app.test_client()  ## app IS NOT AVAILABLE
-        with app.app_context():
+        self.client = self.app.test_client() # Use the class's app instance
+        with self.app.app_context(): # Use the class's app instance for context
             self._clean_tables_for_setup()
             self._setup_base_users()  # This would require live User model and db session
         # Mock base users if db is not live
@@ -75,22 +122,25 @@ class AppTestCase(unittest.TestCase):
 
     def _clean_tables_for_setup(self):
         """Clears data from tables before each test's user setup."""
-        db.session.remove()
-        for table in reversed(db.metadata.sorted_tables):
-            db.session.execute(table.delete())
-        db.session.commit()
+        # Use the class's db instance
+        self.db.session.remove()
+        for table in reversed(self.db.metadata.sorted_tables):
+            self.db.session.execute(table.delete())
+        self.db.session.commit()
         # pass
 
     def tearDown(self):
         """Executed after each test."""
-        db.session.remove()
-        for table in reversed(db.metadata.sorted_tables):
-            db.session.execute(table.delete())
-        db.session.commit()
+        # Use the class's db instance
+        self.db.session.remove()
+        for table in reversed(self.db.metadata.sorted_tables):
+            self.db.session.execute(table.delete())
+        self.db.session.commit()
 
-        shared_files_folder = app.config.get(
+        # Use the class's app instance for config
+        shared_files_folder = self.app.config.get(
             "SHARED_FILES_UPLOAD_FOLDER"
-        )  # temp replacement for app.config.get('SHARED_FILES_UPLOAD_FOLDER')
+        )
         if shared_files_folder and os.path.exists(shared_files_folder):
             for filename in os.listdir(shared_files_folder):
                 file_path = os.path.join(shared_files_folder, filename)
@@ -118,8 +168,8 @@ class AppTestCase(unittest.TestCase):
             email="test3@example.com",
             password_hash=generate_password_hash("password"),
         )
-        db.session.add_all([self.user1, self.user2, self.user3])
-        db.session.commit()
+        self.db.session.add_all([self.user1, self.user2, self.user3]) # Use class's db
+        self.db.session.commit() # Use class's db
         self.user1_id = self.user1.id
         self.user2_id = self.user2.id
         self.user3_id = self.user3.id
@@ -128,8 +178,8 @@ class AppTestCase(unittest.TestCase):
     def _create_friendship(self, user1_id, user2_id, status="accepted"):
         # Requires live Friendship model and db session
         friendship = Friendship(user_id=user1_id, friend_id=user2_id, status=status)
-        db.session.add(friendship)
-        db.session.commit()
+        self.db.session.add(friendship) # Use class's db
+        self.db.session.commit() # Use class's db
         return friendship
         # return unittest.mock.MagicMock(user_id=user1_id, friend_id=user2_id, status=status)
 
@@ -143,8 +193,8 @@ class AppTestCase(unittest.TestCase):
             content=content,
             timestamp=timestamp or datetime.utcnow(),
         )
-        db.session.add(post)
-        db.session.commit()
+        self.db.session.add(post) # Use class's db
+        self.db.session.commit() # Use class's db
         return post
         # mock_post = unittest.mock.MagicMock(id=unittest.mock.sentinel.post_id, user_id=user_id, title=title, content=content, timestamp=timestamp or datetime.utcnow())
         # mock_post.author = unittest.mock.MagicMock(username=f"user{user_id}") # Simulate author relationship
@@ -183,14 +233,14 @@ class AppTestCase(unittest.TestCase):
             timestamp=timestamp or datetime.utcnow(),
             is_read=is_read,
         )
-        db.session.add(msg)
-        db.session.commit()
+        self.db.session.add(msg) # Use class's db
+        self.db.session.commit() # Use class's db
         return msg
         # return unittest.mock.MagicMock(sender_id=sender_id, receiver_id=receiver_id, content=content)
 
     def _get_jwt_token(self, username, password):
         response = self.client.post(
-            "/login_api", json={"username": username, "password": password}
+            "/api/login", json={"username": username, "password": password} # Changed to /api/login to match app.py
         )
         self.assertEqual(
             response.status_code,
@@ -211,8 +261,8 @@ class AppTestCase(unittest.TestCase):
     ):
         # Requires live Group model and db session
         group = Group(name=name, description=description, creator_id=creator_id)
-        db.session.add(group)
-        db.session.commit()
+        self.db.session.add(group) # Use class's db
+        self.db.session.commit() # Use class's db
         return group
         # return unittest.mock.MagicMock(id=unittest.mock.sentinel.group_id, name=name, creator_id=creator_id)
 
@@ -236,8 +286,8 @@ class AppTestCase(unittest.TestCase):
             location=location,
             created_at=created_at or datetime.utcnow(),
         )
-        db.session.add(event)
-        db.session.commit()
+        self.db.session.add(event) # Use class's db
+        self.db.session.commit() # Use class's db
         return event
         # return unittest.mock.MagicMock(id=unittest.mock.sentinel.event_id, title=title, user_id=user_id, date=date_str, created_at=created_at or datetime.utcnow())
 
@@ -252,12 +302,12 @@ class AppTestCase(unittest.TestCase):
             question=question,
             created_at=created_at or datetime.utcnow(),
         )
-        db.session.add(poll)
-        db.session.commit()  # Commit to get poll.id
+        self.db.session.add(poll) # Use class's db
+        self.db.session.commit()  # Commit to get poll.id, use class's db
         for text in options_texts:
             option = PollOption(text=text, poll_id=poll.id)
-            db.session.add(option)
-        db.session.commit()
+            self.db.session.add(option) # Use class's db
+        self.db.session.commit() # Use class's db
         return poll
         # mock_poll = unittest.mock.MagicMock(id=unittest.mock.sentinel.poll_id, question=question, user_id=user_id, options=[])
         # for i, text in enumerate(options_texts):
@@ -271,8 +321,8 @@ class AppTestCase(unittest.TestCase):
         like = Like(
             user_id=user_id, post_id=post_id, timestamp=timestamp or datetime.utcnow()
         )
-        db.session.add(like)
-        db.session.commit()
+        self.db.session.add(like) # Use class's db
+        self.db.session.commit() # Use class's db
         return like
         # return unittest.mock.MagicMock(user_id=user_id, post_id=post_id)
 
@@ -287,8 +337,8 @@ class AppTestCase(unittest.TestCase):
             content=content,
             timestamp=timestamp or datetime.utcnow(),
         )
-        db.session.add(comment)
-        db.session.commit()
+        self.db.session.add(comment) # Use class's db
+        self.db.session.commit() # Use class's db
         return comment
         # return unittest.mock.MagicMock(id=unittest.mock.sentinel.comment_id, user_id=user_id, post_id=post_id, content=content)
 
@@ -303,8 +353,8 @@ class AppTestCase(unittest.TestCase):
             status=status,
             timestamp=timestamp or datetime.utcnow(),
         )
-        db.session.add(rsvp)
-        db.session.commit()
+        self.db.session.add(rsvp) # Use class's db
+        self.db.session.commit() # Use class's db
         return rsvp
         # return unittest.mock.MagicMock(user_id=user_id, event_id=event_id, status=status)
 
@@ -317,8 +367,8 @@ class AppTestCase(unittest.TestCase):
             poll_option_id=poll_option_id,
             created_at=created_at or datetime.utcnow(),
         )
-        db.session.add(vote)
-        db.session.commit()
+        self.db.session.add(vote) # Use class's db
+        self.db.session.commit() # Use class's db
         return vote
         # return unittest.mock.MagicMock(user_id=user_id, poll_id=poll_id, poll_option_id=poll_option_id)
 
@@ -338,8 +388,8 @@ class AppTestCase(unittest.TestCase):
             created_at=created_at or datetime.utcnow(),
             updated_at=updated_at or datetime.utcnow(),
         )
-        db.session.add(series)
-        db.session.commit()
+        self.db.session.add(series) # Use class's db
+        self.db.session.commit() # Use class's db
         return series
         # return unittest.mock.MagicMock(id=unittest.mock.sentinel.series_id, title=title, user_id=user_id)
 
@@ -364,7 +414,7 @@ class AppTestCase(unittest.TestCase):
 
         expires_at = datetime.utcnow() + timedelta(minutes=minutes_offset)
         lock = PostLock(post_id=post_id, user_id=user_id, expires_at=expires_at)
-        db.session.add(lock)
-        db.session.commit()
+        self.db.session.add(lock) # Use class's db
+        self.db.session.commit() # Use class's db
         return lock
         # return unittest.mock.MagicMock(post_id=post_id, user_id=user_id)

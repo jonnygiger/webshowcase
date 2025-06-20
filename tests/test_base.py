@@ -3,9 +3,10 @@ import unittest
 import json  # For checking JSON responses
 import io  # For BytesIO
 from unittest.mock import patch, call, ANY
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO # Keep this if cls.socketio is re-initialized
+# Import the main app instance
+from app import app as main_app
+# db object is imported as app_db from models
 from flask_jwt_extended import JWTManager
 from flask_restful import Api
 # Import db object directly, and other models
@@ -45,10 +46,10 @@ class AppTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # Create a new Flask app instance for testing
-        cls.app = Flask(__name__)
+        # Use the main app instance from app.py
+        cls.app = main_app
 
-        # Apply test-specific configurations
+        # Apply test-specific configurations TO THE IMPORTED APP
         cls.app.config["TESTING"] = True
         cls.app.config["WTF_CSRF_ENABLED"] = False
         cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
@@ -63,7 +64,9 @@ class AppTestCase(unittest.TestCase):
 
         # Initialize extensions with the test app
         # We use app_db which is the SQLAlchemy object from models.py
-        app_db.init_app(cls.app)
+        # app_db.init_app(cls.app) # This is redundant if cls.app is main_app from app.py, as db is already initialized.
+        # The config for SQLALCHEMY_DATABASE_URI has been updated on cls.app (main_app).
+        # db.create_all() should respect this new URI when called within app_context.
         cls.db = app_db # Assign to class attribute for use in methods
 
         # Initialize SocketIO with the test app if needed by tests
@@ -76,21 +79,22 @@ class AppTestCase(unittest.TestCase):
         JWTManager(cls.app)
 
         # Initialize Flask-Restful Api, if routes tested through self.client need it
-        cls.api = Api(cls.app) # Assign to cls.api
+        # cls.api = Api(cls.app) # Assign to cls.api - RELY ON app.api from app.py
+        cls.api = cls.app.extensions.get('restful', None) # Try to get existing Api instance from app.py
+        if cls.api is None: # If app.py didn't initialize Flask-RESTful, then we might need to.
+             # However, app.py does initialize it, so this block should ideally not run.
+             cls.api = Api(cls.app)
 
-        # Import necessary components for routes
-        from app import api_login # As per app.py, this handles /api/login
-        from api import PostLockResource, CommentListResource, PostListResource
 
-        # Register essential routes and resources
-        # Note: The _get_jwt_token helper uses '/login_api', but app.py defines '/api/login'.
-        # We will register '/api/login' as per app.py and assume the helper will be updated or tested against the actual route.
-        # For the purpose of this task, we register what's in app.py.
-        # If _get_jwt_token specifically needs /login_api, that's a separate issue to address in that helper or related tests.
-        cls.app.add_url_rule('/api/login', view_func=api_login, methods=['POST'])
-        cls.api.add_resource(PostLockResource, '/api/posts/<int:post_id>/lock')
-        cls.api.add_resource(PostListResource, '/api/posts')
-        cls.api.add_resource(CommentListResource, '/api/posts/<int:post_id>/comments')
+        # Import necessary components for routes - these are already on main_app from app.py
+        # from app import api_login # As per app.py, this handles /api/login
+        # from api import PostLockResource, CommentListResource, PostListResource
+
+        # Register essential routes and resources - these are already on main_app from app.py
+        # cls.app.add_url_rule('/api/login', view_func=api_login, methods=['POST'])
+        # cls.api.add_resource(PostLockResource, '/api/posts/<int:post_id>/lock')
+        # cls.api.add_resource(PostListResource, '/api/posts')
+        # cls.api.add_resource(CommentListResource, '/api/posts/<int:post_id>/comments')
 
         # Example for other routes/blueprints if needed:
         # from app import main_routes_blueprint
@@ -102,6 +106,31 @@ class AppTestCase(unittest.TestCase):
         # Store app_context for easy use in tests if needed, though usually `with cls.app.app_context():` is preferred
         # cls.app_context = cls.app.app_context()
         # cls.app_context.push() # Not pushing here, do it in setUp if needed or use 'with'
+
+        # Re-initialize Api with the test app if it was already initialized in app.py with main app
+        # This might be tricky if app.api is already populated with routes.
+        # For now, let's assume app.api from app.py is what we want to use,
+        # and test-specific API routes in this file might need to be re-evaluated.
+        # If app.py's `api = Api(app)` has run, cls.api here might not be needed
+        # or could conflict if we re-assign cls.app.api
+        # Let's comment out cls.api initialization here and rely on app.py's api object.
+        # cls.api = Api(cls.app)
+        # The API routes added in app.py are already on main_app.api
+        # The API routes added below using cls.api might be problematic.
+        # For now, we will comment them out as they might be for specific test scenarios
+        # not relevant to the current test file, or they might need to be added to main_app.api
+        # if they are essential for all tests.
+
+        # Import necessary components for routes - these are already on main_app
+        # from app import api_login
+        # from api import PostLockResource, CommentListResource, PostListResource
+
+        # Register essential routes and resources - these are already on main_app
+        # cls.app.add_url_rule('/api/login', view_func=api_login, methods=['POST'])
+        # cls.api.add_resource(PostLockResource, '/api/posts/<int:post_id>/lock')
+        # cls.api.add_resource(PostListResource, '/api/posts')
+        # cls.api.add_resource(CommentListResource, '/api/posts/<int:post_id>/comments')
+
 
     @classmethod
     def tearDownClass(cls):

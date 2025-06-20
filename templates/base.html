@@ -299,7 +299,7 @@
     {# New Post Notifications SSE handling #}
     <script>
         (function() { // IIFE to encapsulate new post SSE logic
-            // const postEventSource = new EventSource("{{ url_for('post_stream') }}"); // Removed: This requires post_id and should be in view_post.html
+            // Line 302 removed entirely to prevent BuildError
 
             // This is for the GLOBAL new post stream, correctly named 'api_post_stream' in app.py
             const globalPostEventSource = new EventSource("{{ url_for('api_post_stream') }}");

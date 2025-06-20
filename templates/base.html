@@ -299,16 +299,19 @@
     {# New Post Notifications SSE handling #}
     <script>
         (function() { // IIFE to encapsulate new post SSE logic
-            const postEventSource = new EventSource("{{ url_for('post_stream') }}");
+            // const postEventSource = new EventSource("{{ url_for('post_stream') }}"); // Removed: This requires post_id and should be in view_post.html
 
-            postEventSource.onopen = function() {
-                console.log("SSE connection established for /api/posts/stream.");
+            // This is for the GLOBAL new post stream, correctly named 'api_post_stream' in app.py
+            const globalPostEventSource = new EventSource("{{ url_for('api_post_stream') }}");
+
+            globalPostEventSource.onopen = function() { // Changed variable name
+                console.log("SSE connection established for /api/posts/stream (global new posts).");
             };
 
-            postEventSource.onerror = function(error) {
-                console.error("SSE error for /api/posts/stream:", error);
+            globalPostEventSource.onerror = function(error) { // Changed variable name
+                console.error("SSE error for /api/posts/stream (global new posts):", error);
                 // Optional: Consider closing the connection if errors persist
-                // postEventSource.close();
+                // globalPostEventSource.close();
             };
 
             function showNewPostToast(postData) {
@@ -348,8 +351,8 @@
                 }, 10000); // Auto-dismiss after 10 seconds
             }
 
-            postEventSource.addEventListener('new_post', function(event) {
-                console.log("Received new_post event via /api/posts/stream:", event.data);
+            globalPostEventSource.addEventListener('new_post', function(event) { // Changed to globalPostEventSource
+                console.log("Received new_post event via /api/posts/stream (global new posts):", event.data);
                 try {
                     const postData = JSON.parse(event.data);
                     showNewPostToast(postData);

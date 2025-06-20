@@ -16,8 +16,8 @@ class SeriesPost(db.Model):
     post_id = db.Column(db.Integer, db.ForeignKey('post.id'), primary_key=True)
     order = db.Column(db.Integer, nullable=False) # Order of the post in the series
 
-    series = db.relationship('Series', backref=db.backref('series_post_associations', cascade='all, delete-orphan'))
-    post = db.relationship('Post', backref=db.backref('series_post_associations', cascade='all, delete-orphan'))
+    series = db.relationship('Series', back_populates='series_post_entries')
+    post = db.relationship('Post', back_populates='series_post_entries')
 
     def __repr__(self):
         return f'<SeriesPost series_id={self.series_id} post_id={self.post_id} order={self.order}>'
@@ -76,7 +76,7 @@ class User(db.Model):
     events = db.relationship('Event', backref='organizer', lazy=True)
     event_rsvps = db.relationship('EventRSVP', backref='attendee', lazy=True)
     reactions = db.relationship('Reaction', backref='user', lazy=True, cascade="all, delete-orphan")
-    activities = db.relationship('UserActivity', backref='user', lazy=True) # Added UserActivity relationship
+    activities = db.relationship('UserActivity', foreign_keys='UserActivity.user_id', backref='user', lazy=True) # Explicit foreign_keys
 
     # Friendship relationships
     sent_friend_requests = db.relationship(
@@ -206,7 +206,12 @@ class Post(db.Model):
     bookmarked_by = db.relationship('Bookmark', backref='post', lazy=True, cascade="all, delete-orphan")
 
     # Relationship to Series via series_posts association table
-    series_associated_with = db.relationship('Series', secondary='series_posts', back_populates='posts', lazy='dynamic')
+    series_post_entries = db.relationship('SeriesPost', back_populates='post', cascade='all, delete-orphan', lazy='dynamic')
+
+
+    @property
+    def series_associated_with(self):
+        return [entry.series for entry in self.series_post_entries]
 
     # Relationship to PostLock
     lock_info = db.relationship('PostLock', uselist=False, backref='post_locked', cascade="all, delete-orphan")
@@ -445,7 +450,12 @@ class Series(db.Model):
     author = db.relationship('User', back_populates='series_created')
 
     # Relationship to Posts via series_posts association table
-    posts = db.relationship('Post', secondary='series_posts', back_populates='series_associated_with', order_by='SeriesPost.order')
+    series_post_entries = db.relationship('SeriesPost', back_populates='series', cascade='all, delete-orphan', order_by=SeriesPost.order, lazy='dynamic')
+
+
+    @property
+    def posts(self):
+        return [entry.post for entry in self.series_post_entries]
 
     def __repr__(self):
         return f'<Series "{self.title}">'
@@ -459,7 +469,7 @@ class Series(db.Model):
             'author_username': self.author.username if self.author else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-            'posts': [post.to_dict_simple() for post in self.posts] # Assuming a simpler post representation
+            'posts': [entry.post.to_dict_simple() for entry in self.series_post_entries if entry.post]
         }
 
 class Bookmark(db.Model):
@@ -640,20 +650,6 @@ class UserAchievement(db.Model):
             'achievement_icon_url': self.achievement.icon_url if self.achievement else None,
             'awarded_at': self.awarded_at.isoformat()
         }
-
-# Ensure User.achievements relationship is correctly defined if it was intended for UserAchievement
-# Example: In User model:
-# achievements = db.relationship('UserAchievement', back_populates='user', lazy='dynamic')
-# This seems to be the case in the provided User model already:
-# class User(db.Model):
-# ...
-#    achievements = db.relationship('UserActivity', backref='user', lazy=True) # THIS IS WRONG, should be UserAchievement
-# This is outside the direct scope of Series, but good to note.
-# The provided User model has:
-#    activities = db.relationship('UserActivity', backref='user', lazy=True) # This is correct for activities
-# The UserAchievement model has:
-#    user = db.relationship('User', back_populates='achievements') # This correctly implies User needs 'achievements'
-# The User model now has the 'achievements' relationship added in this commit.
 
 
 class PostLock(db.Model):

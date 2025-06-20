@@ -4,8 +4,18 @@ from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
 
-from app import broadcast_new_post, socketio
+import app as main_app # Modified import
 from models import User, Post, Comment, db, Poll, PollOption, PollVote, PostLock
+
+# Placeholder for UserListResource
+class UserListResource(Resource):
+    def get(self):
+        return {'message': 'User list resource placeholder'}, 200
+
+# Placeholder for UserResource
+class UserResource(Resource):
+    def get(self, user_id):
+        return {'message': f'User resource placeholder for user_id {user_id}'}, 200
 
 class PostListResource(Resource):
     @jwt_required()
@@ -31,7 +41,7 @@ class PostListResource(Resource):
         #     new_post.id = random.randint(1, 1000) # Simulate ID assignment
 
         post_dict = new_post.to_dict()
-        broadcast_new_post(post_dict) # Call the imported function
+        main_app.broadcast_new_post(post_dict) # Call using main_app
 
         return {'message': 'Post created successfully', 'post': post_dict}, 201
 
@@ -63,7 +73,7 @@ class CommentListResource(Resource):
             'content': new_comment.content,
             'timestamp': new_comment.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         }
-        socketio.emit('new_comment_event', new_comment_data_for_post_room, room=f'post_{post_id}')
+        main_app.socketio.emit('new_comment_event', new_comment_data_for_post_room, room=f'post_{post_id}') # Use main_app
 
         comment_details = {
             'id': new_comment.id,
@@ -207,12 +217,12 @@ class PostLockResource(Resource):
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            # app.logger.error(f"Error creating lock: {str(e)}") # app is not defined here
+            # main_app.app.logger.error(f"Error creating lock: {str(e)}") # app is not defined here
             print(f"Error creating lock: {str(e)}") # Use print or proper logging setup for api module
             return {'message': f'Error creating lock: {str(e)}'}, 500
 
         # Emit SocketIO event for lock acquired
-        socketio.emit('post_lock_acquired', {
+        main_app.socketio.emit('post_lock_acquired', { # Use main_app
             'post_id': new_lock.post_id,
             'user_id': new_lock.user_id,
             'username': user.username,
@@ -258,15 +268,65 @@ class PostLockResource(Resource):
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            # app.logger.error(f"Error unlocking post: {str(e)}")
+            # main_app.app.logger.error(f"Error unlocking post: {str(e)}")
             print(f"Error unlocking post: {str(e)}")  # Use print or proper logging setup for api module
             return {'message': f'Error unlocking post: {str(e)}'}, 500
 
         # Emit SocketIO event for lock released
-        socketio.emit('post_lock_released', {
+        main_app.socketio.emit('post_lock_released', { # Use main_app
             'post_id': post_id,
             'released_by_user_id': current_user_id,
             'username': user.username
         }, room=f'post_{post_id}')
 
         return {'message': 'Post unlocked successfully.'}, 200
+
+# Placeholder for PostResource
+class PostResource(Resource):
+    def get(self, post_id):
+        return {'message': f'Post resource placeholder for post_id {post_id}'}, 200
+
+# Placeholder for EventListResource
+class EventListResource(Resource):
+    def get(self):
+        return {'message': 'Event list resource placeholder'}, 200
+
+# Placeholder for EventResource
+class EventResource(Resource):
+    def get(self, event_id):
+        return {'message': f'Event resource placeholder for event_id {event_id}'}, 200
+
+# Placeholder for RecommendationResource
+class RecommendationResource(Resource):
+    def get(self):
+        return {'message': 'Recommendation resource placeholder'}, 200
+
+# Placeholder for PersonalizedFeedResource
+class PersonalizedFeedResource(Resource):
+    def get(self, user_id):
+        return {'message': f'Personalized feed resource placeholder for user_id {user_id}'}, 200
+
+# Placeholder for TrendingHashtagsResource
+class TrendingHashtagsResource(Resource):
+    def get(self):
+        return {'message': 'Trending hashtags resource placeholder'}, 200
+
+# Placeholder for OnThisDayResource
+class OnThisDayResource(Resource):
+    def get(self):
+        return {'message': 'On This Day resource placeholder'}, 200
+
+# Placeholder for UserStatsResource
+class UserStatsResource(Resource):
+    def get(self, user_id):
+        return {'message': f'User stats resource placeholder for user_id {user_id}'}, 200
+
+# Placeholder for SeriesListResource
+class SeriesListResource(Resource):
+    def get(self):
+        return {'message': 'Series list resource placeholder'}, 200
+
+# Placeholder for SeriesResource
+class SeriesResource(Resource):
+    def get(self, series_id):
+        return {'message': f'Series resource placeholder for series_id {series_id}'}, 200

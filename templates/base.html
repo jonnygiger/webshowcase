@@ -295,5 +295,69 @@
         })(); // End of IIFE
     </script>
     {% endif %}
+
+    {# New Post Notifications SSE handling #}
+    <script>
+        (function() { // IIFE to encapsulate new post SSE logic
+            const postEventSource = new EventSource("{{ url_for('post_stream') }}");
+
+            postEventSource.onopen = function() {
+                console.log("SSE connection established for /api/posts/stream.");
+            };
+
+            postEventSource.onerror = function(error) {
+                console.error("SSE error for /api/posts/stream:", error);
+                // Optional: Consider closing the connection if errors persist
+                // postEventSource.close();
+            };
+
+            function showNewPostToast(postData) {
+                const sseToastContainer = document.getElementById('sse-toast-container');
+                if (!sseToastContainer) {
+                    console.error("SSE Toast container for new posts not found!");
+                    return;
+                }
+
+                const toastId = 'new-post-toast-' + Date.now();
+                const toastDiv = document.createElement('div');
+                toastDiv.id = toastId;
+                toastDiv.className = 'toast-notification'; // Reuse existing style
+
+                const title = postData.title || 'Untitled';
+                const author = postData.author_username || 'Unknown Author';
+                const snippet = postData.content_snippet || '';
+                const postUrl = postData.url || '#'; // Use the URL from postData
+
+                toastDiv.innerHTML = `
+                    <span><strong>New Post:</strong> <a href="${postUrl}" target="_blank">${title}</a> by ${author}</span><br>
+                    <small>${snippet}</small>
+                    <button class="close-btn" data-dismiss-toast-id="${toastId}">&times;</button>
+                `;
+
+                sseToastContainer.insertBefore(toastDiv, sseToastContainer.firstChild); // Newest on top
+
+                const closeButton = toastDiv.querySelector('.close-btn');
+                closeButton.onclick = function() {
+                    toastDiv.remove();
+                };
+
+                setTimeout(() => {
+                    if (document.getElementById(toastId)) {
+                        toastDiv.remove();
+                    }
+                }, 10000); // Auto-dismiss after 10 seconds
+            }
+
+            postEventSource.addEventListener('new_post', function(event) {
+                console.log("Received new_post event via /api/posts/stream:", event.data);
+                try {
+                    const postData = JSON.parse(event.data);
+                    showNewPostToast(postData);
+                } catch (e) {
+                    console.error("Error parsing new_post event data:", e);
+                }
+            });
+        })();
+    </script>
 </body>
 </html>

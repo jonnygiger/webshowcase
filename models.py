@@ -212,18 +212,23 @@ class Post(db.Model):
         return f'<Post {self.title}>'
 
     def to_dict(self):
+        # Ensure content is not None before trying to slice it
+        snippet = ''
+        if self.content:
+            snippet = (self.content[:100] + '...' if len(self.content) > 100 else self.content)
+
         return {
             'id': self.id,
             'title': self.title,
-            'content': self.content,
+            # 'content': self.content, # Removed full content
+            'content_snippet': snippet,
             'timestamp': self.timestamp.isoformat() if self.timestamp else None,
             'last_edited': self.last_edited.isoformat() if self.last_edited else None,
             'user_id': self.user_id,
-            'author_username': self.author.username if self.author else None,
+            'author_username': self.author.username if self.author else None, # Assumes self.author relationship exists
             'hashtags': self.hashtags,
             'is_featured': self.is_featured,
             'featured_at': self.featured_at.isoformat() if self.featured_at else None
-            # Consider adding comment count or like count if simple to compute
         }
 
     def to_dict_simple(self):

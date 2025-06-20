@@ -96,6 +96,13 @@ class AppTestCase(unittest.TestCase):
         # This helper now operates within an app_context implicitly if called from a test method that has it.
         # If called from setUpClass or outside a request context, ensure app_context.
         msg = Message(
+
+    def _get_jwt_token(self, username, password):
+        response = self.client.post('/api/login', json={'username': username, 'password': password})
+        self.assertEqual(response.status_code, 200, f"Failed to get JWT token for {username}. Response: {response.data.decode()}")
+        data = json.loads(response.data)
+        self.assertIn('access_token', data)
+        return data['access_token']
             sender_id=sender_id,
             receiver_id=receiver_id,
             content=content,
@@ -490,13 +497,7 @@ class TestRecommendationAPI(AppTestCase):
             self.assertIsInstance(data['suggested_users_to_follow'], list)
             self.assertEqual(data['suggested_polls_to_vote'], [])
 
-    # Helper to get JWT token
-    def _get_jwt_token(self, username, password):
-        response = self.client.post('/api/login', json={'username': username, 'password': password})
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        self.assertIn('access_token', data)
-        return data['access_token']
+    # _get_jwt_token moved to AppTestCase
 
     # Helpers for creating likes, comments, RSVPs, votes
     def _create_db_like(self, user_id, post_id, timestamp=None):
@@ -1970,6 +1971,62 @@ class TestFileSharing(AppTestCase):
 
 
 # Helper function to seed achievements for tests
+
+class TestRealtimePostNotifications(AppTestCase):
+
+    @patch('app.broadcast_new_post') # Patching the function in app.py
+    def test_create_post_api_triggers_broadcast(self, mock_broadcast_new_post_func):
+        with app.app_context():
+            token = self._get_jwt_token(self.user1.username, 'password') # Now uses AppTestCase._get_jwt_token
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+
+            post_payload = {
+                'title': 'Realtime Test Post API SSE',
+                'content': 'This API post should trigger a broadcast with a snippet for SSE.'
+            }
+
+            response = self.client.post('/api/posts', headers=headers, json=post_payload)
+
+            self.assertEqual(response.status_code, 201, f"API post creation failed: {response.data.decode()}")
+            response_json = response.get_json()
+            self.assertIn('post', response_json)
+            created_post_from_response = response_json['post']
+
+            mock_broadcast_new_post_func.assert_called_once()
+
+            args_call_list = mock_broadcast_new_post_func.call_args_list
+            self.assertEqual(len(args_call_list), 1)
+
+            called_with_args, called_with_kwargs = args_call_list[0]
+            self.assertEqual(len(called_with_args), 1)
+
+            broadcast_arg_dict = called_with_args[0]
+
+            self.assertEqual(broadcast_arg_dict['id'], created_post_from_response['id'])
+            self.assertEqual(broadcast_arg_dict['title'], post_payload['title'])
+
+            content_to_check = post_payload['content']
+            expected_snippet = (content_to_check[:100] + '...' if len(content_to_check) > 100 else content_to_check)
+            self.assertEqual(broadcast_arg_dict['content_snippet'], expected_snippet)
+
+            self.assertEqual(broadcast_arg_dict['author_username'], self.user1.username)
+            # Check that 'content' (full) and 'url' are NOT in the dict passed to broadcast_new_post
+            # because 'url' is added by broadcast_new_post itself.
+            self.assertNotIn('content', broadcast_arg_dict)
+            self.assertNotIn('url', broadcast_arg_dict)
+
+    def test_post_stream_endpoint_basic_connection(self):
+        with app.app_context():
+            response = self.client.get('/api/posts/stream')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.mimetype, 'text/event-stream')
+            self.assertTrue(response.is_streamed, "Response from /api/posts/stream should be streamed.")
+            # Closing the response explicitly after checking it's streamed
+            response.close()
+
 def seed_test_achievements():
     achievements_data = [
         {"name": "Test First Post", "description": "Desc1", "icon_url": "icon1", "criteria_type": "num_posts", "criteria_value": 1},

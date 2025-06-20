@@ -264,63 +264,176 @@ class TestFileSharing(AppTestCase):
         # self.assertEqual(response.status_code, 200)
         # self.assertIn("You are not authorized to download this file.", response.get_data(as_text=True))
         self.logout()
-        pass  # Placeholder
+        # Test for unauthorized download - User3 tries to download User1's file shared with User2
+        # Step 1: User1 shares a file with User2
+        self.login(self.user1.username, 'password')
+        dummy_content = b"secret content for unauthorized download test"
+        dummy_file_data_unauth = self.create_dummy_file(filename="unauth_download.txt", content=dummy_content)
+        share_data_unauth = {'file': dummy_file_data_unauth, 'message': 'Unauthorized access test'}
+        self.client.post(
+            f'/files/share/{self.user2.username}',
+            data=share_data_unauth,
+            content_type='multipart/form-data',
+            follow_redirects=True
+        )
+        self.logout()
+
+        # Step 2: Get the shared file ID
+        shared_file_unauth = SharedFile.query.filter_by(
+            sender_id=self.user1.id,
+            receiver_id=self.user2.id,
+            original_filename="unauth_download.txt"
+        ).first()
+        self.assertIsNotNone(shared_file_unauth, "File for unauth download test should exist.")
+        unauth_file_id = shared_file_unauth.id
+
+        # Step 3: User3 (unauthorized) attempts to download
+        self.login(self.user3.username, "password")
+        response_unauth = self.client.get(f'/files/download/{unauth_file_id}', follow_redirects=False) # Test redirect itself
+
+        self.assertEqual(response_unauth.status_code, 302) # Expecting a redirect
+        # Check if redirected to inbox, as per app.py logic for unauthorized download
+        self.assertTrue(response_unauth.location.endswith(self.app.url_for('files_inbox')))
+
+        # Optionally, check for flash message if your test client setup supports it easily
+        # For example, by enabling session_transactions for the client or checking response data for flash message text
+        # For now, checking redirect is a good indicator of the auth failure.
+        # To check flash message content, you might need to follow the redirect and inspect the resulting page,
+        # or use `with self.client.session_transaction() as sess:` if that's how your test setup handles flashes.
+        # Let's try to check the flash message after redirect:
+        response_redirected = self.client.get(f'/files/download/{unauth_file_id}', follow_redirects=True)
+        self.assertIn("You are not authorized to download this file.", response_redirected.get_data(as_text=True))
+
+        self.logout()
 
     def test_delete_shared_file_receiver(self):
-        # with app.app_context():
-        # self.login(self.user1.username, 'password')
-        # dummy_file_data = self.create_dummy_file(filename="to_delete_receiver.txt")
-        # self.client.post(f'/files/share/{self.user2.username}', data={'file': dummy_file_data}, content_type='multipart/form-data')
-        # shared_file = SharedFile.query.filter_by(original_filename="to_delete_receiver.txt").first()
-        # saved_filename = shared_file.saved_filename
-        # file_path = os.path.join(app.config['SHARED_FILES_UPLOAD_FOLDER'], saved_filename)
-        # self.logout()
-        # mock_shared_file_id = shared_file.id if shared_file else 1
-        mock_shared_file_id = 1
-
-        self.login(self.user2.username, "password")
-        # response = self.client.post(f'/files/delete/{mock_shared_file_id}', follow_redirects=True)
-        # self.assertEqual(response.status_code, 200)
-        # self.assertIn("File successfully deleted.", response.get_data(as_text=True))
-        # self.assertIsNone(SharedFile.query.get(mock_shared_file_id))
-        # self.assertFalse(os.path.exists(file_path))
+        # Step 1: User1 shares a file with User2
+        self.login(self.user1.username, 'password')
+        dummy_content = b"File for receiver to delete."
+        dummy_file_data = self.create_dummy_file(filename="delete_by_receiver.txt", content=dummy_content)
+        share_data = {'file': dummy_file_data, 'message': 'Receiver, please delete this.'}
+        self.client.post(
+            f'/files/share/{self.user2.username}',
+            data=share_data,
+            content_type='multipart/form-data',
+            follow_redirects=True
+        )
         self.logout()
-        pass  # Placeholder
+
+        # Step 2: Get shared file details
+        shared_file = SharedFile.query.filter_by(
+            sender_id=self.user1.id,
+            receiver_id=self.user2.id,
+            original_filename="delete_by_receiver.txt"
+        ).first()
+        self.assertIsNotNone(shared_file, "Shared file for receiver deletion test should exist.")
+        file_id_to_delete = shared_file.id
+        saved_filename = shared_file.saved_filename
+        file_path = os.path.join(self.app.config['SHARED_FILES_UPLOAD_FOLDER'], saved_filename)
+        self.assertTrue(os.path.exists(file_path), "Physical file should exist before deletion attempt.")
+
+        # Step 3: User2 (receiver) logs in and deletes the file via API
+        self.login(self.user2.username, "password")
+        # Need to get a JWT token for API access
+        login_resp = self.client.post('/api/login', json={'username': self.user2.username, 'password': 'password'})
+        access_token = login_resp.get_json()['access_token']
+        headers = {'Authorization': f'Bearer {access_token}'}
+
+        delete_response = self.client.delete(f'/api/files/{file_id_to_delete}', headers=headers)
+
+        # Step 4: Assertions
+        self.assertEqual(delete_response.status_code, 200)
+        response_json = delete_response.get_json()
+        self.assertEqual(response_json['message'], "File deleted successfully")
+
+        self.assertFalse(os.path.exists(file_path), "Physical file should be deleted from filesystem.")
+        self.assertIsNone(SharedFile.query.get(file_id_to_delete), "DB record should be deleted.")
+
+        self.logout()
 
     def test_delete_shared_file_sender(self):
-        # with app.app_context():
-        self.login(self.user1.username, "password")  # Sender
-        # dummy_file_data = self.create_dummy_file(filename="to_delete_sender.txt")
-        # self.client.post(f'/files/share/{self.user2.username}', data={'file': dummy_file_data}, content_type='multipart/form-data')
-        # shared_file = SharedFile.query.filter_by(original_filename="to_delete_sender.txt").first()
-        # file_id = shared_file.id
-        # file_path = os.path.join(app.config['SHARED_FILES_UPLOAD_FOLDER'], shared_file.saved_filename)
-        mock_file_id = 1
+        # Step 1: User1 shares a file with User2
+        self.login(self.user1.username, 'password')
+        dummy_content = b"File for sender to delete."
+        dummy_file_data = self.create_dummy_file(filename="delete_by_sender.txt", content=dummy_content)
+        share_data = {'file': dummy_file_data, 'message': 'Sender, you can delete this.'}
+        self.client.post(
+            f'/files/share/{self.user2.username}',
+            data=share_data,
+            content_type='multipart/form-data',
+            follow_redirects=True
+        )
+        # User1 remains logged in for API call
 
-        # response = self.client.post(f'/files/delete/{mock_file_id}', follow_redirects=True)
-        # self.assertEqual(response.status_code, 200)
-        # self.assertIn("File successfully deleted.", response.get_data(as_text=True))
-        # self.assertIsNone(SharedFile.query.get(mock_file_id))
-        # self.assertFalse(os.path.exists(file_path))
+        # Step 2: Get shared file details
+        shared_file = SharedFile.query.filter_by(
+            sender_id=self.user1.id,
+            receiver_id=self.user2.id,
+            original_filename="delete_by_sender.txt"
+        ).first()
+        self.assertIsNotNone(shared_file, "Shared file for sender deletion test should exist.")
+        file_id_to_delete = shared_file.id
+        saved_filename = shared_file.saved_filename
+        file_path = os.path.join(self.app.config['SHARED_FILES_UPLOAD_FOLDER'], saved_filename)
+        self.assertTrue(os.path.exists(file_path), "Physical file should exist before deletion by sender.")
+
+        # Step 3: User1 (sender) deletes the file via API
+        login_resp = self.client.post('/api/login', json={'username': self.user1.username, 'password': 'password'})
+        access_token = login_resp.get_json()['access_token']
+        headers = {'Authorization': f'Bearer {access_token}'}
+
+        delete_response = self.client.delete(f'/api/files/{file_id_to_delete}', headers=headers)
+
+        # Step 4: Assertions
+        self.assertEqual(delete_response.status_code, 200)
+        response_json = delete_response.get_json()
+        self.assertEqual(response_json['message'], "File deleted successfully")
+
+        self.assertFalse(os.path.exists(file_path), "Physical file should be deleted by sender.")
+        self.assertIsNone(SharedFile.query.get(file_id_to_delete), "DB record should be deleted by sender.")
+
         self.logout()
-        pass  # Placeholder
 
     def test_delete_shared_file_unauthorized(self):
-        # with app.app_context():
-        # self.login(self.user1.username, 'password')
-        # dummy_file_data = self.create_dummy_file(filename="unauth_delete.txt")
-        # self.client.post(f'/files/share/{self.user2.username}', data={'file': dummy_file_data}, content_type='multipart/form-data')
-        # shared_file = SharedFile.query.filter_by(original_filename="unauth_delete.txt").first()
-        # file_id = shared_file.id
-        # file_path = os.path.join(app.config['SHARED_FILES_UPLOAD_FOLDER'], shared_file.saved_filename)
-        # self.logout()
-        mock_file_id = 1
-
-        self.login(self.user3.username, "password")  # Unauthorized user
-        # response = self.client.post(f'/files/delete/{mock_file_id}', follow_redirects=True)
-        # self.assertEqual(response.status_code, 200)
-        # self.assertIn("You are not authorized to delete this file.", response.get_data(as_text=True))
-        # self.assertIsNotNone(SharedFile.query.get(mock_file_id))
-        # self.assertFalse(os.path.exists(file_path)) # This assertion might be wrong if file shouldn't be deleted by unauthorized
+        # Step 1: User1 shares a file with User2
+        self.login(self.user1.username, 'password')
+        dummy_content = b"File for unauthorized delete attempt."
+        dummy_file_data = self.create_dummy_file(filename="unauth_delete_attempt.txt", content=dummy_content)
+        share_data = {'file': dummy_file_data, 'message': 'Unauthorized user should not delete this.'}
+        self.client.post(
+            f'/files/share/{self.user2.username}',
+            data=share_data,
+            content_type='multipart/form-data',
+            follow_redirects=True
+        )
         self.logout()
-        pass  # Placeholder
+
+        # Step 2: Get shared file details
+        shared_file = SharedFile.query.filter_by(
+            sender_id=self.user1.id,
+            receiver_id=self.user2.id,
+            original_filename="unauth_delete_attempt.txt"
+        ).first()
+        self.assertIsNotNone(shared_file, "Shared file for unauthorized deletion test should exist.")
+        file_id_to_attempt_delete = shared_file.id
+        saved_filename = shared_file.saved_filename
+        file_path = os.path.join(self.app.config['SHARED_FILES_UPLOAD_FOLDER'], saved_filename)
+        self.assertTrue(os.path.exists(file_path), "Physical file should exist before unauthorized deletion attempt.")
+
+        # Step 3: User3 (unauthorized) logs in and attempts to delete the file via API
+        self.login(self.user3.username, "password")
+        login_resp = self.client.post('/api/login', json={'username': self.user3.username, 'password': 'password'})
+        access_token = login_resp.get_json()['access_token']
+        headers = {'Authorization': f'Bearer {access_token}'}
+
+        delete_response = self.client.delete(f'/api/files/{file_id_to_attempt_delete}', headers=headers)
+
+        # Step 4: Assertions
+        self.assertEqual(delete_response.status_code, 403) # Forbidden
+        response_json = delete_response.get_json()
+        self.assertEqual(response_json['message'], "You are not authorized to delete this file")
+
+        self.assertTrue(os.path.exists(file_path), "Physical file should NOT be deleted by unauthorized user.")
+        self.assertIsNotNone(SharedFile.query.get(file_id_to_attempt_delete), "DB record should NOT be deleted by unauthorized user.")
+
+        self.logout()

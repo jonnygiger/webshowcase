@@ -55,6 +55,7 @@ class AppTestCase(unittest.TestCase):
         cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
         cls.app.config["SECRET_KEY"] = "test-secret-key"
         cls.app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"  # Added as per requirements
+        cls.app.config["SERVER_NAME"] = "localhost.test" # Added to allow _external=True for url_for
         cls.app.config["SOCKETIO_MESSAGE_QUEUE"] = None
         cls.app.config["SHARED_FILES_UPLOAD_FOLDER"] = "shared_files_test_folder" # Added for subtask
         shared_folder = cls.app.config["SHARED_FILES_UPLOAD_FOLDER"]
@@ -146,13 +147,6 @@ class AppTestCase(unittest.TestCase):
         with self.app.app_context(): # Use the class's app instance for context
             self._clean_tables_for_setup()
             self._setup_base_users()  # This would require live User model and db session
-        # Mock base users if db is not live
-        # self.user1 = unittest.mock.MagicMock(id=1, username='testuser1', email='test1@example.com', profile_picture=None)
-        # self.user1_id = 1
-        # self.user2 = unittest.mock.MagicMock(id=2, username='testuser2', email='test2@example.com', profile_picture=None)
-        # self.user2_id = 2
-        # self.user3 = unittest.mock.MagicMock(id=3, username='testuser3', email='test3@example.com', profile_picture=None)
-        # self.user3_id = 3
         # pass
 
     def _clean_tables_for_setup(self):
@@ -217,8 +211,7 @@ class AppTestCase(unittest.TestCase):
             friendship = Friendship(user_id=user1_id, friend_id=user2_id, status=status)
             self.db.session.add(friendship) # Use class's db
             self.db.session.commit() # Use class's db
-            return friendship
-        # return unittest.mock.MagicMock(user_id=user1_id, friend_id=user2_id, status=status)
+            return friendship.id # Return the ID
 
     def _create_db_post(
         self, user_id, title="Test Post", content="Test Content", timestamp=None
@@ -234,9 +227,6 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(post) # Use class's db
             self.db.session.commit() # Use class's db
             return post.id # Return the ID directly
-        # mock_post = unittest.mock.MagicMock(id=unittest.mock.sentinel.post_id, user_id=user_id, title=title, content=content, timestamp=timestamp or datetime.utcnow())
-        # mock_post.author = unittest.mock.MagicMock(username=f"user{user_id}") # Simulate author relationship
-        # return mock_post
 
     def _make_post_via_route(
         self, username, password, title="Test Post", content="Test Content", hashtags=""
@@ -275,7 +265,6 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(msg) # Use class's db
             self.db.session.commit() # Use class's db
             return msg
-        # return unittest.mock.MagicMock(sender_id=sender_id, receiver_id=receiver_id, content=content)
 
     def _get_jwt_token(self, username, password):
         response = self.client.post(
@@ -304,7 +293,6 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(group) # Use class's db
             self.db.session.commit() # Use class's db
             return group
-        # return unittest.mock.MagicMock(id=unittest.mock.sentinel.group_id, name=name, creator_id=creator_id)
 
     def _create_db_event(
         self,
@@ -330,7 +318,6 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(event) # Use class's db
             self.db.session.commit() # Use class's db
             return event
-        # return unittest.mock.MagicMock(id=unittest.mock.sentinel.event_id, title=title, user_id=user_id, date=date_str, created_at=created_at or datetime.utcnow())
 
     def _create_db_poll(
         self, user_id, question="Test Poll?", options_texts=None, created_at=None
@@ -351,11 +338,6 @@ class AppTestCase(unittest.TestCase):
                 self.db.session.add(option) # Use class's db
             self.db.session.commit() # Use class's db
             return poll
-        # mock_poll = unittest.mock.MagicMock(id=unittest.mock.sentinel.poll_id, question=question, user_id=user_id, options=[])
-        # for i, text in enumerate(options_texts):
-        # mock_option = unittest.mock.MagicMock(id=i+1, text=text, poll_id=mock_poll.id, vote_count=0)
-        # mock_poll.options.append(mock_option)
-        # return mock_poll
 
     def _create_db_like(self, user_id, post_id, timestamp=None):
         from models import Like  # Local import to avoid circular if not using live DB
@@ -367,7 +349,6 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(like) # Use class's db
             self.db.session.commit() # Use class's db
             return like
-        # return unittest.mock.MagicMock(user_id=user_id, post_id=post_id)
 
     def _create_db_comment(
         self, user_id, post_id, content="Test comment", timestamp=None
@@ -384,7 +365,6 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(comment) # Use class's db
             self.db.session.commit() # Use class's db
             return comment
-        # return unittest.mock.MagicMock(id=unittest.mock.sentinel.comment_id, user_id=user_id, post_id=post_id, content=content)
 
     def _create_db_event_rsvp(
         self, user_id, event_id, status="Attending", timestamp=None
@@ -401,7 +381,6 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(rsvp) # Use class's db
             self.db.session.commit() # Use class's db
             return rsvp
-        # return unittest.mock.MagicMock(user_id=user_id, event_id=event_id, status=status)
 
     def _create_db_poll_vote(self, user_id, poll_id, poll_option_id, created_at=None):
         from models import PollVote
@@ -416,7 +395,6 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(vote) # Use class's db
             self.db.session.commit() # Use class's db
             return vote
-        # return unittest.mock.MagicMock(user_id=user_id, poll_id=poll_id, poll_option_id=poll_option_id)
 
     def _create_series(
         self,
@@ -438,7 +416,6 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(series) # Use class's db
             self.db.session.commit() # Use class's db
             return series
-        # return unittest.mock.MagicMock(id=unittest.mock.sentinel.series_id, title=title, user_id=user_id)
 
     def assertInHTML(self, needle, haystack, achievement_name):
         try:
@@ -465,4 +442,3 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(lock) # Use class's db
             self.db.session.commit() # Use class's db
             return lock
-        # return unittest.mock.MagicMock(post_id=post_id, user_id=user_id)

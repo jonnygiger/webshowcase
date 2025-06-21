@@ -234,8 +234,17 @@ class AppTestCase(unittest.TestCase):
             )
             self.db.session.add(post) # Use class's db
             self.db.session.commit() # Use class's db
-            _ = post.id # Ensure ID is loaded
-            return post # Return the full post object
+
+            # Debug check
+            retrieved_post = Post.query.get(post.id)
+            if retrieved_post is None:
+                print(f"DEBUG: Post with id {post.id} was NOT found immediately after commit in _create_db_post!")
+                # Optionally raise an exception to make it a hard failure here
+                raise Exception(f"Post with id {post.id} not found immediately after commit in _create_db_post!")
+            else:
+                print(f"DEBUG: Post with id {post.id} WAS found immediately after commit in _create_db_post.")
+
+            return post.id # Return the ID directly
 
     def _make_post_via_route(
         self, username, password, title="Test Post", content="Test Content", hashtags=""

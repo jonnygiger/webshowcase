@@ -462,10 +462,8 @@ class Event(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
-    date = db.Column(
-        db.String(50), nullable=False
-    )  # Storing as string, consider DateTime if complex queries needed
-    time = db.Column(db.String(50), nullable=True)
+    date = db.Column(db.DateTime, nullable=False)  # Changed to DateTime
+    # time field is removed as it's part of the date (DateTime object)
     location = db.Column(db.String(200), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     user_id = db.Column(
@@ -484,8 +482,8 @@ class Event(db.Model):
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "date": self.date,
-            "time": self.time,
+            "date": self.date.isoformat() if self.date else None, # Format DateTime to ISO string
+            # "time": self.time, # Removed
             "location": self.location,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "user_id": self.user_id,

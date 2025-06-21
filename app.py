@@ -2583,19 +2583,28 @@ def create_event():
     if request.method == "POST":
         title = request.form.get("title")
         description = request.form.get("description")
-        event_date_str = request.form.get("event_date")  # Stored as string in model
-        event_time_str = request.form.get("event_time")  # Stored as string
+        event_date_str = request.form.get("event_date")
+        event_time_str = request.form.get("event_time") # Default to midnight if not provided or handle error
         location = request.form.get("location")
 
         if not title or not title.strip():
             flash("Event title is required.", "danger")
             return render_template("create_event.html")
-        if not event_date_str:  # Basic validation
+        if not event_date_str:
             flash("Event date is required.", "danger")
             return render_template("create_event.html")
 
-        # Datetime conversion/validation could be added here if desired before saving
-        # For now, saving as strings as per model definition.
+        # Ensure time is provided, default to 00:00 if necessary or raise error
+        if not event_time_str:
+            event_time_str = "00:00" # Default to midnight
+
+        try:
+            # Combine date and time strings and parse into a datetime object
+            event_datetime_obj = datetime.strptime(f"{event_date_str} {event_time_str}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            flash("Invalid date or time format. Please use YYYY-MM-DD for date and HH:MM for time.", "danger")
+            return render_template("create_event.html")
+
         user_id = session.get("user_id")
         if not user_id:  # Should be caught by @login_required
             flash("You must be logged in to create an event.", "danger")
@@ -2604,8 +2613,7 @@ def create_event():
         new_event_db = Event(
             title=title.strip(),
             description=description.strip() if description else "",
-            date=event_date_str,
-            time=event_time_str if event_time_str else "",
+            date=event_datetime_obj, # Store combined datetime object
             location=location.strip() if location else "",
             user_id=user_id,
         )

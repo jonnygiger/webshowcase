@@ -1115,19 +1115,17 @@ def get_on_this_day_content(user_id):
 
     events_on_this_day = []
     for event in all_user_events:
-        try:
-            event_date_obj = datetime.strptime(event.date, "%Y-%m-%d")
+        # event.date is now a datetime object
+        if event.date: # Ensure event.date is not None
             if (
-                event_date_obj.month == current_month
-                and event_date_obj.day == current_day
-                and event_date_obj.year != current_year
+                event.date.month == current_month
+                and event.date.day == current_day
+                and event.date.year != current_year
             ):
                 events_on_this_day.append(event)
-        except ValueError:
-            # Handle cases where event.date might not be in the expected format
-            current_app.logger.error(
-                f"Could not parse date string for event ID {event.id}: {event.date}"
-            )
-            continue
+        else:
+            # Log if an event unexpectedly has no date
+            current_app.logger.warning(f"Event ID {event.id} has no date attribute or it is None.")
+
 
     return {"posts": posts_on_this_day, "events": events_on_this_day}

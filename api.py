@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 
 import app as main_app  # Modified import
-from models import User, Post, Comment, Like, Friendship, Event, EventRSVP, Poll, PollOption, PollVote, db, PostLock, SharedFile
+from models import User, Post, Comment, Like, Friendship, Event, EventRSVP, Poll, PollOption, PollVote, db, PostLock, SharedFile, UserBlock
 
 
 # Placeholder for UserListResource
@@ -61,6 +61,15 @@ class CommentListResource(Resource):
         post = Post.query.get(post_id)
         if not post:
             return {"message": "Post not found"}, 404
+
+        # Placeholder for block check logic
+        # Conceptually, this will check if post.author has blocked user (current_user_id)
+        # For now, using 'if False:' to avoid breaking existing functionality.
+        # This will be replaced with actual logic once UserBlock model and relationships are implemented.
+        # Example: if post.author.has_blocked(user):
+        # Check if the post author has blocked the current user
+        if UserBlock.query.filter_by(blocker_id=post.user_id, blocked_id=user.id).first():
+            return {"message": "You are blocked by the post author and cannot comment."}, 403
 
         parser = reqparse.RequestParser()
         parser.add_argument(

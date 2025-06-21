@@ -4,7 +4,7 @@ import json
 # from unittest.mock import patch, ANY # Removed as not visibly used
 # from datetime import datetime, timedelta # Removed as not visibly used
 # from app import app, db, socketio # COMMENTED OUT
-from models import User, Post, Comment
+from models import User, Post, Comment, UserBlock
 from tests.test_base import AppTestCase
 
 
@@ -171,3 +171,43 @@ class TestCommentAPI(AppTestCase):
 
         # Ensure comment IDs are different
         self.assertNotEqual(comment1_data['id'], comment2_data['id'], "Comment IDs should be different for multiple comments.")
+
+    def test_create_comment_when_blocked_by_post_author(self):
+        # 1. Create user2 (commenter)
+        with self.app.app_context():
+            user2 = User(username='blockeduser', email='blocked@example.com')
+            user2.set_password('password')
+            self.db.session.add(user2)
+            self.db.session.commit()
+            user2_id = user2.id
+            # self.user1 is the post author, created in AppTestCase's setUp
+
+        # 2. user1 (post author) creates a post
+        post_id = self._create_db_post(user_id=self.user1_id, title="Post by User1, Comment by Blocked User2")
+
+        # 3. Simulate user1 blocking user2 by creating a UserBlock entry
+        with self.app.app_context():
+            user_block = UserBlock(blocker_id=self.user1_id, blocked_id=user2_id)
+            self.db.session.add(user_block)
+            self.db.session.commit()
+
+        # 4. user2 attempts to comment on user1's post
+        token_user2 = self._get_jwt_token(user2.username, 'password')
+        headers = {
+            "Authorization": f"Bearer {token_user2}",
+            "Content-Type": "application/json",
+        }
+        comment_content = "Attempting to comment while blocked."
+
+        response = self.client.post(
+            f'/api/posts/{post_id}/comments',
+            headers=headers,
+            json={'content': comment_content}
+        )
+
+        # 5. Assert that the API returns a 403 Forbidden status code
+        self.assertEqual(response.status_code, 403, f"Response data: {response.data.decode()}")
+
+        # 6. Assert that the API returns an appropriate error message
+        data = json.loads(response.data)
+        self.assertEqual(data['message'], "You are blocked by the post author and cannot comment.")

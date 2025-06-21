@@ -93,34 +93,24 @@ class TestCommentAPI(AppTestCase):
         # Let's adjust the assertion based on this.
         self.assertIn('content', data['message'])
         self.assertEqual(data['message']['content'], 'Comment content cannot be blank')
+
     def test_create_comment_by_different_user(self):
         # 1. Create a post by self.user1
-        post_by_user1 = self._create_db_post(user_id=self.user1_id, title="Post by User1 for User2 Comment")
-        post_id = post_by_user1.id
+        post_id = self._create_db_post(user_id=self.user1_id, title="Post by User1 for User2 Comment")
+        # No longer need 'post_by_user1.id' as post_id directly gets the integer ID
 
         # 2. Create a second user, user2
-        user2 = User(username='user2', email='user2@example.com')
-        user2.set_password('password') # Assuming set_password method exists and hashes
-        self.db.session.add(user2)
-        self.db.session.commit()
-        # It's good practice to refresh user2 to get any DB-generated defaults or ensure it's fully loaded
-        # self.db.session.refresh(user2) # Optional, but can be useful
-        user2_id = user2.id
-        user2_username = user2.username
+        with self.app.app_context():
+            user2 = User(username='user2', email='user2@example.com')
+            user2.set_password('password')
+            self.db.session.add(user2)
+            self.db.session.commit()
+            user2_id = user2.id
+            user2_username = user2.username
 
         # 3. Log in as user2 to get an auth token
         token_user2 = self._get_jwt_token(user2_username, 'password')
 
-        # Store variables for the next steps (actual API call and assertions)
-        # For example, by assigning them to self or returning them if this were a helper
-        # For now, just ensure they are defined in the scope of the test method.
-        # self.post_id_for_user2_comment = post_id
-        # self.token_for_user2 = token_user2
-        # self.user2_id_for_comment = user2_id
-        # self.user2_username_for_comment = user2_username
-        # pass # Next steps will add the API call and assertions
-
-        # 4. Make the API call to create a comment
         headers = {
             "Authorization": f"Bearer {token_user2}",
             "Content-Type": "application/json",
@@ -133,13 +123,6 @@ class TestCommentAPI(AppTestCase):
             json={'content': comment_content}
         )
 
-        # Store for assertions in the next step, e.g.:
-        # self.response_data = json.loads(response.data)
-        # self.response_status_code = response.status_code
-        # self.comment_content_sent = comment_content
-        # pass # Next step will add assertions
-
-        # 5. Assert the expected outcome
         self.assertEqual(response.status_code, 201, f"Response data: {response.data.decode()}")
         data = json.loads(response.data)
 
@@ -151,3 +134,40 @@ class TestCommentAPI(AppTestCase):
         self.assertEqual(comment_data['user_id'], user2_id)
         self.assertEqual(comment_data['author_username'], user2_username)
         self.assertEqual(comment_data['post_id'], post_id)
+
+    def test_create_multiple_comments_on_same_post_by_same_user(self):
+        post_id = self._create_db_post(user_id=self.user1_id, title="Post for Multiple Comments")
+        token = self._get_jwt_token(self.user1.username, "password")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        # First comment
+        comment1_content = "This is the first comment."
+        response1 = self.client.post(f'/api/posts/{post_id}/comments', headers=headers, json={'content': comment1_content})
+        self.assertEqual(response1.status_code, 201, f"Response data for comment 1: {response1.data.decode()}")
+        data1 = json.loads(response1.data)
+        self.assertEqual(data1['message'], 'Comment created successfully')
+        self.assertIn('comment', data1)
+        comment1_data = data1['comment']
+        self.assertEqual(comment1_data['content'], comment1_content)
+        self.assertEqual(comment1_data['user_id'], self.user1_id)
+        self.assertEqual(comment1_data['post_id'], post_id)
+        self.assertEqual(comment1_data['author_username'], self.user1.username)
+
+        # Second comment
+        comment2_content = "This is the second comment by the same user."
+        response2 = self.client.post(f'/api/posts/{post_id}/comments', headers=headers, json={'content': comment2_content})
+        self.assertEqual(response2.status_code, 201, f"Response data for comment 2: {response2.data.decode()}")
+        data2 = json.loads(response2.data)
+        self.assertEqual(data2['message'], 'Comment created successfully')
+        self.assertIn('comment', data2)
+        comment2_data = data2['comment']
+        self.assertEqual(comment2_data['content'], comment2_content)
+        self.assertEqual(comment2_data['user_id'], self.user1_id)
+        self.assertEqual(comment2_data['post_id'], post_id)
+        self.assertEqual(comment2_data['author_username'], self.user1.username)
+
+        # Ensure comment IDs are different
+        self.assertNotEqual(comment1_data['id'], comment2_data['id'], "Comment IDs should be different for multiple comments.")

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 
 import app as main_app  # Modified import
-from models import User, Post, Comment, db, Poll, PollOption, PollVote, PostLock, SharedFile
+from models import User, Post, Comment, Like, Friendship, Event, EventRSVP, Poll, PollOption, PollVote, db, PostLock, SharedFile
 
 
 # Placeholder for UserListResource
@@ -359,13 +359,135 @@ class RecommendationResource(Resource):
         return {"message": "Recommendation resource placeholder"}, 200
 
 
-# Placeholder for PersonalizedFeedResource
+# PersonalizedFeedResource Implementation
 class PersonalizedFeedResource(Resource):
-    def get(self, user_id):
-        return {
-            "message": f"Personalized feed resource placeholder for user_id {user_id}"
-        }, 200
+    @jwt_required()
+    def get(self):
+        current_user_id = int(get_jwt_identity())
+        current_user = User.query.get(current_user_id)
 
+        if not current_user:
+            return {"message": "User not found"}, 404
+
+        processed_items = {} # Using dict to handle duplicates (type, id) -> item
+
+        # Get friend IDs
+        friend_ids = set()
+        # Friendships initiated by the current user
+        initiated_friendships = Friendship.query.filter_by(user_id=current_user_id, status='accepted').all()
+        for f in initiated_friendships:
+            friend_ids.add(f.friend_id)
+        # Friendships accepted by the current user
+        accepted_friendships = Friendship.query.filter_by(friend_id=current_user_id, status='accepted').all()
+        for f in accepted_friendships:
+            friend_ids.add(f.user_id)
+
+        if friend_ids: # Only proceed if the user has friends
+            # 1. Posts from Friends
+            friend_posts = Post.query.filter(Post.user_id.in_(friend_ids)).order_by(Post.timestamp.desc()).limit(20).all()
+            for post in friend_posts:
+                item = {
+                    "type": "post", "id": post.id, "title": post.title, "content": post.content,
+                    "timestamp": post.timestamp, "author_username": post.author.username,
+                    "reason": f"Posted by your friend {post.author.username}"
+                }
+                key = ("post", post.id)
+                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                    processed_items[key] = item
+
+            # 2. Posts Liked by Friends
+            friend_likes = Like.query.filter(Like.user_id.in_(friend_ids)).order_by(Like.timestamp.desc()).limit(20).all()
+            for like in friend_likes:
+                if like.post.user_id == current_user_id:
+                    continue
+                item = {
+                    "type": "post", "id": like.post.id, "title": like.post.title, "content": like.post.content,
+                    "timestamp": like.timestamp, "author_username": like.post.author.username,
+                    "reason": f"Liked by your friend {like.user.username}"
+                }
+                key = ("post", like.post.id)
+                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                    processed_items[key] = item
+
+            # 3. Posts Commented on by Friends
+            friend_comments = Comment.query.filter(Comment.user_id.in_(friend_ids)).order_by(Comment.timestamp.desc()).limit(20).all()
+            for comment in friend_comments:
+                if comment.post.user_id == current_user_id:
+                    continue
+                item = {
+                    "type": "post", "id": comment.post.id, "title": comment.post.title, "content": comment.post.content,
+                    "timestamp": comment.timestamp, "author_username": comment.post.author.username,
+                    "reason": f"Commented on by your friend {comment.author.username}"
+                }
+                key = ("post", comment.post.id)
+                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                    processed_items[key] = item
+
+            # 4. Events by Friends or Friends Attending
+            friend_events = Event.query.filter(Event.user_id.in_(friend_ids)).order_by(Event.created_at.desc()).limit(10).all()
+            for event in friend_events:
+                item = {
+                    "type": "event", "id": event.id, "title": event.title, "description": event.description,
+                    "date": event.date, "timestamp": event.created_at,
+                    "organizer_username": event.organizer.username,
+                    "reason": f"Organized by your friend {event.organizer.username}"
+                }
+                key = ("event", event.id)
+                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                    processed_items[key] = item
+
+            friend_rsvps = EventRSVP.query.filter(EventRSVP.user_id.in_(friend_ids), EventRSVP.status == 'Attending').order_by(EventRSVP.timestamp.desc()).limit(10).all()
+            for rsvp in friend_rsvps:
+                if rsvp.event.user_id == current_user_id:
+                    continue
+                item = {
+                    "type": "event", "id": rsvp.event.id, "title": rsvp.event.title, "description": rsvp.event.description,
+                    "date": rsvp.event.date, "timestamp": rsvp.timestamp,
+                    "organizer_username": rsvp.event.organizer.username,
+                    "reason": f"{rsvp.attendee.username} is attending"
+                }
+                key = ("event", rsvp.event.id)
+                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                    processed_items[key] = item
+
+            # 5. Polls by Friends or Friends Voted On
+            friend_polls = Poll.query.filter(Poll.user_id.in_(friend_ids)).order_by(Poll.created_at.desc()).limit(10).all()
+            for poll in friend_polls:
+                item = {
+                    "type": "poll", "id": poll.id, "question": poll.question,
+                    "options": [{"id": o.id, "text": o.text, "vote_count": len(o.votes)} for o in poll.options],
+                    "timestamp": poll.created_at, "creator_username": poll.author.username,
+                    "reason": f"Created by your friend {poll.author.username}"
+                }
+                key = ("poll", poll.id)
+                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                    processed_items[key] = item
+
+            friend_poll_votes = PollVote.query.filter(PollVote.user_id.in_(friend_ids)).order_by(PollVote.created_at.desc()).limit(10).all()
+            for vote in friend_poll_votes:
+                if vote.poll.user_id == current_user_id:
+                    continue
+                # Assuming PollVote has a 'voter' relationship to User model. If it's 'user', use vote.user.username
+                # For now, using vote.user.username as 'voter' is not standard. Models usually use 'user'.
+                item = {
+                    "type": "poll", "id": vote.poll.id, "question": vote.poll.question,
+                    "options": [{"id": o.id, "text": o.text, "vote_count": len(o.votes)} for o in vote.poll.options],
+                    "timestamp": vote.created_at, "creator_username": vote.poll.author.username,
+                    "reason": f"Voted on by your friend {vote.user.username}"
+                }
+                key = ("poll", vote.poll.id)
+                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                    processed_items[key] = item
+
+        feed_items_list = sorted(list(processed_items.values()), key=lambda x: x["timestamp"], reverse=True)
+
+        for item in feed_items_list:
+            if item["timestamp"].tzinfo is None:
+                 item["timestamp"] = item["timestamp"].isoformat() + "Z"
+            else:
+                 item["timestamp"] = item["timestamp"].isoformat()
+
+        return {"feed_items": feed_items_list}, 200
 
 # Placeholder for TrendingHashtagsResource
 class TrendingHashtagsResource(Resource):

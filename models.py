@@ -364,6 +364,7 @@ class Like(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (db.UniqueConstraint("user_id", "post_id", name="_user_post_uc"),)
 
@@ -449,6 +450,7 @@ class PollVote(db.Model):
     # A direct unique constraint on (user_id, poll_id) is cleaner if poll_id is directly on PollVote.
     # Let's add poll_id to PollVote for easier constraint definition.
     poll_id = db.Column(db.Integer, db.ForeignKey("poll.id"), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (db.UniqueConstraint("user_id", "poll_id", name="_user_poll_uc"),)
 
@@ -498,6 +500,7 @@ class EventRSVP(db.Model):
     )  # e.g., "Attending", "Maybe", "Not Attending"
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         db.UniqueConstraint("user_id", "event_id", name="_user_event_uc"),

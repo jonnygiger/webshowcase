@@ -226,7 +226,8 @@ class AppTestCase(unittest.TestCase):
             )
             self.db.session.add(post) # Use class's db
             self.db.session.commit() # Use class's db
-            return post.id # Return the ID directly
+            _ = post.id # Ensure ID is loaded
+            return post # Return the full post object
 
     def _make_post_via_route(
         self, username, password, title="Test Post", content="Test Content", hashtags=""
@@ -317,6 +318,7 @@ class AppTestCase(unittest.TestCase):
             )
             self.db.session.add(event) # Use class's db
             self.db.session.commit() # Use class's db
+            _ = event.id # Ensure ID is loaded
             return event
 
     def _create_db_poll(
@@ -337,6 +339,9 @@ class AppTestCase(unittest.TestCase):
                 option = PollOption(text=text, poll_id=poll.id)
                 self.db.session.add(option) # Use class's db
             self.db.session.commit() # Use class's db
+            _ = poll.id # Ensure ID is loaded
+            # Also ensure options are loaded if they are accessed via poll.options in tests
+            _ = [opt.id for opt in poll.options]
             return poll
 
     def _create_db_like(self, user_id, post_id, timestamp=None):

@@ -138,6 +138,49 @@ class TestRecommendationAPI(AppTestCase):
         self.assertIsInstance(data["suggested_users_to_follow"], list)
         self.assertEqual(data["suggested_polls_to_vote"], [])
 
+    def test_recommend_post_liked_by_friend(self):
+        """Test recommending a post liked by a friend."""
+        # 1. Access user1, user2, user3 (already available from AppTestCase.setUp)
+        # user1_id, user2_id, user3_id are also available
+
+        # 2. Create a friendship between self.user1 and self.user3
+        # The _create_friendship helper in AppTestCase creates one side of the friendship.
+        # For a mutual friendship, it might need to be called twice or the helper might handle it.
+        # Assuming helper creates user_id -> friend_id link.
+        self._create_friendship(self.user1_id, self.user3_id, status='accepted')
+        self._create_friendship(self.user3_id, self.user1_id, status='accepted') # Ensure mutual friendship
+
+        # 3. Create a post by self.user2
+        post_by_user2 = self._create_db_post(user_id=self.user2_id, title="Post by User2", content="Content by User2")
+
+        # 4. Create a like on this post by self.user3
+        self._create_db_like(user_id=self.user3_id, post_id=post_by_user2.id)
+
+        # 5. Make API call and assertions
+        response = self.client.get(f"/api/recommendations?user_id={self.user1_id}")
+        self.assertEqual(response.status_code, 200)
+
+        recommendations = json.loads(response.data)
+
+        self.assertIn("suggested_posts", recommendations)
+        self.assertIsInstance(recommendations["suggested_posts"], list)
+
+        # Ensure the list is not empty before trying to find the post
+        self.assertTrue(len(recommendations["suggested_posts"]) > 0,
+                        "Suggested posts list is empty, expected post liked by friend.")
+
+        found_post_in_recommendations = False
+        for recommended_post in recommendations["suggested_posts"]:
+            if recommended_post.get("id") == post_by_user2.id:
+                self.assertEqual(recommended_post.get("title"), post_by_user2.title)
+                # Add other relevant assertions if needed, e.g., author
+                # self.assertEqual(recommended_post.get("author_username"), self.user2.username)
+                found_post_in_recommendations = True
+                break
+
+        self.assertTrue(found_post_in_recommendations,
+                        f"Post ID {post_by_user2.id} (Title: '{post_by_user2.title}') liked by friend was not found in recommendations.")
+
     # _get_jwt_token is in AppTestCase
 
     # Helpers for creating likes, comments, RSVPs, votes are in AppTestCase

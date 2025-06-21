@@ -376,9 +376,6 @@ def suggest_groups_to_join(user_id, limit=5):
     # For this example, I'll construct it assuming `group_members` is a table object.
     # This will likely need adjustment if `models.py` has a different structure.
 
-    # Get groups current user is already in
-    user_groups_ids = {group.id for group in current_user.groups}
-
     # Find groups friends are in, count members from friend list
     # This query is a bit complex and depends heavily on the Group membership model.
     # A placeholder for the logic:

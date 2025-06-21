@@ -297,6 +297,7 @@ class Post(db.Model):
     hashtags = db.Column(db.Text, nullable=True)  # Stores comma-separated hashtags
     is_featured = db.Column(db.Boolean, default=False)
     featured_at = db.Column(db.DateTime, nullable=True)
+    image_url = db.Column(db.String(255), nullable=True)  # Added image_url field
 
     comments = db.relationship(
         "Comment", backref="post", lazy=True, cascade="all, delete-orphan"
@@ -356,6 +357,7 @@ class Post(db.Model):
             "hashtags": self.hashtags,
             "is_featured": self.is_featured,
             "featured_at": self.featured_at.isoformat() if self.featured_at else None,
+            "image_url": self.image_url,  # Added image_url to to_dict
         }
 
     def to_dict_simple(self):

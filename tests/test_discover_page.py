@@ -72,6 +72,65 @@ class TestDiscoverPageViews(AppTestCase):
         self.logout()
 
     @patch("app.get_personalized_feed_posts")
+    def test_discover_page_handles_post_with_image(
+        self, mock_get_personalized_feed_posts
+    ):
+        # Setup: Login as a user
+        self.login(
+            self.user1.username, "password"
+        )  # Assumes user1 is created in AppTestCase.setUp
+
+        # Mocking get_personalized_feed_posts
+        # Ensure app context for MagicMock with spec on SQLAlchemy models
+        with self.app.app_context():
+            # Create a mock author object
+            mock_author = MagicMock()
+            mock_author.username = "image_author"
+
+            # Create a mock post object
+            mock_post = MagicMock()
+            mock_post.id = 789
+            mock_post.title = "Post with Image"
+            mock_post.content = "This post has an image."
+            mock_post.author = mock_author
+            mock_post.timestamp = datetime.utcnow()
+            mock_post.comments = []
+            mock_post.likes = []
+            mock_post.hashtags = ""
+            mock_post.user_id = self.user2_id # Assuming user2 might be an author
+            mock_post.reviews = []
+            mock_post.image_url = "http://example.com/image.jpg"  # Image URL for the test
+
+        mock_reason = "Reason: post with image."
+        # The function is expected to return a list of (Post, reason_string) tuples
+        mock_get_personalized_feed_posts.return_value = [(mock_post, mock_reason)]
+
+        # Execution: Make a GET request to /discover
+        response = self.client.get("/discover")
+
+        # Assertions
+        self.assertEqual(response.status_code, 200)
+        response_data = response.get_data(as_text=True)
+
+        # Check for the image tag
+        # This assertion might need adjustment based on how images are rendered in the template
+        self.assertIn('<img src="http://example.com/image.jpg"', response_data) # Made assertion more flexible
+
+        # Check for other post details
+        self.assertIn(mock_post.title, response_data)
+        self.assertIn(mock_post.author.username, response_data)
+        self.assertIn(mock_post.content[:50], response_data) # Check for a snippet
+        self.assertIn(f"Recommended because: {mock_reason}", response_data)
+
+
+        # Assert that the mock was called correctly
+        mock_get_personalized_feed_posts.assert_called_once_with(
+            self.user1_id, limit=15
+        )
+
+        self.logout()
+
+    @patch("app.get_personalized_feed_posts")
     def test_discover_page_handles_special_characters_in_posts(
         self, mock_get_personalized_feed_posts
     ):

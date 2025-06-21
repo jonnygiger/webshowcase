@@ -553,3 +553,122 @@ class TestLiveActivityFeed(AppTestCase):
         # For now, the "no-activity-message" and lack of specific activity texts are the main checks.
 
         self.logout()
+
+    @patch("app.socketio.emit")
+    @patch("app.check_and_award_achievements")
+    def test_new_share_activity_logging_and_socketio(self, mock_check_achievements, mock_socketio_emit):
+        # Log in as user2 (the one who will share the post)
+        self.login(self.user2.username, "password")
+
+        # Create a post by user1 that user2 will share
+        with self.app.app_context():
+            original_post_title = "Original Post by User1"
+            original_post_content = "This post will be shared."
+            # Ensure self.user1 and self.user1_id are available from AppTestCase setup
+            # If AppTestCase sets up self.user1.id directly, use that.
+            # Otherwise, ensure self.user1 is committed and has an id.
+            # Based on AppTestCase, self.user1 should have an id after _setup_base_users()
+            post_by_user1_id = self._create_db_post(
+                user_id=self.user1.id,
+                title=original_post_title,
+                content=original_post_content
+            )
+            self.assertIsNotNone(post_by_user1_id, "Failed to create original post by user1")
+
+            # Store original post details for assertions later
+            self.original_post_id = post_by_user1_id
+            self.original_post_content_preview = original_post_content[:100]
+
+        # Simulate the share action by user2
+        sharing_comment_text = "Check out this cool post I found!"
+        response = self.client.post(
+            f'/post/{self.original_post_id}/share',
+            data={'sharing_comment': sharing_comment_text},
+            follow_redirects=True
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Post shared successfully!", response.get_data(as_text=True))
+
+        # Store sharing comment for later assertions
+        self.sharing_comment_text = sharing_comment_text
+
+        # Verify UserActivity creation
+        with self.app.app_context():
+            from flask import url_for # Ensure url_for is available for direct use if needed, or rely on app context
+            activity = UserActivity.query.filter_by(
+                user_id=self.user2.id,
+                activity_type='shared_a_post'
+            ).order_by(UserActivity.timestamp.desc()).first()
+
+            self.assertIsNotNone(activity, "UserActivity for 'shared_a_post' was not created.")
+            self.assertEqual(activity.user_id, self.user2.id, "Activity user_id is incorrect.")
+            self.assertEqual(activity.related_id, self.original_post_id, "Activity related_id (original post ID) is incorrect.")
+            # The content_preview in app.py for 'shared_a_post' uses the sharing comment.
+            self.assertEqual(activity.content_preview, self.sharing_comment_text[:100], "Activity content_preview is incorrect.")
+
+            # Construct expected link using url_for, similar to how it's done in app.py
+            # This requires the app context, which is already active here.
+            expected_link = url_for('view_post', post_id=self.original_post_id, _external=True)
+            self.assertEqual(activity.link, expected_link, "Activity link is incorrect.")
+
+            # Store activity_id for SocketIO verification if needed
+            self.activity_id = activity.id
+
+        # Verify SocketIO event emission
+        # The activity was performed by self.user2.
+        # Friends of self.user2 are self.user1 and self.user3 (from TestLiveActivityFeed.setUp).
+        # The emit_new_activity_event helper in app.py will fetch user2's profile picture.
+        # We use ANY for profile_picture and timestamp due to potential variations.
+
+        # Ensure self.activity_id was set in the UserActivity verification step
+        self.assertTrue(hasattr(self, 'activity_id'), "activity_id was not set from UserActivity verification.")
+
+        # Construct expected link again, or retrieve if stored on self from previous step.
+        # For safety, let's reconstruct or ensure it's available.
+        # Assuming self.original_post_id is correctly set.
+        with self.app.app_context(): # url_for needs app context
+            from flask import url_for # Ensure url_for is available
+            expected_activity_link = url_for('view_post', post_id=self.original_post_id, _external=True)
+
+        expected_payload = {
+            "activity_id": self.activity_id, # From previous verification step
+            "user_id": self.user2.id,
+            "username": self.user2.username,
+            "profile_picture": ANY,  # Using ANY as exact URL can be tricky with _external=True and test context
+            "activity_type": "shared_a_post",
+            "related_id": self.original_post_id, # ID of the original post
+            "content_preview": self.sharing_comment_text[:100], # The comment made during sharing
+            "link": expected_activity_link,
+            "timestamp": ANY,
+            "target_user_id": None, # No specific target user for 'shared_a_post' in this context
+            "target_username": None,
+        }
+
+        # user1 and user3 are friends of user2 from TestLiveActivityFeed.setUp()
+        # The AppTestCase creates self.user1, self.user2, self.user3
+        emit_calls = []
+        if self.user1: # Friend 1
+            emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user1.id}'))
+        if self.user3: # Friend 2
+            emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user3.id}'))
+
+        self.assertTrue(len(emit_calls) > 0, "No emit calls were prepared. Check friend setup for user2.")
+
+        # Check if mock_socketio_emit was called
+        # print(f"DEBUG: mock_socketio_emit.call_args_list: {mock_socketio_emit.call_args_list}")
+        # print(f"DEBUG: Expected calls: {emit_calls}")
+
+        mock_socketio_emit.assert_has_calls(emit_calls, any_order=True)
+
+        # Ensure it wasn't emitted to self.user2 (the actor)
+        for actual_call_args in mock_socketio_emit.call_args_list:
+            kwargs_dict = actual_call_args[1] # Get the kwargs dictionary
+            room_arg = kwargs_dict.get('room')
+            # Check that the room is not the actor's room, AND that the event is 'new_activity_event'
+            # (to avoid issues if other socket events are emitted for other reasons)
+            if actual_call_args[0][0] == 'new_activity_event': # Check if the event name is 'new_activity_event'
+                self.assertNotEqual(room_arg, f'user_{self.user2.id}',
+                                    "Activity event should not be emitted to the actor's own room.")
+        # TODO: Verify achievement checks (if applicable)
+
+        self.logout() # Ensure logout at the end

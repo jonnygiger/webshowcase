@@ -72,6 +72,58 @@ class TestDiscoverPageViews(AppTestCase):
         self.logout()
 
     @patch("app.get_personalized_feed_posts")
+    def test_discover_page_handles_special_characters_in_posts(
+        self, mock_get_personalized_feed_posts
+    ):
+        # Setup: Login as a user
+        self.login(self.user1.username, "password")
+
+        # Mocking get_personalized_feed_posts
+        with self.app.app_context():
+            # Create a mock author object
+            mock_author = MagicMock()
+            mock_author.username = "special_char_author"
+
+            # Create a mock post object
+            mock_post = MagicMock()
+            mock_post.id = 456
+            mock_post.title = "Test Post with <Special> & \"Chars\""
+            mock_post.content = "This content has 'single' & \"double\" quotes, plus <tags>."
+            mock_post.author = mock_author
+            mock_post.timestamp = datetime.utcnow()
+            mock_post.comments = []
+            mock_post.likes = []
+            mock_post.hashtags = None
+            mock_post.user_id = self.user1_id
+            mock_post.reviews = []
+
+        mock_reason = "Reason: testing special characters"
+        # The function is expected to return a list of (Post, reason_string) tuples
+        mock_get_personalized_feed_posts.return_value = [(mock_post, mock_reason)]
+
+        # Execution: Make a GET request to /discover
+        response = self.client.get("/discover")
+
+        # Assertions
+        self.assertEqual(response.status_code, 200)
+        response_data = response.get_data(as_text=True)
+
+        # Assert that the mock was called correctly
+        mock_get_personalized_feed_posts.assert_called_once_with(
+            self.user1_id, limit=15
+        )
+
+        # Assertions for post's title and content
+        # Note: These assertions might need adjustment based on how Jinja2 escapes characters
+        self.assertIn("Test Post with &lt;Special&gt; &amp; &#34;Chars&#34;", response_data)
+        self.assertIn("This content has &#39;single&#39; &amp; &#34;double&#34; quotes, plus &lt;tags&gt;.", response_data)
+
+        # Assert that the recommendation reason is in the response data
+        self.assertIn(f"Recommended because: {mock_reason}", response_data)
+
+        self.logout()
+
+    @patch("app.get_personalized_feed_posts")
     def test_discover_page_handles_posts_without_optional_data(
         self, mock_get_personalized_feed_posts
     ):

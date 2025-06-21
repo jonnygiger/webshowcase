@@ -67,6 +67,24 @@ class TestCommentAPI(AppTestCase):
         data = json.loads(response.data)
         self.assertEqual(data['message'], 'Post not found')
 
+    def test_create_comment_on_non_existent_post_with_specific_message(self):
+        # with app.app_context():
+        token = self._get_jwt_token(self.user1.username, "password")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        non_existent_post_id = 99999  # An ID that is unlikely to exist
+
+        response = self.client.post(
+            f"/api/posts/{non_existent_post_id}/comments",
+            headers=headers,
+            json={"content": "Attempting to comment on a non-existent post"},
+        )
+        self.assertEqual(response.status_code, 404, f"Response data: {response.data.decode()}")
+        data = json.loads(response.data)
+        self.assertEqual(data['message'], 'Post not found', "Error message for non-existent post did not match.")
+
     def test_create_comment_missing_content(self):
         # with app.app_context():
         post_id = self._create_db_post(user_id=self.user1_id, title="Post for Invalid Comment")

@@ -115,6 +115,10 @@ def broadcast_new_post(post_data):
     # This function will be called when a new post is created.
     # It sends the post data to all connected SSE clients.
 
+    if not new_post_sse_queues:
+        app.logger.warning("No SSE queues to send new post notifications to.")
+        return
+
     post_data_with_url = post_data.copy()  # Work with a copy
 
     if "id" in post_data_with_url:
@@ -141,6 +145,10 @@ def broadcast_new_post(post_data):
         app.logger.warning(
             "Post data missing 'id' field, cannot generate URL for SSE notification. Sending notification without URL."
         )
+
+    if not new_post_sse_queues:
+        app.logger.warning("No SSE queues to send new post notifications to.")
+        return  # No queues, so nothing more to do
 
     app.logger.info(
         f"Broadcasting new post: ID {post_data_with_url.get('id')}, Title: {post_data_with_url.get('title')} to {len(new_post_sse_queues)} clients. URL: {post_data_with_url.get('url', 'N/A')}"

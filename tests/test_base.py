@@ -77,8 +77,10 @@ class AppTestCase(unittest.TestCase):
                                             manage_session=False) # Good for tests
         assert cls.socketio_class_level is not None, "socketio_class_level is None in setUpClass!"
 
-        # Initialize JWTManager
-        JWTManager(cls.app)
+        # Initialize JWTManager - This is already done in app.py when 'jwt = JWTManager(app)' is called.
+        # Re-initializing it here on cls.app (which is main_app from app.py) can cause errors
+        # like "AssertionError: The setup method 'errorhandler' can no longer be called...".
+        # JWTManager(cls.app) # REMOVED
 
         # Initialize Flask-Restful Api, if routes tested through self.client need it
         # cls.api = Api(cls.app) # Assign to cls.api - RELY ON app.api from app.py
@@ -306,19 +308,20 @@ class AppTestCase(unittest.TestCase):
         user_id,
         title="Test Event",
         description="An event for testing",
-        date_str="2024-12-31",
-        time="18:00",
+        date_str="2024-12-31", # Expected format YYYY-MM-DD
+        time_str="18:00",      # Expected format HH:MM
         location="Test Location",
         created_at=None,
     ):
         # Requires live Event model and db session
         with self.app.app_context(): # Ensure app context for DB operations
-            event_datetime = datetime.strptime(f"{date_str} {time}", "%Y-%m-%d %H:%M")
+            # Combine date_str and time_str to create a datetime object
+            event_datetime_obj = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
             event = Event(
                 user_id=user_id,
                 title=title,
                 description=description,
-                date=event_datetime,
+                date=event_datetime_obj, # Store the datetime object
                 location=location,
                 created_at=created_at or datetime.utcnow(),
             )

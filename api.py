@@ -495,10 +495,39 @@ class TrendingHashtagsResource(Resource):
         return {"message": "Trending hashtags resource placeholder"}, 200
 
 
-# Placeholder for OnThisDayResource
+from recommendations import get_on_this_day_content # Import the function
+
+# OnThisDayResource Implementation
 class OnThisDayResource(Resource):
+    @jwt_required()
     def get(self):
-        return {"message": "On This Day resource placeholder"}, 200
+        current_user_id_str = get_jwt_identity()
+        try:
+            current_user_id = int(current_user_id_str)
+        except ValueError:
+            return {"message": "Invalid user identity in token"}, 400
+
+        # It's good practice to ensure the user exists, though jwt_required handles token validity.
+        user = User.query.get(current_user_id)
+        if not user:
+            return {"message": "User not found for provided token"}, 404
+
+        content = get_on_this_day_content(current_user_id)
+
+        posts_data = []
+        if content.get("posts"):
+            for post_obj in content["posts"]:
+                posts_data.append(post_obj.to_dict()) # Assuming Post model has to_dict()
+
+        events_data = []
+        if content.get("events"):
+            for event_obj in content["events"]:
+                events_data.append(event_obj.to_dict()) # Assuming Event model has to_dict()
+
+        return {
+            "on_this_day_posts": posts_data,
+            "on_this_day_events": events_data,
+        }, 200
 
 
 # Placeholder for UserStatsResource

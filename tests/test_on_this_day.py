@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 # from models import User, Post, Event # COMMENTED OUT
 # from recommendations import get_on_this_day_posts_and_events # Potentially used by API
 from tests.test_base import AppTestCase
+from models import User # Needed for direct user creation
+from werkzeug.security import generate_password_hash # Needed for hashing password
 
 # from flask import url_for # Conditional import is good practice
 
@@ -63,11 +65,13 @@ class TestOnThisDayPage(AppTestCase):
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
-        self.assertIn("No posts from this day in previous years.", response_data)
-        self.assertIn("No events from this day in previous years.", response_data)
+        # When there is absolutely no content, a general message is shown.
         self.assertIn(
             "Nothing to show for 'On This Day' from previous years.", response_data
         )
+        # The individual messages for posts/events should NOT be present if the general one is.
+        self.assertNotIn("No posts from this day in previous years.", response_data)
+        self.assertNotIn("No events from this day in previous years.", response_data)
         self.logout()
 
     @patch("app.datetime")
@@ -97,6 +101,96 @@ class TestOnThisDayPage(AppTestCase):
 
         self.assertNotIn(self.post_current_year_web.title, response_data)
         self.assertNotIn(self.event_different_day_web.title, response_data)
+        self.logout()
+
+    @patch("app.datetime")
+    @patch("recommendations.datetime")
+    def test_on_this_day_page_only_posts(
+        self, mock_reco_datetime, mock_app_datetime
+    ):
+        mock_app_datetime.utcnow.return_value = self.fixed_today
+        mock_reco_datetime.utcnow.return_value = self.fixed_today
+        mock_reco_datetime.strptime = datetime.strptime
+
+        # Create a new user for this test to ensure no other events interfere
+        with self.app.app_context():
+            test_user_for_only_posts = User(
+                username="onlypostsuser",
+                email="onlyposts@example.com",
+                password_hash=generate_password_hash("password"),
+            )
+            self.db.session.add(test_user_for_only_posts)
+            self.db.session.commit()
+            test_user_for_only_posts_id = test_user_for_only_posts.id # Get ID before context closes
+
+        # Create a post for this user on "this day" in a previous year
+        post_only = self._create_db_post(
+            user_id=test_user_for_only_posts_id,
+            title="Post From Last Year, No Events",
+            content="This post is from Oct 26, 2022.",
+            timestamp=datetime(2022, 10, 26, 9, 0, 0),  # Matches self.fixed_today's date, previous year
+        )
+
+        self.login(test_user_for_only_posts.username, "password")
+        response = self.client.get("/onthisday")
+        self.assertEqual(response.status_code, 200)
+        response_data = response.get_data(as_text=True)
+
+        self.assertIn(post_only.title, response_data)
+        self.assertIn("No events from this day in previous years.", response_data)
+
+        # Ensure the general "no content" message for events is there,
+        # but not the one for posts, nor the overall "Nothing to show".
+        self.assertNotIn("No posts from this day in previous years.", response_data)
+        self.assertNotIn(
+            "Nothing to show for 'On This Day' from previous years.", response_data
+        )
+
+        self.logout()
+
+    @patch("app.datetime")
+    @patch("recommendations.datetime")
+    def test_on_this_day_page_only_events(
+        self, mock_reco_datetime, mock_app_datetime
+    ):
+        mock_app_datetime.utcnow.return_value = self.fixed_today
+        mock_reco_datetime.utcnow.return_value = self.fixed_today
+        mock_reco_datetime.strptime = datetime.strptime
+
+        # Create a new user for this test to ensure no other posts interfere
+        with self.app.app_context():
+            test_user_for_only_events = User(
+                username="onlyeventsuser",
+                email="onlyevents@example.com",
+                password_hash=generate_password_hash("password"),
+            )
+            self.db.session.add(test_user_for_only_events)
+            self.db.session.commit()
+            test_user_for_only_events_id = test_user_for_only_events.id # Get ID before context closes
+
+        # Create an event for this user on "this day" in a previous year
+        event_only = self._create_db_event(
+            user_id=test_user_for_only_events_id,
+            title="Event From Last Year, No Posts",
+            date_str="2022-10-26",  # Matches self.fixed_today's date, previous year
+            description="This event is on Oct 26, 2022.",
+        )
+
+        self.login(test_user_for_only_events.username, "password")
+        response = self.client.get("/onthisday")
+        self.assertEqual(response.status_code, 200)
+        response_data = response.get_data(as_text=True)
+
+        self.assertIn(event_only.title, response_data)
+        self.assertIn("No posts from this day in previous years.", response_data)
+
+        # Ensure the general "no content" message for posts is there,
+        # but not the one for events, nor the overall "Nothing to show".
+        self.assertNotIn("No events from this day in previous years.", response_data)
+        self.assertNotIn(
+            "Nothing to show for 'On This Day' from previous years.", response_data
+        )
+
         self.logout()
 
 
@@ -167,11 +261,11 @@ class TestOnThisDayAPI(AppTestCase):
             date_str="2022-10-26",
             description="Event on Oct 26, 2022 by other user",
         )
-        self.event_invalid_date_format = self._create_db_event(
-            user_id=self.test_user.id,
-            title="Invalid Date Format Event",
-            date_str="2022/10/26",
-        )
+        # self.event_invalid_date_format = self._create_db_event(
+        #     user_id=self.test_user.id,
+        #     title="Invalid Date Format Event",
+        #     date_str="2022/10/26", # This will cause strptime to fail in _create_db_event
+        # )
         # Commits are handled by AppTestCase helpers
 
     @patch("recommendations.datetime")

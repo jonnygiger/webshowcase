@@ -104,7 +104,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         self.assertIsInstance(feed_items, list)
 
         # We expect at least one of each type based on setup (if DB is live)
-        # self.assertTrue(len(feed_items) >= 3, f"Expected at least 3 items, got {len(feed_items)}: {feed_items}")
+        self.assertEqual(len(feed_items), 4, f"Expected 4 items, got {len(feed_items)}: {feed_items}")
 
         found_post = False
         found_event = False
@@ -158,9 +158,9 @@ class TestPersonalizedFeedAPI(AppTestCase):
                     self.assertEqual(item["question"], "Poll by User2 (Friend)?")
 
         # These assertions might fail if DB helpers are not creating items due to missing live DB
-        # self.assertTrue(found_post, "No post found in feed")
-        # self.assertTrue(found_event, "No event found in feed")
-        # self.assertTrue(found_poll, "No poll found in feed")
+        self.assertTrue(found_post, "No post found in feed")
+        self.assertTrue(found_event, "No event found in feed")
+        self.assertTrue(found_poll, "No poll found in feed")
 
         if timestamps:  # Only check sorting if there are items
             for i in range(len(timestamps) - 1):

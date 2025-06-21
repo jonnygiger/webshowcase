@@ -239,7 +239,7 @@ api.add_resource(EventResource, "/api/events/<int:event_id>")
 api.add_resource(
     RecommendationResource, "/api/recommendations"
 )  # Added RecommendationResource endpoint
-api.add_resource(PersonalizedFeedResource, "/api/users/<int:user_id>/feed")
+api.add_resource(PersonalizedFeedResource, "/api/personalized-feed")
 api.add_resource(
     TrendingHashtagsResource, "/api/trending_hashtags"
 )  # Added TrendingHashtagsResource endpoint

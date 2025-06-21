@@ -200,17 +200,29 @@ class TestCollaborativeEditing(AppTestCase):
         # ... (simulate socketio client and event) ...
         pass  # Placeholder
 
-    @patch("api.socketio.emit")
-    def test_socketio_lock_acquired_broadcast_from_api(self, mock_api_socketio_emit):
-        # with app.app_context():
-        # token = self._get_jwt_token(self.collaborator.username, 'password')
-        # headers = {'Authorization': f'Bearer {token}'}
-        # response = self.client.post(f'/api/posts/{self.test_post.id}/lock', headers=headers)
-        # ... (assertions on mock_api_socketio_emit) ...
-        pass  # Placeholder
+    @patch("app.socketio.emit") # Corrected mock path and indented
+    def test_socketio_lock_acquired_broadcast_from_api(self, mock_app_socketio_emit): # Renamed mock argument and indented
+        token = self._get_jwt_token(self.collaborator.username, "password")
+        headers = {"Authorization": f"Bearer {token}"}
 
-    @patch("api.socketio.emit")
-    def test_socketio_lock_released_broadcast_from_api(self, mock_api_socketio_emit):
+        response = self.client.post(f'/api/posts/{self.test_post.id}/lock', headers=headers)
+
+        self.assertEqual(response.status_code, 200, f"Failed to acquire lock: {response.data.decode()}")
+
+        expected_data = {
+            'post_id': self.test_post.id,
+            'user_id': self.collaborator.id,
+            'username': self.collaborator.username,
+            'expires_at': ANY  # We use ANY for the expiry time as it's dynamic
+        }
+        mock_app_socketio_emit.assert_called_once_with( # Renamed mock argument and indented
+            'post_lock_acquired', # Corrected event name
+            expected_data,
+            room=f'post_{self.test_post.id}'
+        )
+
+    @patch("app.socketio.emit") # Corrected mock path and indented
+    def test_socketio_lock_released_broadcast_from_api(self, mock_app_socketio_emit): # Renamed mock argument and indented
         # with app.app_context():
         # self._create_db_lock(post_id=self.test_post.id, user_id=self.collaborator.id, minutes_offset=15)
         # token = self._get_jwt_token(self.collaborator.username, 'password')

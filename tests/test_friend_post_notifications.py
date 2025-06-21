@@ -226,3 +226,43 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
                     called_for_own_post = True
                     break
             self.assertFalse(called_for_own_post, "socketio.emit was called for the user's own post notification.")
+
+    @patch('app.socketio.emit')
+    def test_no_notification_for_post_before_friendship(self, mock_socketio_emit):
+        with self.app.app_context():
+            # 1. User1 creates a post
+            post_title = "Post Before Friendship"
+            post_content = "Content of post made before friendship"
+            # Ensure the post is made by logging in as user1 or using a helper that handles auth
+            self._make_post_via_route(self.user1.username, 'password', title=post_title, content=post_content)
+
+            # Retrieve the created post to get its ID
+            created_post = Post.query.filter_by(user_id=self.user1_id, title=post_title).first()
+            self.assertIsNotNone(created_post, "Post creation failed or post not found.")
+
+            # Store post_id for later assertions
+            post_id = created_post.id
+
+            # 2. AFTER the post is created, User1 and User2 become friends
+            self._create_friendship(self.user1_id, self.user2_id, status='accepted')
+
+            # 3. Assert that no FriendPostNotification was created for User2 for this post
+            notification_for_user2 = FriendPostNotification.query.filter_by(
+                user_id=self.user2_id,
+                post_id=created_post.id  # or post_id variable
+            ).first()
+            self.assertIsNone(notification_for_user2,
+                              "A notification was created for a post made before friendship.")
+
+            # 4. Assert socketio.emit was not called for User2 for this specific post
+            called_for_user2 = False
+            for call_args in mock_socketio_emit.call_args_list:
+                args, kwargs = call_args
+                # args[0] is event name, args[1] is payload, kwargs['room'] is the room
+                if args[0] == 'new_friend_post' and \
+                   kwargs.get('room') == f'user_{self.user2_id}' and \
+                   args[1].get('post_id') == created_post.id:
+                    called_for_user2 = True
+                    break
+            self.assertFalse(called_for_user2,
+                             "socketio.emit was called for user2 for a post made before friendship.")

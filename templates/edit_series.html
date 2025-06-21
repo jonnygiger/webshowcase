@@ -26,19 +26,23 @@
     {# Posts currently in the series #}
     <h4>Posts in this Series</h4>
     {% if posts_in_series and posts_in_series|length > 0 %}
-        <ul class="list-group mb-3">
-            {% for post in posts_in_series %} {# series.posts is already ordered #}
-                <li class="list-group-item d-flex justify-content-between align-items-center">
+        <ul class="list-group mb-3" id="posts-in-series-list" data-series-id="{{ series.id }}">
+            {% for post in posts_in_series %} {# series.posts is already ordered by SeriesPost.order #}
+                <li class="list-group-item d-flex justify-content-between align-items-center" data-post-id="{{ post.id }}">
                     <span>
-                        #{{ loop.index }} <!-- Assuming series.posts is correctly ordered -->
                         <a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a>
                     </span>
-                    <form method="POST" action="{{ url_for('remove_post_from_series', series_id=series.id, post_id=post.id) }}" style="display: inline;">
-                        <button type="submit" class="btn btn-danger btn-sm">Remove</button>
-                    </form>
+                    <div>
+                        <button class="btn btn-secondary btn-sm me-1 move-up">Move Up</button>
+                        <button class="btn btn-secondary btn-sm me-1 move-down">Move Down</button>
+                        <form method="POST" action="{{ url_for('remove_post_from_series', series_id=series.id, post_id=post.id) }}" style="display: inline;">
+                            <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                        </form>
+                    </div>
                 </li>
             {% endfor %}
         </ul>
+        <button id="save-order-btn" class="btn btn-success mb-3">Save Order</button>
     {% else %}
         <p>No posts currently in this series.</p>
     {% endif %}
@@ -69,4 +73,91 @@
     </form>
 
 </div>
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const postsList = document.getElementById('posts-in-series-list');
+    if (!postsList) return;
+
+    const seriesId = postsList.dataset.seriesId;
+    const saveOrderBtn = document.getElementById('save-order-btn');
+
+    function updateButtonStates() {
+        const items = postsList.querySelectorAll('li');
+        items.forEach((item, index) => {
+            const moveUpBtn = item.querySelector('.move-up');
+            const moveDownBtn = item.querySelector('.move-down');
+
+            if (moveUpBtn) moveUpBtn.disabled = (index === 0);
+            if (moveDownBtn) moveDownBtn.disabled = (index === items.length - 1);
+        });
+        if (saveOrderBtn) { // Enable save button if there are items to save
+             saveOrderBtn.disabled = items.length === 0;
+        }
+    }
+
+    postsList.addEventListener('click', function (event) {
+        const target = event.target;
+        const currentItem = target.closest('li');
+        if (!currentItem) return;
+
+        if (target.classList.contains('move-up')) {
+            const previousItem = currentItem.previousElementSibling;
+            if (previousItem) {
+                postsList.insertBefore(currentItem, previousItem);
+                updateButtonStates();
+            }
+        } else if (target.classList.contains('move-down')) {
+            const nextItem = currentItem.nextElementSibling;
+            if (nextItem) {
+                postsList.insertBefore(nextItem, currentItem); // Insert next before current effectively moves current down
+                updateButtonStates();
+            }
+        }
+    });
+
+    if (saveOrderBtn) {
+        saveOrderBtn.addEventListener('click', function () {
+            const postIds = Array.from(postsList.querySelectorAll('li')).map(li => li.dataset.postId);
+
+            if (!seriesId) {
+                alert('Error: Series ID is missing.');
+                return;
+            }
+
+            fetch(`/series/${seriesId}/reorder_posts`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // Include CSRF token if your app uses them for AJAX
+                    // 'X-CSRFToken': '{{ csrf_token() }}' // Example if using Flask-WTF
+                },
+                body: JSON.stringify({ post_ids: postIds })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => { throw new Error(err.message || 'Failed to save order.') });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status === 'success') {
+                    alert(data.message || 'Order saved successfully!');
+                    window.location.reload(); // Reload to see changes and ensure clean state
+                } else {
+                    alert(data.message || 'An unknown error occurred.');
+                }
+            })
+            .catch(error => {
+                console.error('Error saving order:', error);
+                alert('Error saving order: ' + error.message);
+            });
+        });
+    }
+
+    updateButtonStates(); // Initial setup
+});
+</script>
 {% endblock %}

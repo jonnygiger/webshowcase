@@ -183,6 +183,51 @@ class TestCollaborativeEditing(AppTestCase):
         self.assertEqual(response.status_code, 404, f"Response data: {response_data}")
         self.assertIn('Post not found', response_data.get('message', ''), "Response message did not indicate post not found.")
 
+    def test_api_lock_expiry_and_reacquire(self):
+        # User1 (post_author) acquires the lock initially
+        token_author = self._get_jwt_token(self.post_author.username, "password")
+        headers_author = {"Authorization": f"Bearer {token_author}"}
+
+        response_acquire_author = self.client.post(f'/api/posts/{self.test_post.id}/lock', headers=headers_author)
+        self.assertEqual(response_acquire_author.status_code, 200, "Author failed to acquire lock initially.")
+        response_data_author = json.loads(response_acquire_author.data.decode())
+        self.assertEqual(response_data_author.get('locked_by_username'), self.post_author.username)
+
+        with self.app.app_context():
+            self.db.session.refresh(self.test_post)
+            self.assertTrue(self.test_post.is_locked(), "Post should be locked by author.")
+
+            # Simulate lock expiry by directly manipulating the lock's expires_at time
+            # This is more reliable than waiting for time to pass in a test.
+            lock = PostLock.query.filter_by(post_id=self.test_post.id, user_id=self.post_author.id).first()
+            self.assertIsNotNone(lock, "Lock not found in database for author.")
+
+            # Set expiry to the past
+            lock.expires_at = datetime.utcnow() - timedelta(minutes=1)
+            self.db.session.add(lock)
+            self.db.session.commit()
+
+            # Refresh post to update its lock_info
+            self.db.session.refresh(self.test_post)
+            self.assertFalse(self.test_post.is_locked(), "Post should be unlocked after lock expiry.")
+
+        # User2 (collaborator) attempts to acquire the lock after expiry
+        token_collaborator = self._get_jwt_token(self.collaborator.username, "password")
+        headers_collaborator = {"Authorization": f"Bearer {token_collaborator}"}
+
+        response_acquire_collaborator = self.client.post(f'/api/posts/{self.test_post.id}/lock', headers=headers_collaborator)
+        self.assertEqual(response_acquire_collaborator.status_code, 200, f"Collaborator failed to acquire lock after expiry. Response: {response_acquire_collaborator.data.decode()}")
+        response_data_collaborator = json.loads(response_acquire_collaborator.data.decode())
+        self.assertEqual(response_data_collaborator.get('locked_by_username'), self.collaborator.username, "Lock not acquired by collaborator.")
+
+        with self.app.app_context():
+            self.db.session.refresh(self.test_post)
+            self.assertTrue(self.test_post.is_locked(), "Post should be locked by collaborator.")
+
+            lock_collaborator = PostLock.query.filter_by(post_id=self.test_post.id, user_id=self.collaborator.id).first()
+            self.assertIsNotNone(lock_collaborator, "Lock for collaborator not found in database.")
+            self.assertEqual(lock_collaborator.user_id, self.collaborator.id)
+
     # --- SocketIO Event Tests ---
     # These tests are more complex and depend heavily on live app, socketio, and db.
     @patch("app.socketio.emit")

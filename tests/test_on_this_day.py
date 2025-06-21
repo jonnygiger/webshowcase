@@ -65,13 +65,11 @@ class TestOnThisDayPage(AppTestCase):
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
-        # When there is absolutely no content, a general message is shown.
-        self.assertIn(
-            "Nothing to show for 'On This Day' from previous years.", response_data
-        )
-        # The individual messages for posts/events should NOT be present if the general one is.
-        self.assertNotIn("No posts from this day in previous years.", response_data)
-        self.assertNotIn("No events from this day in previous years.", response_data)
+        # Assert that the specific messages for no posts/events are shown
+        self.assertIn("No posts from this day in previous years.", response_data)
+        self.assertIn("No events from this day in previous years.", response_data)
+        # Assert that the general "Nothing to show..." message is NOT present
+        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
         self.logout()
 
     @patch("app.datetime")
@@ -274,6 +272,72 @@ class TestOnThisDayPage(AppTestCase):
         self.assertIn("No posts from this day in previous years.", response_data)
         self.assertIn("No events from this day in previous years.", response_data)
         # The overall "Nothing to show" message should NOT be present if specific ones are.
+        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
+
+        self.logout()
+
+    @patch("app.datetime")
+    @patch("recommendations.datetime")
+    def test_on_this_day_page_content_from_wrong_day_only(self, mock_reco_datetime, mock_app_datetime):
+        # Mock datetime objects and set fixed_today
+        mock_app_datetime.utcnow.return_value = self.fixed_today
+        mock_reco_datetime.utcnow.return_value = self.fixed_today
+        mock_reco_datetime.strptime = datetime.strptime
+
+        # Create a new unique user
+        with self.app.app_context():
+            wrong_day_user = User(
+                username="wrongdayuser",
+                email="wrongday@example.com",
+                password_hash=generate_password_hash("password"),
+            )
+            self.db.session.add(wrong_day_user)
+            self.db.session.commit()
+            wrong_day_user_id = wrong_day_user.id
+
+        with self.app.app_context():
+            self.wrong_day_user = User.query.get(wrong_day_user_id)
+
+        # Create a post by this user from a previous year but a different day/month
+        # self.fixed_today is datetime(2023, 10, 26, 12, 0, 0)
+        post_wrong_day = self._create_db_post(
+            user_id=self.wrong_day_user.id,
+            title="Previous Year Wrong Day Post",
+            content="This post is from Nov 25, 2022.", # Different day and month
+            timestamp=datetime(2022, 11, 25, 10, 0, 0)
+        )
+
+        # Create an event by this user from a previous year but a different day/month
+        event_wrong_day = self._create_db_event(
+            user_id=self.wrong_day_user.id,
+            title="Previous Year Wrong Day Event",
+            date_str="2022-09-15", # Different day and month
+            description="This event is on Sep 15, 2022."
+        )
+
+        # Log in as the new test user
+        self.login(self.wrong_day_user.username, "password")
+
+        # Access the /onthisday page
+        response = self.client.get("/onthisday")
+
+        # Assert that the response status code is 200
+        self.assertEqual(response.status_code, 200)
+        response_data = response.get_data(as_text=True)
+
+        # Assert that the previously created post is not displayed
+        self.assertNotIn(post_wrong_day.title, response_data)
+
+        # Assert that the previously created event is not displayed
+        self.assertNotIn(event_wrong_day.title, response_data)
+
+        # Assert that the page shows "No posts from this day in previous years."
+        self.assertIn("No posts from this day in previous years.", response_data)
+
+        # Assert that the page shows "No events from this day in previous years."
+        self.assertIn("No events from this day in previous years.", response_data)
+
+        # Assert that the page does not show "Nothing to show for 'On This Day' from previous years."
         self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
 
         self.logout()

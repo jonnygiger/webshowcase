@@ -437,3 +437,54 @@ class TestFileSharing(AppTestCase):
         self.assertIsNotNone(SharedFile.query.get(file_id_to_attempt_delete), "DB record should NOT be deleted by unauthorized user.")
 
         self.logout()
+
+    def test_share_file_with_self(self):
+        # Log in as user1
+        self.login(self.user1.username, "password")
+
+        # Create a dummy file
+        dummy_file_data = self.create_dummy_file(
+            filename="self_share_test.txt",
+            content=b"Test content for sharing with oneself."
+        )
+
+        data = {
+            "file": dummy_file_data,
+            "message": "This is a test message for sharing with myself.",
+        }
+
+        # user1 shares file with user1
+        response = self.client.post(
+            f'/files/share/{self.user1.username}', # Sharing with self.user1
+            data=data,
+            content_type='multipart/form-data',
+            follow_redirects=True
+        )
+
+        # Assert successful response
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("File successfully shared!", response.get_data(as_text=True))
+
+        with self.app.app_context(): # Add app context here
+            # Verify SharedFile record
+            shared_file_record = SharedFile.query.filter_by(
+                sender_id=self.user1.id,
+                receiver_id=self.user1.id, # Receiver is also user1
+                original_filename="self_share_test.txt"
+            ).first()
+
+            self.assertIsNotNone(shared_file_record, "SharedFile record should be created for self-share.")
+            self.assertEqual(shared_file_record.message, "This is a test message for sharing with myself.")
+            self.assertEqual(shared_file_record.sender_id, self.user1.id)
+            self.assertEqual(shared_file_record.receiver_id, self.user1.id)
+
+            # Verify the file exists in the shared files folder
+            shared_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
+            expected_file_path = os.path.join(shared_folder, shared_file_record.saved_filename)
+            self.assertTrue(os.path.exists(expected_file_path), "Physical file should exist for self-share.")
+
+            # Clean up: remove the created file
+            if os.path.exists(expected_file_path):
+                os.remove(expected_file_path)
+
+        self.logout()

@@ -13,6 +13,7 @@ class TestSeriesFeature(AppTestCase):
     # _create_series and _create_db_post are in AppTestCase (tests/test_base.py)
 
     # Model Tests
+    @unittest.skip("Placeholder test")
     def test_series_model_creation(self):
         # with app.app_context(): # Handled by AppTestCase helpers or test client
         # series = self._create_series(user_id=self.user1_id, title="My First Series", description="Test description.")
@@ -22,6 +23,7 @@ class TestSeriesFeature(AppTestCase):
         # self.assertIn(series, self.user1.series_created) # Assumes series_created relationship
         pass  # Placeholder - requires live DB and models
 
+    @unittest.skip("Placeholder test")
     def test_series_post_association_and_order(self):
         # with app.app_context():
         # series = self._create_series(user_id=self.user1_id)
@@ -38,6 +40,7 @@ class TestSeriesFeature(AppTestCase):
         pass  # Placeholder
 
     # Cascade tests also require live DB and models
+    @unittest.skip("Placeholder test")
     def test_cascade_delete_user_to_series(self):
         # from werkzeug.security import generate_password_hash # Needed if creating user here
         # from models import User # Needed if creating User here
@@ -45,9 +48,11 @@ class TestSeriesFeature(AppTestCase):
         # ...
         pass
 
+    @unittest.skip("Placeholder test")
     def test_cascade_delete_series_to_series_post(self):
         pass
 
+    @unittest.skip("Placeholder test")
     def test_cascade_delete_post_to_series_post(self):
         pass
 
@@ -70,6 +75,7 @@ class TestSeriesFeature(AppTestCase):
         self.assertEqual(response_post.status_code, 302)
         self.assertIn("/login", response_post.location)
 
+    @unittest.skip("Placeholder test")
     def test_create_series_post_success(self):
         self.login(self.user1.username, "password")
         # response = self.client.post('/series/create', data={...}, follow_redirects=True)
@@ -78,6 +84,7 @@ class TestSeriesFeature(AppTestCase):
         self.logout()
         pass  # Placeholder
 
+    @unittest.skip("Placeholder test")
     def test_create_series_post_no_title(self):
         self.login(self.user1.username, "password")
         # response = self.client.post('/series/create', data={...}, follow_redirects=True)
@@ -86,6 +93,7 @@ class TestSeriesFeature(AppTestCase):
         self.logout()
         pass  # Placeholder
 
+    @unittest.skip("Placeholder test")
     def test_view_series_page(self):
         # series = self._create_series(user_id=self.user1_id, title="Viewable Series", description="Desc")
         # ... (add posts to series) ...
@@ -98,6 +106,16 @@ class TestSeriesFeature(AppTestCase):
         response = self.client.get("/series/9999")
         self.assertEqual(response.status_code, 404)
 
+    def test_view_existing_series_page(self):
+        self.login(self.user1.username, "password")
+        series = self._create_series(user_id=self.user1_id, title="My Test Series", description="This is a test series.")
+        response = self.client.get(f'/series/{series.id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"My Test Series", response.data)
+        self.assertIn(b"This is a test series.", response.data)
+        self.logout()
+
+    @unittest.skip("Placeholder test")
     def test_edit_series_page_load_author(self):
         # series = self._create_series(user_id=self.user1_id, title="Editable Series")
         self.login(self.user1.username, "password")
@@ -109,6 +127,7 @@ class TestSeriesFeature(AppTestCase):
 
     # ... (other route tests, similarly placeholdering db-dependent parts) ...
 
+    @unittest.skip("Placeholder test")
     def test_add_post_to_series_success(self):
         # series = self._create_series(user_id=self.user1_id)
         # post_to_add = self._create_db_post(user_id=self.user1_id, title="Post To Add")
@@ -119,6 +138,7 @@ class TestSeriesFeature(AppTestCase):
         pass
 
     # --- UI/Content Tests (Simplified) ---
+    @unittest.skip("Placeholder test")
     def test_user_profile_lists_series(self):
         # series1 = self._create_series(user_id=self.user1_id, title="User1 Series One")
         # response = self.client.get(f'/user/{self.user1.username}')
@@ -126,6 +146,7 @@ class TestSeriesFeature(AppTestCase):
         # self.assertIn(b'User1 Series One', response.data)
         pass
 
+    @unittest.skip("Placeholder test")
     def test_view_post_lists_series_and_navigation(self):
         # ... (setup series and posts) ...
         # response = self.client.get(f'/blog/post/{p2.id}?series_id={series.id}')

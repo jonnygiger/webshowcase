@@ -10,8 +10,10 @@ from werkzeug.security import (
     generate_password_hash,
 )  # For new user creation in one test
 
+from io import BytesIO # Added for file uploads
+from flask import url_for # Added for url_for in tests
 from app import app, db, socketio
-from models import User, UserActivity, Friendship, Post
+from models import User, UserActivity, Friendship, Post # User is already here
 from tests.test_base import AppTestCase
 
 
@@ -672,3 +674,87 @@ class TestLiveActivityFeed(AppTestCase):
         # TODO: Verify achievement checks (if applicable)
 
         self.logout() # Ensure logout at the end
+
+    @patch("app.socketio.emit")
+    @patch("app.check_and_award_achievements")
+    def test_updated_profile_picture_activity_logging_and_socketio(self, mock_check_achievements, mock_socketio_emit):
+        # 1. Login as self.user1
+        self.login(self.user1.username, "password")
+
+        # Store current profile picture to check it changes
+        with self.app.app_context():
+            user1_before_update = User.query.get(self.user1.id)
+            original_profile_pic = user1_before_update.profile_picture
+
+        # 2. Prepare a mock image file
+        image_content = b"dummy_image_content_for_test_profile_pic_update"
+        image_file = BytesIO(image_content)
+        # Field name for the file in the form is 'profile_pic' as per upload_profile_picture.html
+        data = {'profile_pic': (image_file, 'test_profile.png')}
+
+        # 3. Make the POST request to /upload_profile_picture
+        response = self.client.post(
+            '/upload_profile_picture', # Route defined in app.py
+            data=data,
+            content_type='multipart/form-data', # Necessary for file uploads
+            follow_redirects=True
+        )
+        self.assertEqual(response.status_code, 200, "Response status code should be 200 after successful upload.")
+        self.assertIn("Profile picture uploaded successfully!", response.get_data(as_text=True), "Success flash message not found in response.")
+
+        # Verify that user1's profile picture path has changed in DB
+        with self.app.app_context():
+            user1_after_update = User.query.get(self.user1.id)
+            self.assertIsNotNone(user1_after_update.profile_picture, "User profile picture path should be set in the database.")
+            self.assertNotEqual(original_profile_pic, user1_after_update.profile_picture, "User profile picture path should have changed from the original.")
+            self.assertTrue(user1_after_update.profile_picture.startswith('/static/profile_pics/'), "Profile picture path should start with /static/profile_pics/.")
+            self.assertTrue('test_profile.png' in user1_after_update.profile_picture, "Filename 'test_profile.png' should be part of the new profile picture path.")
+
+        # 4. Verify UserActivity creation
+        with self.app.app_context():
+            activity = UserActivity.query.filter_by(
+                user_id=self.user1.id,
+                activity_type='updated_profile_picture' # This is the new activity type
+            ).order_by(UserActivity.timestamp.desc()).first()
+
+            self.assertIsNotNone(activity, "UserActivity for 'updated_profile_picture' was not created.")
+            self.assertEqual(activity.user_id, self.user1.id, "Activity user_id is incorrect.")
+            self.assertIsNone(activity.related_id, "related_id should be None for 'updated_profile_picture' activity type.")
+            self.assertEqual(activity.content_preview, "Updated their profile picture.", "Activity content_preview is incorrect.")
+
+            expected_link = url_for('user_profile', username=self.user1.username, _external=True)
+            self.assertEqual(activity.link, expected_link, "Activity link is incorrect.")
+
+            # 5. Verify socketio.emit call
+            # self.user1 is friends with self.user2 (established in TestLiveActivityFeed.setUp via AppTestCase helper)
+            # The profile_picture in the payload is the new one, taken from user1_after_update.profile_picture
+            user1_after_update = User.query.get(self.user1.id) # Re-fetch to ensure we have the latest state for payload
+
+            expected_payload = {
+                "activity_id": activity.id,
+                "user_id": self.user1.id,
+                "username": self.user1.username,
+                "profile_picture": user1_after_update.profile_picture,
+                "activity_type": "updated_profile_picture",
+                "related_id": None,
+                "content_preview": "Updated their profile picture.",
+                "link": expected_link,
+                "timestamp": ANY, # Using ANY for timestamp as exact match can be tricky
+                "target_user_id": None,
+                "target_username": None,
+            }
+
+            # Based on TestLiveActivityFeed.setUp, self.user1's only friend is self.user2.
+            # self._create_friendship(self.user2.id, self.user1.id, status='accepted')
+            mock_socketio_emit.assert_called_once_with(
+                'new_activity_event',
+                expected_payload,
+                room=f'user_{self.user2.id}'
+            )
+
+        # 6. Verify check_and_award_achievements is NOT called
+        # This assumes updating profile picture does not trigger achievements by default.
+        mock_check_achievements.assert_not_called()
+
+        # 7. Logout
+        self.logout()

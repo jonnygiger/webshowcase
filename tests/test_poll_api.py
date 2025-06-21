@@ -238,5 +238,81 @@ class TestPollAPI(AppTestCase):
     def test_vote_on_poll_unauthenticated(self): pass
     def test_vote_on_poll_non_existent_poll(self): pass
 
+    def test_get_poll_results_after_voting(self):
+        # 1. User Tokens
+        token_user1 = self._get_jwt_token(self.user1.username, "password")
+        token_user2 = self._get_jwt_token(self.user2.username, "password")
+        token_user3 = self._get_jwt_token(self.user3.username, "password")
+
+        # 2. Create Poll (User1 creates)
+        poll_question = "What's the best testing strategy?"
+        poll_options_texts = ["Strategy A", "Strategy B", "Strategy C"]
+        poll_id = self._create_poll_via_api(token_user1, poll_question, poll_options_texts)
+        self.assertIsNotNone(poll_id)
+
+        # 3. Retrieve Poll Options to get their IDs
+        headers_user1 = {"Authorization": f"Bearer {token_user1}"}
+        response_get_poll = self.client.get(f"/api/polls/{poll_id}", headers=headers_user1)
+        self.assertEqual(response_get_poll.status_code, 200, "Failed to retrieve created poll")
+        poll_data = response_get_poll.get_json()["poll"]
+
+        options_map = {} # Store text -> id
+        for option in poll_data["options"]:
+            options_map[option["text"]] = option["id"]
+
+        self.assertIn("Strategy A", options_map)
+        self.assertIn("Strategy B", options_map)
+        self.assertIn("Strategy C", options_map)
+
+        option_id_A = options_map["Strategy A"]
+        option_id_B = options_map["Strategy B"]
+        # option_id_C will be used implicitly by checking its vote count as 0
+
+        # 4. Cast Votes
+        # User1 votes for Strategy A
+        headers_vote_user1 = {"Authorization": f"Bearer {token_user1}", "Content-Type": "application/json"}
+        response_vote1 = self.client.post(f"/api/polls/{poll_id}/vote", headers=headers_vote_user1, json={"option_id": option_id_A})
+        self.assertEqual(response_vote1.status_code, 201, f"User1 failed to vote for Strategy A. Response: {response_vote1.get_json()}")
+
+        # User2 votes for Strategy B
+        headers_vote_user2 = {"Authorization": f"Bearer {token_user2}", "Content-Type": "application/json"}
+        response_vote2 = self.client.post(f"/api/polls/{poll_id}/vote", headers=headers_vote_user2, json={"option_id": option_id_B})
+        self.assertEqual(response_vote2.status_code, 201, f"User2 failed to vote for Strategy B. Response: {response_vote2.get_json()}")
+
+        # User3 votes for Strategy A
+        headers_vote_user3 = {"Authorization": f"Bearer {token_user3}", "Content-Type": "application/json"}
+        response_vote3 = self.client.post(f"/api/polls/{poll_id}/vote", headers=headers_vote_user3, json={"option_id": option_id_A})
+        self.assertEqual(response_vote3.status_code, 201, f"User3 failed to vote for Strategy A. Response: {response_vote3.get_json()}")
+
+        # 5. Get Poll Results (User1 gets)
+        response_get_results = self.client.get(f"/api/polls/{poll_id}", headers=headers_user1)
+
+        # 6. Assert Results
+        self.assertEqual(response_get_results.status_code, 200, "Failed to get poll results after voting")
+        results_data = response_get_results.get_json()["poll"]
+
+        self.assertEqual(results_data["id"], poll_id)
+        self.assertEqual(results_data["question"], poll_question)
+        self.assertEqual(len(results_data["options"]), 3)
+
+        found_option_A = False
+        found_option_B = False
+        found_option_C = False
+
+        for option in results_data["options"]:
+            if option["text"] == "Strategy A":
+                self.assertEqual(option["vote_count"], 2, "Vote count for Strategy A is incorrect")
+                found_option_A = True
+            elif option["text"] == "Strategy B":
+                self.assertEqual(option["vote_count"], 1, "Vote count for Strategy B is incorrect")
+                found_option_B = True
+            elif option["text"] == "Strategy C":
+                self.assertEqual(option["vote_count"], 0, "Vote count for Strategy C is incorrect")
+                found_option_C = True
+
+        self.assertTrue(found_option_A, "Strategy A not found in results")
+        self.assertTrue(found_option_B, "Strategy B not found in results")
+        self.assertTrue(found_option_C, "Strategy C not found in results")
+
 if __name__ == "__main__":
     unittest.main()

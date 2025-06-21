@@ -653,47 +653,39 @@ class SeriesResource(Resource):
 class SharedFileResource(Resource):
     @jwt_required()
     def delete(self, file_id):
-        current_user_id = int(get_jwt_identity())
+        current_user_id_str = get_jwt_identity()
+        try:
+            current_user_id = int(current_user_id_str)
+        except ValueError:
+            main_app.logger.error(f"Invalid user identity format in JWT: {current_user_id_str}")
+            return {"message": "Invalid user identity format."}, 400
+
         shared_file = SharedFile.query.get(file_id)
 
         if not shared_file:
             return {"message": "File not found"}, 404
+
+        # Refresh the object to ensure all attributes are loaded correctly from the DB
+        db.session.refresh(shared_file)
 
         # Authorization check: Current user must be sender or receiver
         if not (shared_file.sender_id == current_user_id or shared_file.receiver_id == current_user_id):
             return {"message": "You are not authorized to delete this file"}, 403
 
         try:
-            # Assuming shared_file.filepath stores the path relative to a base upload folder
-            # or an absolute path. For this example, let's assume it's an absolute path
-            # or a path that os.remove can directly use.
-            # If UPLOAD_FOLDER is used, it should be like:
-            # file_path = os.path.join(main_app.app.config['UPLOAD_FOLDER'], shared_file.filename)
-            # For now, let's assume shared_file.filepath is the direct path needed.
-            # This might need adjustment based on how SharedFile.filepath is defined/populated.
+            # Check if the essential saved_filename attribute is present
+            if not shared_file.saved_filename:
+                 main_app.app.logger.error(f"File record is incomplete (missing saved_filename) for SharedFile ID: {file_id}")
+                 return {"message": "File record is incomplete, cannot delete physical file"}, 500
 
-            # A placeholder for the actual file path construction.
-            # This needs to be correctly determined based on how files are stored.
-            # Let's assume `shared_file.filepath` contains the relevant path or filename
-            # and UPLOAD_FOLDER is accessible via main_app.app.config.
-
-            # Correct file path construction:
-            # Assuming 'filename' attribute stores the name of the file in the upload directory
-            if not hasattr(shared_file, 'filename'):
-                 return {"message": "File record is incomplete (missing filename)"}, 500
-
-            # It's safer to retrieve UPLOAD_FOLDER from the app's config.
-            # Make sure main_app.app is the Flask app instance and config is loaded.
-            upload_folder = main_app.app.config.get('SHARED_FILES_UPLOAD_FOLDER', 'shared_files_uploads') # Default to 'shared_files_uploads'
-            file_path = os.path.join(upload_folder, shared_file.filename)
+            upload_folder = main_app.app.config.get('SHARED_FILES_UPLOAD_FOLDER', 'shared_files_uploads')
+            file_path = os.path.join(upload_folder, shared_file.saved_filename) # Use saved_filename
 
             if os.path.exists(file_path):
                 os.remove(file_path)
             else:
                 # Log this inconsistency but proceed to delete DB record
-                # Or, decide if this should be a hard error.
-                # For now, logging and proceeding.
-                print(f"Warning: File {file_path} not found on filesystem but DB record exists.")
+                main_app.app.logger.warning(f"Warning: File {file_path} not found on filesystem for SharedFile ID {file_id} but DB record exists.")
 
             db.session.delete(shared_file)
             db.session.commit()
@@ -702,6 +694,5 @@ class SharedFileResource(Resource):
 
         except Exception as e:
             db.session.rollback()
-            # Log the exception e
-            print(f"Error deleting file: {str(e)}") # Or use app logger
+            main_app.app.logger.error(f"Error deleting file ID {file_id}: {str(e)}")
             return {"message": f"An error occurred while deleting the file: {str(e)}"}, 500

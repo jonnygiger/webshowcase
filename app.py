@@ -4099,11 +4099,40 @@ def share_file_route(receiver_username):
             return redirect(request.url)
 
         if file and allowed_shared_file(file.filename):
-            original_filename = secure_filename(file.filename)
-            extension = original_filename.rsplit(".", 1)[1].lower()
-            saved_filename = f"{uuid.uuid4().hex}.{extension}"
+            true_original_filename = file.filename  # Capture the true original filename
+
+            # Use secure_filename for deriving a safe extension.
+            # The existing logic for `saved_filename` relies on this.
+            secured_filename_for_extension_derivation = secure_filename(file.filename)
+
+            # Default extension to empty string if no dot is found or part after dot is empty
+            extension = ""
+            if '.' in secured_filename_for_extension_derivation:
+                parts = secured_filename_for_extension_derivation.rsplit(".", 1)
+                if len(parts) > 1 and parts[1]: # Check if there is something after the dot
+                    extension = parts[1].lower()
+
+            # If after securing and splitting, extension is empty, and original had one, try original.
+            # This part needs to be careful not to introduce insecurity.
+            # For now, keeping it simple: if allowed_shared_file passed, the type is acceptable.
+            # The primary goal is to ensure the extension is not empty for saved_filename construction if possible.
+            if not extension and '.' in true_original_filename: # Fallback if secured name lost ext
+                 _original_ext_candidate = true_original_filename.rsplit(".",1)[1].lower()
+                 if _original_ext_candidate in app.config["SHARED_FILES_ALLOWED_EXTENSIONS"]:
+                     extension = _original_ext_candidate
+
+            # If extension is still empty, it means original filename had no recognizable extension
+            # or it wasn't in allowed list (though allowed_shared_file should catch this).
+            # Handle this case, e.g., by rejecting or using a default extension if appropriate.
+            # For now, if extension is "", saved_filename will end with a dot. This might be okay or need adjustment.
+            # Let's ensure it doesn't just end with a dot if extension is truly empty.
+            if extension:
+                saved_filename_on_disk = f"{uuid.uuid4().hex}.{extension}"
+            else:
+                saved_filename_on_disk = f"{uuid.uuid4().hex}" # No extension if none could be safely determined
+
             file_path = os.path.join(
-                app.config["SHARED_FILES_UPLOAD_FOLDER"], saved_filename
+                app.config["SHARED_FILES_UPLOAD_FOLDER"], saved_filename_on_disk
             )
 
             try:
@@ -4113,11 +4142,12 @@ def share_file_route(receiver_username):
                 new_shared_file = SharedFile(
                     sender_id=session["user_id"],
                     receiver_id=receiver_user.id,
-                    original_filename=original_filename,
-                    saved_filename=saved_filename,
+                    original_filename=true_original_filename,  # Use the true original filename here
+                    saved_filename=saved_filename_on_disk,    # Use the UUID-based name for disk storage
                     message=message_text,
                 )
                 db.session.add(new_shared_file)
+                db.session.flush()
                 db.session.commit()
                 flash("File successfully shared!", "success")
                 # TODO: Add SocketIO notification to receiver_user

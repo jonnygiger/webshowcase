@@ -438,6 +438,111 @@ class TestFileSharing(AppTestCase):
 
         self.logout()
 
+    def test_share_file_with_special_characters_in_filename(self):
+        special_filenames = [
+            "你好世界 report.txt",
+            "archive.version.1.0.zip",
+            "file with spaces.docx",
+            "another&strange=name!.pdf",
+            "a'file'with\"quotes & stuff.log"
+        ]
+        original_content = b"This is the content for the special filename test."
+
+        for original_filename in special_filenames:
+            # Ensure a clean state for each filename - primarily for uploaded file records and physical files
+            # This might involve cleaning up files from previous iterations if a shared cleanup mechanism isn't used
+            # For now, we rely on unique filenames per test run or careful manual cleanup if issues arise.
+            # A more robust solution might use unique sub-folder for this test or ensure generated saved_filenames are unique.
+
+            # 1. User1 uploads the file
+            self.login(self.user1.username, "password")
+            dummy_file_data = self.create_dummy_file(
+                filename=original_filename, content=original_content
+            )
+            share_data = {
+                "file": dummy_file_data,
+                "message": f"Test message for {original_filename}",
+            }
+            response_upload = self.client.post(
+                f"/files/share/{self.user2.username}",
+                data=share_data,
+                content_type="multipart/form-data",
+                follow_redirects=True,
+            )
+            self.assertEqual(response_upload.status_code, 200, f"Upload failed for {original_filename}")
+            self.assertIn("File successfully shared!", response_upload.get_data(as_text=True), f"Success message not found for {original_filename}")
+
+            # 2. Verify SharedFile record in the database
+            # with self.app.app_context(): # Not needed with test client and AppTestCase
+            shared_file_record = SharedFile.query.filter_by(
+                sender_id=self.user1.id,
+                receiver_id=self.user2.id,
+                original_filename=original_filename,
+            ).first()
+            self.assertIsNotNone(shared_file_record, f"SharedFile record not found for {original_filename}")
+            self.assertEqual(shared_file_record.original_filename, original_filename, f"Original filename mismatch for {original_filename}")
+            # saved_filename should be a secured, unique name. We can't predict its exact form,
+            # but we can check it's not empty and different from original_filename if original_filename is unsafe.
+            self.assertIsNotNone(shared_file_record.saved_filename, f"Saved filename is None for {original_filename}")
+            self.assertNotEqual(shared_file_record.saved_filename, "", f"Saved filename is empty for {original_filename}")
+
+            # 3. Verify the physical file exists
+            shared_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
+            saved_file_path = os.path.join(shared_folder, shared_file_record.saved_filename)
+            self.assertTrue(os.path.exists(saved_file_path), f"Saved file does not exist for {original_filename} at {saved_file_path}")
+
+            # Store file_id and path for cleanup
+            file_id_to_clean = shared_file_record.id
+            path_to_clean = saved_file_path
+
+            self.logout() # Logout User1
+
+            # 4. User2 sees the file in their inbox
+            self.login(self.user2.username, "password")
+            response_inbox = self.client.get("/files/inbox")
+            self.assertEqual(response_inbox.status_code, 200, f"Inbox failed for {original_filename}")
+            inbox_text = response_inbox.get_data(as_text=True)
+            self.assertIn(original_filename, inbox_text, f"Original filename not in inbox for {original_filename}")
+            self.assertIn(f"Test message for {original_filename}", inbox_text, f"Message not in inbox for {original_filename}")
+
+            # 5. User2 downloads the file
+            # Need the file ID, which we got from shared_file_record
+            file_id = shared_file_record.id
+            response_download = self.client.get(f"/files/download/{file_id}")
+            self.assertEqual(response_download.status_code, 200, f"Download failed for {original_filename}")
+
+            # 6. Verify downloaded file's name and content
+            # The filename in Content-Disposition should be the original_filename
+            # It might be URL-encoded or quoted, so check carefully.
+            # Example: filename="你好世界 report.txt" or filename*=UTF-8''%E4%BD%A0%E5%A5%BD...
+            content_disposition = response_download.headers.get("Content-Disposition", "")
+            self.assertIn(f'filename="{original_filename}"', content_disposition, f"Incorrect filename in download header for {original_filename}. Got: {content_disposition}")
+            self.assertEqual(response_download.data, original_content, f"File content mismatch for {original_filename}")
+
+            self.logout() # Logout User2
+
+            # 7. Cleanup: Remove the physical file and DB record (optional, but good practice)
+            # This part is tricky because the test is designed to run within a transaction that rolls back.
+            # However, physical files are not part of that transaction.
+            # A common pattern is to clean up files created during tests.
+            # For DB, AppTestCase likely handles rollback. Let's ensure physical file is cleaned.
+            if os.path.exists(path_to_clean):
+                os.remove(path_to_clean)
+
+            # Optional: delete the DB record explicitly if not handled by test runner's transaction rollback
+            # with self.app.app_context():
+            # record_to_delete = SharedFile.query.get(file_id_to_clean)
+            # if record_to_delete:
+            # self.db.session.delete(record_to_delete)
+            # self.db.session.commit()
+            # Typically, the test framework's DB handling (like Flask-SQLAlchemy in tests)
+            # will roll back changes after each test, so manual DB cleanup might not be needed.
+            # Let's rely on AppTestCase for DB cleanup.
+
+        # Final check: ensure shared folder is clean (or back to its original state)
+        # This is a bit broad, depends on what else runs.
+        # For now, focused cleanup of files created in *this* test.
+
     def test_share_file_with_self(self):
         # Log in as user1
         self.login(self.user1.username, "password")

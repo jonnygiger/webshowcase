@@ -868,6 +868,26 @@ def upload_profile_picture():
                         "static", filename=f"profile_pics/{unique_filename}"
                     )
                     db.session.commit()
+
+                    # ==== Add UserActivity ====
+                    try:
+                        activity = UserActivity(
+                            user_id=user.id,
+                            activity_type="updated_profile_picture",
+                            related_id=None,
+                            content_preview="Updated their profile picture.",
+                            link=url_for('user_profile', username=user.username, _external=True)
+                        )
+                        db.session.add(activity)
+                        db.session.commit()
+                        emit_new_activity_event(activity)
+                    except Exception as e:
+                        db.session.rollback()
+                        app.logger.error(f"Error creating UserActivity for profile picture update or emitting event: {e}")
+                        # Not flashing an error to the user here, as the main action (profile picture update) was successful.
+                        # The error is logged for admin/dev attention.
+                    # ==== End UserActivity ====
+
                     flash("Profile picture uploaded successfully!", "success")
                     return redirect(url_for("user_profile", username=user.username))
                 else:

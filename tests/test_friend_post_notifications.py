@@ -3,7 +3,7 @@ from unittest.mock import patch, ANY
 from datetime import datetime, timedelta
 
 # from app import app, db, socketio # COMMENTED OUT - app, db, socketio likely from AppTestCase
-from models import User, Post, FriendPostNotification, UserBlock # Make sure these are available
+from models import User, Post, FriendPostNotification, UserBlock, Friendship # Make sure these are available
 from tests.test_base import AppTestCase
 
 
@@ -308,3 +308,88 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
                     break
             self.assertFalse(called_for_user2,
                              "socketio.emit was called for User2 for a post from a blocked user.")
+
+    @patch('app.socketio.emit')
+    def test_notification_persists_after_unfriend(self, mock_socketio_emit_unfriend):
+        with self.app.app_context():
+            # 1. User A (user1) and User B (user2) are friends.
+            self._create_friendship(self.user1_id, self.user2_id, status='accepted')
+
+            # 2. User A creates a new post.
+            post_title = "User A's Post Before Unfriend"
+            self._make_post_via_route(self.user1.username, 'password', title=post_title, content="Content relevant to this test")
+
+            created_post = Post.query.filter_by(user_id=self.user1_id, title=post_title).first()
+            self.assertIsNotNone(created_post, "Post by User A should be created.")
+
+            # 3. Assert that a FriendPostNotification record is created for User B.
+            notification_for_b = FriendPostNotification.query.filter_by(
+                user_id=self.user2_id,
+                post_id=created_post.id,
+                poster_id=self.user1_id
+            ).first()
+            self.assertIsNotNone(notification_for_b, "Notification for User B should exist after User A posts.")
+            self.assertFalse(notification_for_b.is_read, "Notification for User B should initially be unread.")
+
+            # Store notification_id for later steps, if needed directly
+            # self.notification_id_for_b = notification_for_b.id
+            # Storing the object itself is fine too.
+
+            # Clear any mock calls that might have occurred during post creation,
+            # as we are not testing them in *this specific step*.
+            # We'll be more interested in what happens *after* the unfriend action later.
+            mock_socketio_emit_unfriend.reset_mock()
+
+            # 3. User A (user1) unfriends User B (user2).
+            # Find the friendship record. Note: _create_friendship likely sets status to 'accepted'.
+            # We need to find it regardless of who initiated it, if it's a simple two-way record.
+            # Assuming Friendship model has user_id and friend_id
+            friendship_record = Friendship.query.filter(
+                ((Friendship.user_id == self.user1_id) & (Friendship.friend_id == self.user2_id)) |
+                ((Friendship.user_id == self.user2_id) & (Friendship.friend_id == self.user1_id)),
+                Friendship.status == 'accepted' # Ensure we are targeting the active friendship
+            ).first()
+
+            self.assertIsNotNone(friendship_record, "Friendship record should exist before unfriending.")
+
+            self.db.session.delete(friendship_record)
+            self.db.session.commit()
+
+            # Verify friendship is deleted
+            deleted_friendship_record = Friendship.query.filter_by(id=friendship_record.id).first()
+            self.assertIsNone(deleted_friendship_record, "Friendship record should be deleted after unfriending.")
+
+            # 4. Assert that the FriendPostNotification for User B still exists.
+            # notification_for_b was captured during the initial setup.
+            # Let's refetch it from DB to ensure it wasn't cascade-deleted or altered.
+            persisted_notification_for_b = FriendPostNotification.query.get(notification_for_b.id)
+
+            self.assertIsNotNone(persisted_notification_for_b,
+                                 "Notification for User B should still exist after unfriending.")
+
+            # Verify its attributes remain correct
+            self.assertEqual(persisted_notification_for_b.user_id, self.user2_id,
+                             "Notification's user_id should remain unchanged.")
+            self.assertEqual(persisted_notification_for_b.post_id, created_post.id,
+                             "Notification's post_id should remain unchanged.")
+            self.assertEqual(persisted_notification_for_b.poster_id, self.user1_id,
+                             "Notification's poster_id should remain unchanged.")
+            self.assertFalse(persisted_notification_for_b.is_read,
+                             "Notification's is_read status should remain unchanged (false).")
+
+            # 5. Assert SocketIO behavior post-unfriend for the original notification
+            # We reset mock_socketio_emit_unfriend after the initial post.
+            # Now, we ensure no *new* 'new_friend_post' event for this specific post was emitted to user2
+            # during/after the unfriend action.
+
+            called_again_for_user2 = False
+            for call_args in mock_socketio_emit_unfriend.call_args_list:
+                args, kwargs = call_args
+                if args[0] == 'new_friend_post' and                    kwargs.get('room') == f'user_{self.user2_id}' and                    args[1].get('post_id') == created_post.id:
+                    called_again_for_user2 = True
+                    break
+            self.assertFalse(called_again_for_user2,
+                             "SocketIO should not have emitted 'new_friend_post' again for User B "
+                             "for the original post after the unfriend action.")
+
+            # End of the test method

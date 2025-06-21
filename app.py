@@ -1844,6 +1844,22 @@ def share_post(post_id):
     db.session.add(new_share)
     db.session.commit()
 
+        # Log 'shared_a_post' activity
+        try:
+            activity = UserActivity(
+                user_id=user_id,  # User who shared the post
+                activity_type='shared_a_post',
+                related_id=post.id,  # ID of the original post that was shared
+                content_preview=new_share.sharing_user_comment[:100] if new_share.sharing_user_comment else (post.title[:100] if post.title else "Shared a post"), # Use sharing comment, fallback to post title
+                link=url_for('view_post', post_id=post.id, _external=True)
+            )
+            db.session.add(activity)
+            db.session.commit()
+            emit_new_activity_event(activity)  # Emit SocketIO event
+        except Exception as e:
+            app.logger.error(f"Error creating UserActivity for shared_a_post or emitting event: {e}")
+            db.session.rollback()  # Rollback activity commit if it fails
+
     flash("Post shared successfully!", "success")
     return redirect(url_for("view_post", post_id=post_id))
 

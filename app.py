@@ -116,41 +116,34 @@ def broadcast_new_post(post_data):
     # This function will be called when a new post is created.
     # It sends the post data to all connected SSE clients.
 
-    if not new_post_sse_queues:
-        app.logger.warning("No SSE queues to send new post notifications to.")
-        return
-
     post_data_with_url = post_data.copy()  # Work with a copy
 
     if "id" in post_data_with_url:
         try:
-            # url_for needs an active app context to work.
-            # If broadcast_new_post is called outside of a request context where app context is not available
-            # (e.g. from a background task not set up with app context), this will fail.
-            # Assuming it's called from within a request context (e.g. after a post is made via an API endpoint)
-            # or the Flask app instance 'app' is globally available and configured.
-            # If this function is called from a different context (e.g., a Celery task or a script),
-            # it might require `with app.app_context():` around the url_for call.
-            # For now, we assume the context is available as this is a common pattern in Flask.
+            # The tests should ensure broadcast_new_post is called within an app context.
             post_data_with_url["url"] = url_for(
                 "view_post", post_id=post_data_with_url["id"], _external=True
             )
-        except Exception as e:
+        except Exception as e: # Handles exceptions from url_for
             app.logger.error(
                 f"Error generating URL for post ID {post_data_with_url.get('id')}: {e}. Sending notification without URL."
             )
-            # post_data_with_url will not have the 'url' key if url_for fails, or it can be explicitly removed:
-            # if 'url' in post_data_with_url: del post_data_with_url['url']
-            # For this case, not having 'url' is the outcome of the error.
+            if 'url' in post_data_with_url: # Clean up if 'url' was partially set or if error occurred after setting
+                del post_data_with_url['url']
     else:
+        # This warning is for when 'id' is missing, preventing URL generation.
         app.logger.warning(
             "Post data missing 'id' field, cannot generate URL for SSE notification. Sending notification without URL."
         )
+        # No 'id', so no attempt to generate URL.
 
+    # Now check for queues
     if not new_post_sse_queues:
+        # This warning can be issued alongside the "missing id" warning if both conditions are true.
         app.logger.warning("No SSE queues to send new post notifications to.")
-        return  # No queues, so nothing more to do
+        return  # No queues, so nothing more to do, even if URL was or wasn't generated.
 
+    # If we have queues, proceed to log and send.
     app.logger.info(
         f"Broadcasting new post: ID {post_data_with_url.get('id')}, Title: {post_data_with_url.get('title')} to {len(new_post_sse_queues)} clients. URL: {post_data_with_url.get('url', 'N/A')}"
     )

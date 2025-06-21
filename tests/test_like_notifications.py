@@ -23,9 +23,10 @@ class TestLikeNotifications(AppTestCase):
     def test_like_post_sends_notification_and_emits_event(self, mock_socketio_emit):
         with self.app.app_context():
             # 1. Setup Post by author
-            post_id = self._create_db_post(user_id=self.author.id, title="Author's Likable Post")
-            post_by_author = Post.query.get(post_id)
-            self.assertIsNotNone(post_by_author, "Failed to fetch created post.")
+            created_post = self._create_db_post(user_id=self.author.id, title="Author's Likable Post")
+            # post_by_author = Post.query.get(created_post.id) # No need to re-fetch, created_post is the object
+            post_by_author = created_post
+            self.assertIsNotNone(post_by_author, "Failed to create post.")
 
             # 2. Login as liker
             self.login(self.liker.username, "password")
@@ -40,7 +41,7 @@ class TestLikeNotifications(AppTestCase):
             notification = Notification.query.filter_by(
                 user_id=self.author.id,
                 type='like',
-                related_id=post_by_author.id
+                related_id=post_by_author.id  # Use post_by_author.id here
             ).first()
             self.assertIsNotNone(notification, "Database notification was not created for the author.")
             expected_message = f"{self.liker.username} liked your post: '{post_by_author.title}'"  # Changed to single quotes
@@ -77,9 +78,10 @@ class TestLikeNotifications(AppTestCase):
     ):
         with self.app.app_context():
             # 1. Setup Post by author
-            post_id = self._create_db_post(user_id=self.author.id, title="Author's Own Post to Like")
-            post_by_author = Post.query.get(post_id)
-            self.assertIsNotNone(post_by_author, "Failed to fetch created post.")
+            created_post = self._create_db_post(user_id=self.author.id, title="Author's Own Post to Like")
+            # post_by_author = Post.query.get(created_post.id) # No need to re-fetch
+            post_by_author = created_post
+            self.assertIsNotNone(post_by_author, "Failed to create post.")
 
             # 2. Login as author
             self.login(self.author.username, "password")
@@ -93,7 +95,7 @@ class TestLikeNotifications(AppTestCase):
             notification = Notification.query.filter_by(
                 user_id=self.author.id,
                 type='like',
-                related_id=post_by_author.id
+                related_id=post_by_author.id # Use post_by_author.id here
             ).first()
             self.assertIsNone(notification, "Notification should NOT be created when an author likes their own post.")
 
@@ -108,5 +110,36 @@ class TestLikeNotifications(AppTestCase):
                 if args and args[0] == 'new_like_notification': # Check specifically for new_like_notification
                     # If a 'new_like_notification' is found, it's a failure for this test case.
                     self.fail(f"'new_like_notification' event should NOT be emitted to the author for liking their own post. Found: {call_args_tuple}")
+
+        self.logout()
+
+    @patch("app.socketio.emit")
+    def test_like_non_existent_post(self, mock_socketio_emit):
+        """Test liking a post that does not exist."""
+        with self.app.app_context():
+            # 1. Login as a user
+            self.login(self.liker.username, "password")
+
+            # 2. Attempt to like a non-existent post
+            non_existent_post_id = 99999
+            response = self.client.post(f'/blog/post/{non_existent_post_id}/like', follow_redirects=True)
+
+            # 3. Assertions
+            # Assert that the response status code indicates an error (e.g., 404)
+            self.assertEqual(response.status_code, 404) # Assuming 404 for not found
+
+            # Assert that no notification was created in the database
+            notification = Notification.query.filter_by(
+                related_id=non_existent_post_id,
+                type='like'
+            ).first()
+            self.assertIsNone(notification, "Notification should not be created for liking a non-existent post.")
+
+            # Assert that no socket event was emitted
+            # Check if mock_socketio_emit was called with 'new_like_notification'
+            for call_args_tuple in mock_socketio_emit.call_args_list:
+                args, _ = call_args_tuple
+                if args and args[0] == 'new_like_notification':
+                    self.fail(f"'new_like_notification' event should NOT be emitted for liking a non-existent post. Found: {call_args_tuple}")
 
         self.logout()

@@ -3,9 +3,9 @@ import unittest
 import json  # For checking JSON responses
 import io  # For BytesIO
 from unittest.mock import patch, call, ANY
-from flask_socketio import SocketIO # Keep this if cls.socketio is re-initialized
-# Import the main app instance
-from app import app as main_app
+# from flask_socketio import SocketIO # No longer creating a new SocketIO instance here
+# Import the main app instance AND its socketio instance
+from app import app as main_app, socketio as main_app_socketio # Import app's socketio
 # db object is imported as app_db from models
 from flask_jwt_extended import JWTManager
 from flask_restful import Api
@@ -70,12 +70,18 @@ class AppTestCase(unittest.TestCase):
         # db.create_all() should respect this new URI when called within app_context.
         cls.db = app_db # Assign to class attribute for use in methods
 
-        # Initialize SocketIO with the test app
-        # Store the SocketIO object at class level
-        cls.socketio_class_level = SocketIO(cls.app,
-                                            message_queue=cls.app.config["SOCKETIO_MESSAGE_QUEUE"],
-                                            manage_session=False) # Good for tests
-        assert cls.socketio_class_level is not None, "socketio_class_level is None in setUpClass!"
+        # Use the app's existing SocketIO instance
+        cls.socketio_class_level = main_app_socketio
+        assert cls.socketio_class_level is not None, "main_app_socketio (aliased to cls.socketio_class_level) is None in setUpClass!"
+        # Ensure the app associated with the imported socketio is our test app instance
+        # This is a bit circular if main_app_socketio was initialized with main_app from app.py
+        # but main_app (aliased to cls.app) has its config changed for tests.
+        # Ideally, SocketIO should be initialized *after* app config changes.
+        # For now, we assume that app.socketio in app.py is flexible enough or that
+        # its configuration is not critically different for testing basic event handling.
+        # If specific socketio configs were an issue, one might need to re-init main_app_socketio with cls.app here,
+        # but that defeats using the *exact* app instance.
+        # The critical part is that event handlers are registered on main_app_socketio.
 
         # Initialize JWTManager - This is already done in app.py when 'jwt = JWTManager(app)' is called.
         # Re-initializing it here on cls.app (which is main_app from app.py) can cause errors

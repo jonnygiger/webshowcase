@@ -6,13 +6,22 @@ from datetime import datetime, timedelta
 # from app import app, db, socketio # COMMENTED OUT
 from models import Post, User, PostLock # Import PostLock for querying
 from tests.test_base import AppTestCase
+import logging # Add logging import
 
 
 class TestCollaborativeEditing(AppTestCase):
     # _create_db_post and _create_db_lock are in AppTestCase
 
     def setUp(self):
-        super().setUp()
+        super().setUp() # This already creates self.client and a basic self.socketio_client
+
+        # Explicitly set logger level for the app logger to DEBUG
+        self.app.logger.setLevel(logging.DEBUG)
+        if not any(isinstance(handler, logging.StreamHandler) for handler in self.app.logger.handlers):
+            stream_handler = logging.StreamHandler()
+            stream_handler.setLevel(logging.DEBUG)
+            self.app.logger.addHandler(stream_handler)
+
         self.post_author = self.user1
         self.collaborator = self.user2
         self.another_user = self.user3
@@ -20,12 +29,16 @@ class TestCollaborativeEditing(AppTestCase):
         # Create a real post using the helper from AppTestCase
         self.test_post = self._create_db_post(user_id=self.post_author.id, title="Collaborative Post", content="Initial content.")
 
-        # Initialize SocketIO test client using the app and socketio instance from AppTestCase
-        # AppTestCase.app and AppTestCase.socketio are class attributes
-        # self.socketio_client is now created in AppTestCase.setUp()
+        # Re-initialize SocketIO test client, ensuring it shares cookies with self.client
+        if self.socketio_client and self.socketio_client.connected:
+            self.socketio_client.disconnect()
+
+        self.socketio_client = self.socketio_class_level.test_client(self.app, flask_test_client=self.client)
+        self.assertTrue(self.socketio_client.is_connected(), "SocketIO client failed to connect in setUp.")
+
 
     def tearDown(self):
-        if self.socketio_client and self.socketio_client.connected:
+        if self.socketio_client and self.socketio_client.is_connected(): # Check is_connected() not just connected
             self.socketio_client.disconnect()
         super().tearDown()
 
@@ -230,13 +243,82 @@ class TestCollaborativeEditing(AppTestCase):
 
     # --- SocketIO Event Tests ---
     # These tests are more complex and depend heavily on live app, socketio, and db.
-    @patch("app.socketio.emit")
-    def test_socketio_edit_post_with_lock(self, mock_app_socketio_emit):
-        # with app.app_context():
-        # token_collab = self._get_jwt_token(self.collaborator.username, 'password')
-        # self.client.post(f'/api/posts/{self.test_post.id}/lock', headers=headers_collab) # Acquire lock
-        # ... (simulate socketio connection and event emission) ...
-        pass  # Placeholder
+    @patch("app.socketio.emit") # Restored patch
+    def test_socketio_edit_post_by_lock_owner(self, mock_app_socketio_emit): # Restored mock_app_socketio_emit
+        with self.app.app_context():
+            # 1. Setup: Collaborator acquires lock
+            token = self._get_jwt_token(self.collaborator.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response_lock = self.client.post(f'/api/posts/{self.test_post.id}/lock', headers=headers)
+            self.assertEqual(response_lock.status_code, 200, "Failed to acquire lock for collaborator.")
+            # Clear mock calls from lock acquisition
+            mock_app_socketio_emit.reset_mock() # Restored unconditional reset
+
+            # 2. Prepare for SocketIO event emission
+            # Ensure self.socketio_client is connected (it's usually handled by AppTestCase.setUp)
+            if not self.socketio_client or not self.socketio_client.is_connected():
+                 self.socketio_client = self.socketio.test_client(self.app, namespace='/')
+                 self.assertTrue(self.socketio_client.is_connected('/'))
+
+
+            edit_data = {
+                'post_id': self.test_post.id,
+                'new_content': 'Updated content by lock owner.', # Changed 'content' to 'new_content'
+                'token': token  # JWT token for authentication via SocketIO
+            }
+
+            # 3. Emit the 'edit_post_content' event
+            self.socketio_client.emit('edit_post_content', edit_data, namespace='/') # Restored event emit
+
+            # 4. Assert database changes
+            # Ensure self.test_post is associated with the current session before refreshing
+            if self.test_post not in self.db.session:
+                 self.test_post = self.db.session.merge(self.test_post)
+            self.db.session.refresh(self.test_post)
+            self.assertEqual(self.test_post.content, edit_data['new_content'], "Post content was not updated in the database.")
+
+            # 5. Assert SocketIO broadcast
+            expected_broadcast_data = {
+                'post_id': self.test_post.id,
+                'new_content': edit_data['new_content'],
+                'edited_by_user_id': self.collaborator.id,
+                'edited_by_username': self.collaborator.username,
+                'last_edited': ANY
+            }
+
+            # Check if 'post_content_updated' event was broadcast.
+            # UNCOMMENTED the assertion block
+            found_call = False
+            for call_args in mock_app_socketio_emit.call_args_list:
+                event_name_called = call_args[0][0]
+                event_data_called = call_args[0][1]
+                event_room_called = call_args[1].get('room')
+
+                if event_name_called == 'post_content_updated' and event_room_called == f'post_{self.test_post.id}':
+                    match = True
+                    for key, expected_value in expected_broadcast_data.items():
+                        if key == 'last_edited':
+                            if key not in event_data_called:
+                                match = False
+                                break
+                            continue
+                        if event_data_called.get(key) != expected_value:
+                            match = False
+                            break
+                    if match:
+                        if 'last_edited' in event_data_called and isinstance(event_data_called['last_edited'], str):
+                            found_call = True
+                            break
+                        else:
+                            self.app.logger.debug(f"Call matched basic data but 'last_edited' was missing or not a string: {event_data_called}")
+
+
+            self.assertTrue(found_call,
+                            f"Expected 'post_content_updated' event with data matching {expected_broadcast_data} "
+                            f"to room f'post_{self.test_post.id}' not found or 'last_edited' invalid. "
+                            f"Actual calls: {mock_app_socketio_emit.call_args_list}")
+
+            # 6. Clean up (socketio_client disconnect is handled in tearDown)
 
     def test_socketio_edit_post_without_lock(self):
         # with app.app_context():
@@ -245,8 +327,8 @@ class TestCollaborativeEditing(AppTestCase):
         # ... (simulate socketio client and event) ...
         pass  # Placeholder
 
-    @patch("app.socketio.emit") # Corrected mock path and indented
-    def test_socketio_lock_acquired_broadcast_from_api(self, mock_app_socketio_emit): # Renamed mock argument and indented
+    @patch("app.socketio.emit")
+    def test_socketio_lock_acquired_broadcast_from_api(self, mock_app_socketio_emit_lock_api): # Changed mock name to avoid conflict
         token = self._get_jwt_token(self.collaborator.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -260,14 +342,14 @@ class TestCollaborativeEditing(AppTestCase):
             'username': self.collaborator.username,
             'expires_at': ANY  # We use ANY for the expiry time as it's dynamic
         }
-        mock_app_socketio_emit.assert_called_once_with( # Renamed mock argument and indented
-            'post_lock_acquired', # Corrected event name
+        mock_app_socketio_emit_lock_api.assert_called_once_with( # Changed mock name
+            'post_lock_acquired',
             expected_data,
             room=f'post_{self.test_post.id}'
         )
 
-    @patch("app.socketio.emit") # Corrected mock path and indented
-    def test_socketio_lock_released_broadcast_from_api(self, mock_app_socketio_emit): # Renamed mock argument and indented
+    @patch("app.socketio.emit")
+    def test_socketio_lock_released_broadcast_from_api(self, mock_app_socketio_emit_release_api): # Changed mock name
         # with app.app_context():
         # self._create_db_lock(post_id=self.test_post.id, user_id=self.collaborator.id, minutes_offset=15)
         # token = self._get_jwt_token(self.collaborator.username, 'password')

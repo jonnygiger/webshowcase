@@ -244,7 +244,7 @@ class AppTestCase(unittest.TestCase):
             else:
                 print(f"DEBUG: Post with id {post.id} WAS found immediately after commit in _create_db_post.")
 
-            return post.id # Return the ID directly
+            return post # Return the full post object
 
     def _make_post_via_route(
         self, username, password, title="Test Post", content="Test Content", hashtags=""
@@ -337,7 +337,7 @@ class AppTestCase(unittest.TestCase):
             self.db.session.add(event) # Use class's db
             self.db.session.commit() # Use class's db
             _ = event.id # Ensure ID is loaded
-            return event
+            return event # Return the full event object
 
     def _create_db_poll(
         self, user_id, question="Test Poll?", options_texts=None, created_at=None

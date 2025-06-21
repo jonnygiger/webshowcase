@@ -235,6 +235,40 @@ class TestPollAPI(AppTestCase):
             f"Error message '{actual_message}' does not contain expected fragments."
         )
 
+    def test_vote_on_poll_with_non_existent_option_id(self):
+        """
+        Test voting on a poll with an option ID that does not exist in the database.
+        The API should return a 404 error.
+        """
+        # a. Obtain a JWT token for self.user1
+        token_user1 = self._get_jwt_token(self.user1.username, "password")
+        headers_user1 = {
+            "Authorization": f"Bearer {token_user1}",
+            "Content-Type": "application/json",
+        }
+
+        # b. Create a poll
+        poll_question = "Test Poll for Non-Existent Option Vote"
+        poll_options = ["Option A", "Option B"]
+        poll_id = self._create_poll_via_api(token_user1, poll_question, poll_options)
+
+        # c. Attempt to vote on the poll using a non-existent option_id
+        non_existent_option_id = 99999  # An ID that is highly unlikely to exist
+        vote_data = {"option_id": non_existent_option_id}
+        response_vote = self.client.post(f"/api/polls/{poll_id}/vote", headers=headers_user1, json=vote_data)
+
+        # d. Assert that the response status code is 404
+        self.assertEqual(response_vote.status_code, 404,
+                         f"Expected 404 status code for non-existent option ID, got {response_vote.status_code}. Response: {response_vote.get_json()}")
+
+        # e. Assert that the response JSON contains an appropriate error message
+        response_json = response_vote.get_json()
+        self.assertIn("message", response_json)
+        expected_message_fragment = "Poll option not found" # Based on PollVoteResource logic
+        actual_message = response_json["message"]
+        self.assertIn(expected_message_fragment.lower(), actual_message.lower(),
+                      f"Error message '{actual_message}' does not contain expected fragment '{expected_message_fragment}'.")
+
     def test_vote_on_poll_unauthenticated(self): pass
     def test_vote_on_poll_non_existent_poll(self): pass
 

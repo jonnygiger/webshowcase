@@ -181,6 +181,44 @@ class TestRecommendationAPI(AppTestCase):
         self.assertTrue(found_post_in_recommendations,
                         f"Post ID {post_by_user2.id} (Title: '{post_by_user2.title}') liked by friend was not found in recommendations.")
 
+    def test_recommend_post_commented_on_by_friend(self):
+        '''Test recommending a post commented on by a friend.'''
+        # 1. user1, user2, user3 are available from AppTestCase.setUp
+        # user1_id, user2_id, user3_id are also available
+
+        # 2. Create a friendship between self.user1 and self.user3
+        self._create_friendship(self.user1_id, self.user3_id, status='accepted')
+        self._create_friendship(self.user3_id, self.user1_id, status='accepted') # Ensure mutual friendship
+
+        # 3. Create a post by self.user2
+        post_by_user2 = self._create_db_post(user_id=self.user2_id, title="Post Commented On Test", content="Content for comment test")
+
+        # 4. Create a comment on this post by self.user3
+        self._create_db_comment(user_id=self.user3_id, post_id=post_by_user2.id, text="A insightful comment")
+
+        # 5. Make API call and assertions
+        response = self.client.get(f"/api/recommendations?user_id={self.user1_id}")
+        self.assertEqual(response.status_code, 200)
+
+        recommendations = json.loads(response.data)
+
+        self.assertIn("suggested_posts", recommendations)
+        self.assertIsInstance(recommendations["suggested_posts"], list)
+
+        self.assertTrue(len(recommendations["suggested_posts"]) > 0,
+                        "Suggested posts list is empty, expected post commented on by friend.")
+
+        found_post_in_recommendations = False
+        for recommended_post in recommendations["suggested_posts"]:
+            if recommended_post.get("id") == post_by_user2.id:
+                self.assertEqual(recommended_post.get("title"), post_by_user2.title)
+                # self.assertEqual(recommended_post.get("author_username"), self.user2.username) # user2 object not directly available here
+                found_post_in_recommendations = True
+                break
+
+        self.assertTrue(found_post_in_recommendations,
+                        f"Post ID {post_by_user2.id} (Title: '{post_by_user2.title}') commented on by friend was not found in recommendations.")
+
     # _get_jwt_token is in AppTestCase
 
     # Helpers for creating likes, comments, RSVPs, votes are in AppTestCase

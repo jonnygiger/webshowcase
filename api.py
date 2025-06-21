@@ -353,10 +353,99 @@ class EventResource(Resource):
         return {"message": f"Event resource placeholder for event_id {event_id}"}, 200
 
 
-# Placeholder for RecommendationResource
+# RecommendationResource Implementation
 class RecommendationResource(Resource):
     def get(self):
-        return {"message": "Recommendation resource placeholder"}, 200
+        parser = reqparse.RequestParser()
+        parser.add_argument(
+            "user_id",
+            type=int,
+            required=True,
+            help="User ID is required and must be an integer.",
+            location="args",
+        )
+        args = parser.parse_args()
+        user_id = args["user_id"]
+
+        user = User.query.get(user_id)
+        if not user:
+            return {"message": f"User {user_id} not found"}, 404
+
+        # Import recommendation functions
+        from recommendations import (
+            suggest_posts_to_read,
+            suggest_groups_to_join,
+            suggest_events_to_attend,
+            suggest_users_to_follow,
+            suggest_polls_to_vote,
+        )
+
+        # Call recommendation functions
+        limit = 5
+        raw_posts = suggest_posts_to_read(user_id, limit=limit)
+        raw_groups = suggest_groups_to_join(user_id, limit=limit)
+        raw_events = suggest_events_to_attend(user_id, limit=limit)
+        raw_users = suggest_users_to_follow(user_id, limit=limit)
+        raw_polls = suggest_polls_to_vote(user_id, limit=limit)
+
+        # Serialize results
+        suggested_posts_data = []
+        for post_obj, reason_str in raw_posts:
+            suggested_posts_data.append({
+                "id": post_obj.id,
+                "title": post_obj.title,
+                "author_username": post_obj.author.username if post_obj.author else "Unknown",
+                "reason": reason_str,
+            })
+
+        suggested_groups_data = [
+            {
+                "id": group_obj.id,
+                "name": group_obj.name,
+                "creator_username": group_obj.creator.username if group_obj.creator else "Unknown",
+            }
+            for group_obj in raw_groups
+        ]
+
+        suggested_events_data = [
+            {
+                "id": event_obj.id,
+                "title": event_obj.title,
+                "organizer_username": event_obj.organizer.username if event_obj.organizer else "Unknown",
+            }
+            for event_obj in raw_events
+        ]
+
+        suggested_users_data = [
+            {"id": user_obj.id, "username": user_obj.username}
+            for user_obj in raw_users
+        ]
+
+        suggested_polls_data = []
+        for poll_obj in raw_polls:
+            options_data = [
+                {
+                    "id": option.id,
+                    "text": option.text,
+                    "vote_count": len(option.votes),  # PollOption.votes is a list of PollVote objects
+                }
+                for option in poll_obj.options
+            ]
+            suggested_polls_data.append({
+                "id": poll_obj.id,
+                "question": poll_obj.question,
+                "author_username": poll_obj.author.username if poll_obj.author else "Unknown",
+                "options": options_data,
+            })
+
+        return {
+            "user_id": user_id,
+            "suggested_posts": suggested_posts_data,
+            "suggested_groups": suggested_groups_data,
+            "suggested_events": suggested_events_data,
+            "suggested_users_to_follow": suggested_users_data,
+            "suggested_polls_to_vote": suggested_polls_data,
+        }, 200
 
 
 # PersonalizedFeedResource Implementation

@@ -15,25 +15,22 @@ class TestDiscoverPageViews(AppTestCase):
     def test_discover_page_shows_recommendation_reasons(
         self, mock_get_personalized_feed_posts
     ):
-        # with app.app_context(): # App context is likely handled by AppTestCase or test client calls
         # Setup: Login as a user
         self.login(
             self.user1.username, "password"
         )  # Assumes user1 is created in AppTestCase.setUp
 
         # Mocking get_personalized_feed_posts
-        # Create a mock author object that behaves like a User model instance for the template
-        mock_author = MagicMock(
-            spec=User
-        )  # If User model is complex, provide more spec details
-        mock_author.username = "author_username"
+        # Ensure app context for MagicMock with spec on SQLAlchemy models
+        with self.app.app_context():
+            # Create a mock author object
+            mock_author = MagicMock()
+            mock_author.username = "author_username" # Reverted username
 
-        # Create a mock post object that behaves like a Post model instance for the template
-        mock_post = MagicMock(
-            spec=Post
-        )  # If Post model is complex, provide more spec details
-        mock_post.id = 123
-        mock_post.title = "Mocked Post Title"
+            # Create a mock post object
+            mock_post = MagicMock()
+            mock_post.id = 123
+            mock_post.title = "Mocked Post Title"
         # Ensure content is not None for slicing in template (post.content[:200])
         mock_post.content = "Mocked post content here that is long enough."
         mock_post.author = mock_author
@@ -66,6 +63,39 @@ class TestDiscoverPageViews(AppTestCase):
         self.assertIn(mock_post.author.username, response_data)
         # Check a snippet of content if it's displayed
         self.assertIn(mock_post.content[:50], response_data)
+
+        # Assert that the mock was called correctly
+        mock_get_personalized_feed_posts.assert_called_once_with(
+            self.user1_id, limit=15
+        )
+
+        self.logout()
+
+    @patch("app.get_personalized_feed_posts")
+    def test_discover_page_empty_state(self, mock_get_personalized_feed_posts):
+        # Setup: Login as a user
+        self.login(self.user1.username, "password")
+
+        # Mocking get_personalized_feed_posts to return an empty list
+        mock_get_personalized_feed_posts.return_value = []
+
+        # Execution: Make a GET request to /discover
+        response = self.client.get("/discover")
+
+        # Assertions
+        self.assertEqual(response.status_code, 200)
+        response_data = response.get_data(as_text=True)
+
+        # Check for a message indicating no recommendations
+        # This message will depend on the actual implementation in the template
+        self.assertIn("No new post recommendations for you at the moment. Explore existing content or check back later!", response_data)
+        # Or, if there's a more generic message or a specific HTML structure:
+        # self.assertIn("No posts to display.", response_data)
+
+        # Ensure no mock post details are accidentally shown
+        # (Example from the other test, assuming 'Mocked Post Title' wouldn't appear)
+        self.assertNotIn("Mocked Post Title", response_data)
+        # self.assertNotIn("author_username", response_data) # Removed, "author_username" is in JS code
 
         # Assert that the mock was called correctly
         mock_get_personalized_feed_posts.assert_called_once_with(

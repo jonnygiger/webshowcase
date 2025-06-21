@@ -7,7 +7,8 @@ from unittest.mock import (
 from datetime import datetime, timedelta
 
 # from app import app, db, socketio # COMMENTED OUT
-# from models import User, Post, Friendship, Event, Poll, PollOption, Like, Comment, EventRSVP, PollVote # COMMENTED OUT - Added Friendship, PollOption
+from models import Friendship # Ensure Friendship is imported
+# from models import User, Post, Event, Poll, PollOption, Like, Comment, EventRSVP, PollVote # COMMENTED OUT - Added Friendship, PollOption
 from tests.test_base import AppTestCase
 
 
@@ -297,3 +298,75 @@ class TestPersonalizedFeedAPI(AppTestCase):
                 self.assertNotEqual(item["id"], self.excluded_event_id, f"Feed should not contain user1's own event (ID: {self.excluded_event_id}) that a friend RSVP'd to.")
             elif item["type"] == "poll":
                 self.assertNotEqual(item["id"], self.excluded_poll_id, f"Feed should not contain user1's own poll (ID: {self.excluded_poll_id}) that a friend voted on.")
+
+    def test_feed_excludes_content_interacted_by_removed_friend(self):
+        # 1. Setup Users: self.user1 (viewer), self.user2 (friend), self.user3 (content creator)
+        # Users are available from AppTestCase setUp: self.user1_id, self.user2_id, self.user3_id
+
+        # 2. Establish friendship between user1 and user2
+        self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+
+        # 3. user3 creates a post
+        post_by_user3 = self._create_db_post(
+            user_id=self.user3_id,
+            title="Post by User3, to be liked by User2"
+        )
+        self.target_post_id = post_by_user3.id # Store for later assertions
+
+        # 4. user2 (friend of user1) likes user3's post
+        self._create_db_like(
+            user_id=self.user2_id,
+            post_id=self.target_post_id
+        )
+
+        # 2. Verify post appears in user1's feed (user2 is a friend)
+        token_user1 = self._get_jwt_token(self.user1.username, "password")
+        headers_user1 = {"Authorization": f"Bearer {token_user1}"}
+
+        response = self.client.get("/api/personalized-feed", headers=headers_user1)
+        self.assertEqual(response.status_code, 200, "Failed to fetch feed for user1")
+        data = json.loads(response.data)
+
+        feed_items = data.get("feed_items", [])
+        found_post_in_feed = False
+        for item in feed_items:
+            if item.get("type") == "post" and item.get("id") == self.target_post_id:
+                found_post_in_feed = True
+                self.assertIn(f"Liked by your friend {self.user2.username}", item.get("reason", ""),
+                              "Feed item reason is incorrect or missing friend's like.")
+                break
+
+        self.assertTrue(found_post_in_feed,
+                        f"Post {self.target_post_id} liked by friend {self.user2.username} not found in user1's feed when it should be.")
+
+        # 3. Remove friendship between user1 and user2
+        # Friendships might be stored in one direction or both, query flexibly.
+        friendship_record = Friendship.query.filter(
+            ((Friendship.user_id == self.user1_id) & (Friendship.friend_id == self.user2_id)) |
+            ((Friendship.user_id == self.user2_id) & (Friendship.friend_id == self.user1_id)),
+            Friendship.status == "accepted" # Ensure we are targeting the accepted friendship
+        ).first()
+
+        self.assertIsNotNone(friendship_record, "Friendship record not found before attempting to remove.")
+
+        if friendship_record:
+            self.db.session.delete(friendship_record)
+            self.db.session.commit()
+
+        # 4. Verify post no longer appears in user1's feed
+        # Use the same token and headers for user1
+        response_after_unfriend = self.client.get("/api/personalized-feed", headers=headers_user1)
+        self.assertEqual(response_after_unfriend.status_code, 200,
+                         "Failed to fetch feed for user1 after unfriending user2")
+        data_after_unfriend = json.loads(response_after_unfriend.data)
+
+        feed_items_after_unfriend = data_after_unfriend.get("feed_items", [])
+        found_post_after_unfriend = False
+        for item in feed_items_after_unfriend:
+            if item.get("type") == "post" and item.get("id") == self.target_post_id:
+                found_post_after_unfriend = True
+                break
+
+        self.assertFalse(found_post_after_unfriend,
+                         f"Post {self.target_post_id} (liked by removed friend {self.user2.username}) "
+                         f"was found in user1's feed when it should be excluded.")

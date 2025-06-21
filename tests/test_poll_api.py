@@ -169,7 +169,72 @@ class TestPollAPI(AppTestCase):
     def test_vote_on_poll_success(self): pass
     def test_vote_on_poll_already_voted(self): pass
     def test_vote_on_poll_invalid_option_id_for_poll(self): pass
-    def test_vote_on_poll_option_not_in_specific_poll(self): pass
+
+    def test_vote_on_poll_option_not_in_specific_poll(self):
+        """
+        Test voting on a poll with an option ID that belongs to a different poll.
+        The API should return a 404 or 400 error.
+        """
+        # a. Obtain a JWT token for self.user1
+        token_user1 = self._get_jwt_token(self.user1.username, "password")
+        headers_user1 = {
+            "Authorization": f"Bearer {token_user1}",
+            "Content-Type": "application/json",
+        }
+
+        # b. Create the first poll (Poll 1)
+        poll1_question = "Poll 1: Best Season?"
+        poll1_options = ["P1Opt1: Summer", "P1Opt2: Winter"]
+        poll1_id = self._create_poll_via_api(token_user1, poll1_question, poll1_options)
+
+        # c. Create a second poll (Poll 2)
+        poll2_question = "Poll 2: Best Animal?"
+        poll2_options = ["P2Opt1: Dog", "P2Opt2: Cat"]
+        poll2_id = self._create_poll_via_api(token_user1, poll2_question, poll2_options)
+
+        # d. Retrieve the details of the second poll (specifically its option IDs)
+        response_get_poll2 = self.client.get(f"/api/polls/{poll2_id}", headers=headers_user1)
+        self.assertEqual(response_get_poll2.status_code, 200, "Failed to retrieve Poll 2 details")
+        poll2_data = response_get_poll2.get_json()
+
+        # Ensure poll2_data and its options are as expected
+        self.assertIn("poll", poll2_data, "Poll data missing in response for Poll 2")
+        self.assertIn("options", poll2_data["poll"], "Options missing in poll data for Poll 2")
+        self.assertTrue(len(poll2_data["poll"]["options"]) > 0, "No options found for Poll 2")
+
+        option_from_poll2_id = poll2_data["poll"]["options"][0]["id"] # Take the first option from Poll 2
+
+        # e. Attempt to vote on the first poll (poll1_id) using an option_id from the second poll
+        vote_data = {"option_id": option_from_poll2_id}
+        response_vote = self.client.post(f"/api/polls/{poll1_id}/vote", headers=headers_user1, json=vote_data)
+
+        # f. Assert that the response status code is 404 (or 400)
+        # Based on common API behavior for such cases, 400 or 404 is expected.
+        # The prompt mentions "Poll option not found or does not belong to this poll"
+        # which could map to either. Let's check for 400 as per the prompt's hint.
+        # If the original code used 404, this might need adjustment.
+        self.assertIn(response_vote.status_code, [400, 404],
+                      f"Unexpected status code: {response_vote.status_code}. Response: {response_vote.get_json()}")
+
+        # g. Assert that the response JSON contains an appropriate error message
+        response_json = response_vote.get_json()
+        self.assertIn("message", response_json)
+        # The specific message can vary, checking for non-emptiness or a keyword might be robust.
+        # For now, let's trust the existing API's error message format.
+        # A more specific check could be:
+        # self.assertTrue("not found" in response_json["message"].lower() or \
+        #                 "does not belong" in response_json["message"].lower())
+        # Based on the subtask: "Poll option not found or does not belong to this poll"
+        expected_message_fragment_1 = "Poll option not found"
+        expected_message_fragment_2 = "does not belong to this poll"
+        actual_message = response_json["message"]
+
+        self.assertTrue(
+            expected_message_fragment_1.lower() in actual_message.lower() or \
+            expected_message_fragment_2.lower() in actual_message.lower(),
+            f"Error message '{actual_message}' does not contain expected fragments."
+        )
+
     def test_vote_on_poll_unauthenticated(self): pass
     def test_vote_on_poll_non_existent_poll(self): pass
 

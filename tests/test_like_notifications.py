@@ -72,6 +72,64 @@ class TestLikeNotifications(AppTestCase):
         self.logout()
 
     @patch("app.socketio.emit")
+    def test_like_post_multiple_times_sends_single_notification(self, mock_socketio_emit):
+        with self.app.app_context():
+            # 1. Create a post by self.author
+            post_id = self._create_db_post(user_id=self.author.id, title="Author's Post for Multiple Likes")
+            post_by_author = Post.query.get(post_id)
+            self.assertIsNotNone(post_by_author, "Failed to create post.")
+
+            # 2. self.liker logs in and likes the post
+            self.login(self.liker.username, "password")
+            response = self.client.post(f'/blog/post/{post_by_author.id}/like', follow_redirects=True)
+            self.assertEqual(response.status_code, 200, "First like attempt failed.")
+
+            # 3. Verify that a notification is created for self.author and a socket event is emitted
+            notification = Notification.query.filter_by(
+                user_id=self.author.id,
+                type='like',
+                related_id=post_by_author.id
+            ).first()
+            self.assertIsNotNone(notification, "Database notification was not created for the author on the first like.")
+            # Verify the message to ensure it's from the correct liker, similar to other tests
+            expected_message = f"{self.liker.username} liked your post: '{post_by_author.title}'"
+            self.assertEqual(notification.message, expected_message, "Notification message is incorrect for the first like.")
+
+            # Check that socketio.emit was called once
+            self.assertEqual(mock_socketio_emit.call_count, 1, "SocketIO emit was not called exactly once on the first like.")
+
+            # Store the ID of the first notification to ensure no new one is created
+            first_notification_id = notification.id
+
+            # 4. self.liker attempts to like the same post again
+            response_again = self.client.post(f'/blog/post/{post_by_author.id}/like', follow_redirects=True)
+            self.assertEqual(response_again.status_code, 200, "Second like attempt failed.") # Assuming it still returns 200
+
+            # 5. Verify that no new database notification is created for self.author
+            notifications_count = Notification.query.filter_by(
+                user_id=self.author.id,
+                type='like',
+                related_id=post_by_author.id
+            ).count()
+            self.assertEqual(notifications_count, 1, "Notification count for the author should remain 1 after multiple likes.")
+
+            # Optionally, verify that the existing notification is the same one and the message is still correct
+            current_notification = Notification.query.filter_by(
+                user_id=self.author.id,
+                type='like',
+                related_id=post_by_author.id
+            ).first()
+            self.assertIsNotNone(current_notification, "Could not find notification after second like.")
+            self.assertEqual(current_notification.id, first_notification_id, "The existing notification ID should not change.")
+            self.assertEqual(current_notification.message, expected_message, "Notification message is incorrect after second like.")
+
+            # 6. Verify that no new 'new_like_notification' socket event is emitted for the second like action
+            # The call_count should still be 1 from the first like
+            self.assertEqual(mock_socketio_emit.call_count, 1, "SocketIO emit call count should remain 1 after the second like.")
+
+        self.logout()
+
+    @patch("app.socketio.emit")
     def test_like_own_post_does_not_send_notification_or_emit_event(
         self, mock_socketio_emit
     ):

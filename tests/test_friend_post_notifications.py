@@ -2,8 +2,8 @@ import unittest
 from unittest.mock import patch, ANY
 from datetime import datetime, timedelta
 
-from app import app, db, socketio # COMMENTED OUT
-from models import User, Post, FriendPostNotification # COMMENTED OUT
+# from app import app, db, socketio # COMMENTED OUT - app, db, socketio likely from AppTestCase
+from models import User, Post, FriendPostNotification # Make sure these are available
 from tests.test_base import AppTestCase
 
 
@@ -174,3 +174,55 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json, {'status': 'success', 'message': 'No unread friend post notifications.'})
             self.logout()
+
+    @patch('app.socketio.emit')
+    def test_no_notification_for_own_post(self, mock_socketio_emit):
+        with self.app.app_context():
+            # 1. User1 creates a post
+            post_title = "My Own Test Post"
+            post_content = "This is content of my own post."
+            self._make_post_via_route(self.user1.username, 'password', title=post_title, content=post_content)
+
+            # 2. Retrieve the created post
+            created_post = Post.query.filter_by(user_id=self.user1_id, title=post_title).first()
+            self.assertIsNotNone(created_post, "Post creation failed or post not found.")
+
+            # 3. Assert no FriendPostNotification was created for user1 for this post
+            notification_for_self = FriendPostNotification.query.filter_by(
+                user_id=self.user1_id,
+                post_id=created_post.id
+            ).first()
+            self.assertIsNone(notification_for_self, "A notification was created for user's own post.")
+
+            # 4. Assert socketio.emit was not called for user1's room for 'new_friend_post'
+            # Check if emit was called at all. If it was, check its arguments.
+            for call in mock_socketio_emit.call_args_list:
+                event_name, payload, room = call[0] # call[0] contains args
+                if event_name == 'new_friend_post' and room == f'user_{self.user1_id}':
+                    # Check if the post_id in payload matches our created_post.id
+                    # This is important if other posts by friends could trigger notifications in the same test session
+                    if 'post_id' in payload and payload['post_id'] == created_post.id:
+                        self.fail(f"socketio.emit called for user's own post: event={event_name}, room={room}, payload={payload}")
+            # A simpler check if no other socketio events are expected for this user during this specific action:
+            # mock_socketio_emit.assert_not_called() might be too broad if other calls are permissible.
+            # The loop above is more specific.
+
+            # If we are certain that NO emit should happen for user1 related to *this post notification*,
+            # and other emits are possible (e.g. other notifications for other users, general app events),
+            # the loop is the most robust way.
+            # If this test is isolated and no other socket events are expected for self.user1,
+            # we could check that no call has room=f'user_{self.user1_id}' and event='new_friend_post'
+            # for the specific post.
+
+            # Let's refine the socketio assertion to be very specific:
+            # No call to emit for 'new_friend_post' to user1's room for this specific post.
+            called_for_own_post = False
+            for call_args in mock_socketio_emit.call_args_list:
+                args, kwargs = call_args
+                # args[0] is event name, args[1] is payload, kwargs['room'] is the room
+                if args[0] == 'new_friend_post' and \
+                   kwargs.get('room') == f'user_{self.user1_id}' and \
+                   args[1].get('post_id') == created_post.id:
+                    called_for_own_post = True
+                    break
+            self.assertFalse(called_for_own_post, "socketio.emit was called for the user's own post notification.")

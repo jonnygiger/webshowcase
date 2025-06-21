@@ -193,6 +193,91 @@ class TestOnThisDayPage(AppTestCase):
 
         self.logout()
 
+    @patch("app.datetime")
+    @patch("recommendations.datetime")
+    def test_on_this_day_page_current_year_and_wrong_day_content_only(self, mock_reco_datetime, mock_app_datetime):
+        # 1. Mock datetime BEFORE any logic that might use it
+        mock_app_datetime.utcnow.return_value = self.fixed_today
+        mock_reco_datetime.utcnow.return_value = self.fixed_today
+        # Ensure that strptime used by recommendations.py is the real one
+        mock_reco_datetime.strptime = datetime.strptime
+
+        # 2. Create a specific test user
+        with self.app.app_context():
+            no_otd_content_user = User(
+                username="no_otd_content_user",
+                email="no_otd@example.com",
+                password_hash=generate_password_hash("password")
+            )
+            self.db.session.add(no_otd_content_user)
+            self.db.session.commit()
+            no_otd_content_user_id = no_otd_content_user.id
+        # Content creation was moved after fetching self.no_otd_content_user
+
+        # Store user for login later
+        # Re-fetch the user to ensure it's bound to the current session
+        # and available for login and content creation.
+        with self.app.app_context():
+            self.no_otd_content_user = User.query.get(no_otd_content_user_id)
+
+        # Corrected: Ensure content is created with the fetched user's ID
+        # self.fixed_today is datetime(2023, 10, 26, 12, 0, 0)
+        post_current_year_same_day = self._create_db_post(
+            user_id=self.no_otd_content_user.id,
+            title="Current Year Post (OTD)",
+            content="This post is from Oct 26, 2023.",
+            timestamp=datetime(2023, 10, 26, 10, 0, 0)
+        )
+
+        event_current_year_same_day = self._create_db_event(
+            user_id=self.no_otd_content_user.id,
+            title="Current Year Event (OTD)",
+            date_str="2023-10-26",
+            description="This event is on Oct 26, 2023."
+        )
+
+        post_prev_year_diff_day = self._create_db_post(
+            user_id=self.no_otd_content_user.id,
+            title="Previous Year Wrong Day Post",
+            content="This post is from Nov 26, 2022.",
+            timestamp=datetime(2022, 11, 26, 10, 0, 0)
+        )
+
+        event_prev_year_diff_day = self._create_db_event(
+            user_id=self.no_otd_content_user.id,
+            title="Previous Year Wrong Day Event",
+            date_str="2022-11-26",
+            description="This event is on Nov 26, 2022."
+        )
+
+        # Perform login and request
+        self.login(self.no_otd_content_user.username, "password")
+        response = self.client.get("/onthisday")
+
+        # Assert status code
+        self.assertEqual(response.status_code, 200)
+
+        response_data = response.get_data(as_text=True)
+
+        # Assertions for content filtering
+        # These items should NOT be displayed:
+        # - Items from the current year (OTD logic only looks at previous years)
+        # - Items from previous years but wrong day/month
+        self.assertNotIn(post_current_year_same_day.title, response_data)
+        self.assertNotIn(event_current_year_same_day.title, response_data)
+        self.assertNotIn(post_prev_year_diff_day.title, response_data)
+        self.assertNotIn(event_prev_year_diff_day.title, response_data)
+
+        # Assertions for messages
+        # Since no applicable posts/events from previous years are found,
+        # specific messages for each type should be shown.
+        self.assertIn("No posts from this day in previous years.", response_data)
+        self.assertIn("No events from this day in previous years.", response_data)
+        # The overall "Nothing to show" message should NOT be present if specific ones are.
+        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
+
+        self.logout()
+
 
 class TestOnThisDayAPI(AppTestCase):
 

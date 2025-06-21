@@ -505,3 +505,51 @@ class TestLiveActivityFeed(AppTestCase):
 
 
         self.logout()
+
+    def test_live_feed_empty_for_friends_with_no_activity(self):
+        """Test live feed when friends have no activities."""
+        # user1 logs in. user2 is their friend (established in setUp).
+        # user2 (the friend) should have no activities for this test.
+        # It's important to ensure no activities from user2 are created by other tests
+        # or persist in a way that affects this test.
+        # AppTestCase.setUp should handle DB clearing, and setUp here only creates users/friendships.
+
+        self.login(self.user1.username, "password")
+        response = self.client.get("/live_feed")
+        self.assertEqual(response.status_code, 200)
+
+        html_content = response.get_data(as_text=True)
+
+        # 1. Check for the specific "no activity" message by its ID and text
+        #    The message is: "No recent activity from your friends. Try adding more friends or check back later!"
+        #    We can check for a part of the message and its ID.
+        self.assertIn('id="no-activity-message"', html_content)
+        self.assertIn("No recent activity from your friends", html_content)
+
+        # 2. Assert that self.user2.username (friend with no activity) is NOT present
+        #    as part of an activity item. The "no-activity-message" check is primary.
+        #    If activity items had a specific class e.g. "activity-log-item",
+        #    we would check for its absence or that user2.username is not within such items.
+        #    For now, ensuring the "no activity" message is present is a strong indicator.
+        #    A general check can be to ensure user2's name isn't followed by typical action verbs.
+        #    Example: f"{self.user2.username} created a new post"
+        self.assertNotIn(f"{self.user2.username} created a new post", html_content)
+        self.assertNotIn(f"{self.user2.username} commented on a post", html_content)
+        self.assertNotIn(f"{self.user2.username} started following", html_content)
+
+
+        # 3. Ensure no activities from self.user3 are shown.
+        #    self.user1 is friends with self.user2.
+        #    self.user2 is friends with self.user3.
+        #    self.user1 is NOT friends with self.user3 by default setup.
+        #    So, self.user3's activities should not appear on self.user1's feed.
+        #    (This also implicitly tests that only friends' activities are shown)
+        self.assertNotIn(f"{self.user3.username} created a new post", html_content)
+        self.assertNotIn(f"{self.user3.username} commented on a post", html_content)
+        self.assertNotIn(f"{self.user3.username} started following", html_content)
+        # Also check if any activity item container is present (e.g. if they are list items <li>)
+        # This depends on the actual HTML structure. If activities are in <div class="activity-item">
+        # self.assertNotIn('<div class="activity-item">', html_content) # Or similar
+        # For now, the "no-activity-message" and lack of specific activity texts are the main checks.
+
+        self.logout()

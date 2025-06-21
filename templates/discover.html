@@ -18,6 +18,9 @@
                         <h6 class="card-subtitle mb-2 text-muted">
                             By: <a href="{{ url_for('user_profile', username=post.author.username) }}">{{ post.author.username }}</a>
                         </h6>
+                        {% if post.image_url %}
+                            <img src="{{ post.image_url }}" class="img-fluid mb-2" alt="Post image">
+                        {% endif %}
                         <p class="card-text">{{ post.content[:200] }}{% if post.content|length > 200 %}...{% endif %}</p>
                         <p class="card-text"><small class="text-muted"><em>Recommended because: {{ reason }}</em></small></p>
                         <a href="{{ url_for('view_post', post_id=post.id) }}" class="btn btn-primary btn-sm">Read more</a>

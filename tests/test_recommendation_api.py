@@ -3,8 +3,8 @@ import json
 from unittest.mock import patch, ANY
 from datetime import datetime, timedelta
 
-# from app import app, db, socketio # COMMENTED OUT
-# from models import User, Post, Group, Event, Poll, PollOption, Like, Comment, EventRSVP, PollVote # COMMENTED OUT
+# from app import app, db, socketio # COMMENTED OUT or ensure app context is handled by AppTestCase
+from models import User, Post, Group, Event, Poll, PollOption, Like, Comment, EventRSVP, PollVote # Ensure this line is active or add necessary imports
 from tests.test_base import AppTestCase
 
 
@@ -224,3 +224,69 @@ class TestRecommendationAPI(AppTestCase):
     # Helpers for creating likes, comments, RSVPs, votes are in AppTestCase
     # _create_db_like, _create_db_comment, _create_db_event_rsvp, _create_db_poll_vote
     # are inherited from AppTestCase
+
+    def test_recommend_group_joined_by_friend(self):
+        # user1 (self.user1_id) is the target for recommendations
+        # user2 (self.user2_id) is the friend
+        # user3 (self.user3_id) can be the group creator
+
+        # 1. Create friendship between user1 and user2
+        # Assuming _create_friendship helper creates a mutual 'accepted' friendship or needs to be called twice.
+        # Based on test_recommend_post_liked_by_friend, it seems it needs to be mutual for suggestions.
+        self._create_friendship(self.user1_id, self.user2_id, status='accepted')
+        self._create_friendship(self.user2_id, self.user1_id, status='accepted')
+
+        # 2. Create a group by user3
+        group_by_user3 = self._create_db_group(
+            creator_id=self.user3_id,
+            name="Friend's Joined Group Test",
+            description="A group for testing recommendations"
+        )
+
+        # 3. user2 joins this group
+        # Need to fetch user2 and group_by_user3 as ORM objects to append to relationship
+        user2 = User.query.get(self.user2_id)
+        # group_obj = Group.query.get(group_by_user3.id) # _create_db_group should return the object
+
+        if user2 and group_by_user3:
+            # Assuming User model has 'joined_groups' relationship (e.g., backref from Group.members)
+            # or Group model has 'members' relationship.
+            # Based on recommendations.py (suggest_groups_to_join):
+            # `user_groups_ids = {group.id for group in current_user.joined_groups.all()}`
+            # `friend.joined_groups.all()`
+            # This implies User.joined_groups is the correct relationship.
+            user2.joined_groups.append(group_by_user3)
+            self.db.session.add(user2) # Add user2 to session if relationship change doesn't auto-add
+            self.db.session.commit()
+        else:
+            self.fail("Failed to fetch user2 or group_by_user3 for test setup")
+
+        # 4. Call the recommendation API for user1
+        response = self.client.get(f"/api/recommendations?user_id={self.user1_id}")
+
+        # 5. Assert the expected outcome
+        self.assertEqual(response.status_code, 200, "API call should be successful")
+
+        recommendations = json.loads(response.data)
+        self.assertIn("suggested_groups", recommendations, "Response should contain suggested_groups")
+
+        suggested_groups = recommendations["suggested_groups"]
+        self.assertIsInstance(suggested_groups, list, "suggested_groups should be a list")
+
+        self.assertTrue(len(suggested_groups) > 0,
+                        "Suggested groups list should not be empty.")
+
+        found_group_in_recommendations = False
+        for recommended_group in suggested_groups:
+            self.assertIn("id", recommended_group)
+            self.assertIn("name", recommended_group)
+            if recommended_group["id"] == group_by_user3.id:
+                self.assertEqual(recommended_group["name"], group_by_user3.name,
+                                 "Recommended group name does not match.")
+                # Optionally, assert other details like creator if available and relevant
+                # self.assertIn("creator_username", recommended_group)
+                found_group_in_recommendations = True
+                break
+
+        self.assertTrue(found_group_in_recommendations,
+                        f"Group ID {group_by_user3.id} (Name: '{group_by_user3.name}') joined by friend was not found in recommendations.")

@@ -182,3 +182,118 @@ class TestPersonalizedFeedAPI(AppTestCase):
         data = json.loads(response.data)
         self.assertIn("feed_items", data)
         self.assertEqual(data["feed_items"], [])
+
+    def test_personalized_feed_excludes_own_content_interacted_by_friends(self):
+        # 1. Establish friendship
+        self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+
+        # --- Items created by user1, interacted by user2 (friend) ---
+        # These SHOULD NOT appear in user1's feed
+
+        # 2. User1 creates a post, User2 likes it
+        post_by_user1 = self._create_db_post(
+            user_id=self.user1_id,
+            title="User1 Own Post",
+            content="Content by User1",
+            timestamp=datetime.utcnow() - timedelta(hours=5)
+        )
+        self._create_db_like(
+            user_id=self.user2_id,
+            post_id=post_by_user1.id,
+            timestamp=datetime.utcnow() - timedelta(hours=4) # Older interaction
+        )
+
+        # 3. User1 creates an event, User2 RSVPs
+        event_by_user1 = self._create_db_event(
+            user_id=self.user1_id,
+            title="User1 Own Event",
+            description="Event by User1",
+            date_str=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
+        )
+        # Explicitly set older creation for the event itself
+        event_by_user1.created_at = datetime.utcnow() - timedelta(hours=3)
+        self.db.session.commit()
+
+        self._create_db_event_rsvp(
+            user_id=self.user2_id,
+            event_id=event_by_user1.id,
+            status="Attending",
+            timestamp=datetime.utcnow() - timedelta(hours=2) # Older interaction
+        )
+
+        # 4. User1 creates a poll, User2 votes
+        poll_by_user1 = self._create_db_poll(
+            user_id=self.user1_id,
+            question="User1 Own Poll?"
+        )
+        # Explicitly set older creation for the poll itself
+        poll_by_user1.created_at = datetime.utcnow() - timedelta(hours=1)
+        self.db.session.commit()
+
+        # Assuming _create_db_poll helper creates at least one option.
+        option_for_poll1 = poll_by_user1.options[0]
+
+        self._create_db_poll_vote(
+            user_id=self.user2_id,
+            poll_id=poll_by_user1.id,
+            poll_option_id=option_for_poll1.id,
+            timestamp=datetime.utcnow() - timedelta(minutes=45) # Older interaction
+        )
+
+        # --- Control Item: Post by User3, Liked by User2 (friend of User1) ---
+        # This SHOULD APPEAR in user1's feed
+
+        post_by_user3 = self._create_db_post(
+            user_id=self.user3_id,
+            title="User3 Post for Feed",
+            content="Content by User3",
+            timestamp=datetime.utcnow() - timedelta(minutes=30) # Content creation time
+        )
+        self.like_on_user3_post_timestamp = datetime.utcnow() - timedelta(minutes=15) # Most recent interaction
+        self._create_db_like(
+            user_id=self.user2_id,
+            post_id=post_by_user3.id,
+            timestamp=self.like_on_user3_post_timestamp
+        )
+
+        # Store details for assertions
+        self.control_post_id = post_by_user3.id
+        self.control_post_title = post_by_user3.title
+
+        self.excluded_post_id = post_by_user1.id
+        self.excluded_event_id = event_by_user1.id
+        self.excluded_poll_id = poll_by_user1.id
+
+        # Log in as user1 and fetch feed
+        token = self._get_jwt_token(self.user1.username, "password")
+        headers = {"Authorization": f"Bearer {token}"}
+        response = self.client.get("/api/personalized-feed", headers=headers)
+
+        # Basic response validation
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn("feed_items", data)
+
+        feed_items = data["feed_items"]
+
+        # Assertions
+        self.assertEqual(len(feed_items), 1, f"Expected 1 item in feed, but got {len(feed_items)}: {feed_items}")
+
+        if len(feed_items) == 1:
+            control_item = feed_items[0]
+            self.assertEqual(control_item["type"], "post")
+            self.assertEqual(control_item["id"], self.control_post_id)
+            self.assertEqual(control_item["title"], self.control_post_title)
+            self.assertIn("reason", control_item, "Feed item should have a reason")
+            # Assuming self.user2 is available from AppTestCase setup
+            expected_reason_fragment = f"Liked by your friend {self.user2.username}"
+            self.assertIn(expected_reason_fragment, control_item["reason"], f"Reason '{control_item.get('reason')}' does not contain '{expected_reason_fragment}'")
+
+        # Explicitly check that none of the user1's own items (interacted by user2) are present
+        for item in feed_items:
+            if item["type"] == "post":
+                self.assertNotEqual(item["id"], self.excluded_post_id, f"Feed should not contain user1's own post (ID: {self.excluded_post_id}) that was liked by a friend.")
+            elif item["type"] == "event":
+                self.assertNotEqual(item["id"], self.excluded_event_id, f"Feed should not contain user1's own event (ID: {self.excluded_event_id}) that a friend RSVP'd to.")
+            elif item["type"] == "poll":
+                self.assertNotEqual(item["id"], self.excluded_poll_id, f"Feed should not contain user1's own poll (ID: {self.excluded_poll_id}) that a friend voted on.")

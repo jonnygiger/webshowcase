@@ -488,3 +488,44 @@ class TestFileSharing(AppTestCase):
                 os.remove(expected_file_path)
 
         self.logout()
+    def test_share_file_with_non_existent_user(self):
+        # Log in as user1
+        self.login(self.user1.username, "password")
+
+        # Create a dummy file
+        dummy_file_data = self.create_dummy_file(
+            filename="test_nonexistent.txt",
+            content=b"Test content for sharing with non-existent user."
+        )
+
+        data = {
+            "file": dummy_file_data,
+            "message": "This is a test message for a non-existent user.",
+        }
+
+        non_existent_username = "nonexistentuser123abc"
+
+        # Attempt to share the file with the non-existent user
+        response = self.client.post(
+            f'/files/share/{non_existent_username}',
+            data=data,
+            content_type='multipart/form-data',
+            follow_redirects=True
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Recipient user not found.", response.get_data(as_text=True))
+
+        shared_file_record = SharedFile.query.filter_by(
+            sender_id=self.user1.id,
+            original_filename="test_nonexistent.txt"
+        ).first()
+        self.assertIsNone(shared_file_record, "SharedFile record should not be created for a non-existent recipient.")
+
+        shared_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
+        files_in_shared_folder = os.listdir(shared_folder)
+        # Filter out potential .gitkeep or other persistent files if any
+        relevant_files = [f for f in files_in_shared_folder if not f.startswith('.')]
+        self.assertEqual(len(relevant_files), 0, "No file should have been saved to the shared folder for a non-existent user.")
+
+        self.logout()

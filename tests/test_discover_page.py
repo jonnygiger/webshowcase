@@ -72,6 +72,68 @@ class TestDiscoverPageViews(AppTestCase):
         self.logout()
 
     @patch("app.get_personalized_feed_posts")
+    def test_discover_page_handles_posts_without_optional_data(
+        self, mock_get_personalized_feed_posts
+    ):
+        # Setup: Login as a user
+        self.login(self.user1.username, "password")
+
+        # Mocking get_personalized_feed_posts
+        with self.app.app_context():
+            mock_author = MagicMock()
+            mock_author.username = "testuser"
+
+            mock_post = MagicMock()
+            mock_post.id = 1
+            mock_post.title = "Post without optional data"
+            mock_post.content = "This is the content of the post."
+            mock_post.author = mock_author
+            mock_post.timestamp = datetime.utcnow()
+            # Optional data missing
+            mock_post.comments = []
+            mock_post.likes = []
+            mock_post.hashtags = None # Or ""
+            # Ensure other attributes that might be accessed are present
+            mock_post.user_id = self.user1_id # Or some other relevant user_id
+            mock_post.reviews = []
+            # mock_post.is_featured = False
+            # mock_post.featured_at = None
+            # mock_post.last_edited = None
+
+
+        # The function is expected to return a list of (Post, reason_string) tuples
+        # For this test, the reason string is not critical but should be present
+        mock_reason = "A reason for this post."
+        mock_get_personalized_feed_posts.return_value = [(mock_post, mock_reason)]
+
+        # Execution: Make a GET request to /discover
+        response = self.client.get("/discover")
+
+        # Assertions
+        self.assertEqual(response.status_code, 200)
+        response_data = response.get_data(as_text=True)
+
+        # Check for essential post details
+        self.assertIn(mock_post.title, response_data)
+        self.assertIn(mock_post.author.username, response_data)
+        self.assertIn(mock_post.content[:50], response_data) # Check for a snippet
+
+        # Assert that the mock was called correctly
+        mock_get_personalized_feed_posts.assert_called_once_with(
+            self.user1_id, limit=15
+        )
+
+        # Assert that elements related to optional data are NOT present
+        # This depends on how the template renders missing data.
+        # For example, if comments count is only shown if > 0
+        self.assertNotIn("Comments: 0", response_data) # Assuming "Comments: X" format
+        self.assertNotIn("Likes: 0", response_data) # Assuming "Likes: X" format
+        # If hashtags are displayed in a specific way, check they are not there
+        # e.g., self.assertNotIn("#", response_data) if hashtags always start with #
+
+        self.logout()
+
+    @patch("app.get_personalized_feed_posts")
     def test_discover_page_empty_state(self, mock_get_personalized_feed_posts):
         # Setup: Login as a user
         self.login(self.user1.username, "password")

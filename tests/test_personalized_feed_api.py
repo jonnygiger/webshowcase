@@ -370,3 +370,82 @@ class TestPersonalizedFeedAPI(AppTestCase):
         self.assertFalse(found_post_after_unfriend,
                          f"Post {self.target_post_id} (liked by removed friend {self.user2.username}) "
                          f"was found in user1's feed when it should be excluded.")
+
+    def test_feed_excludes_posts_from_removed_friend(self):
+        # 1. Establish an 'accepted' friendship between self.user1_id and self.user2_id
+        self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+
+        # 2. Have self.user2 create a post
+        post_by_user2 = self._create_db_post(
+            user_id=self.user2_id,
+            title="Post by User2",
+            content="Content by User2, friend of User1",
+            timestamp=datetime.utcnow() - timedelta(hours=1)
+        )
+
+        # 3. Obtain a JWT token for self.user1
+        token_user1 = self._get_jwt_token(self.user1.username, "password")
+        headers_user1 = {"Authorization": f"Bearer {token_user1}"}
+
+        # 4. Fetch self.user1's personalized feed
+        response = self.client.get("/api/personalized-feed", headers=headers_user1)
+
+        # 5. Assert that the response status code is 200
+        self.assertEqual(response.status_code, 200, "Failed to fetch feed for user1 while friend is active.")
+
+        # 6. Load the JSON response and extract feed_items
+        data = json.loads(response.data)
+        feed_items = data.get("feed_items", [])
+
+        # 7. Iterate through feed_items to find the post created by self.user2. Assert that it is present.
+        found_post_while_friend = False
+        for item in feed_items:
+            if item.get("type") == "post" and item.get("id") == post_by_user2.id:
+                found_post_while_friend = True
+                # 8. Assert that the 'reason' for the post in the feed correctly identifies self.user2.username
+                expected_reason = f"Posted by your friend {self.user2.username}" # Or similar, based on actual reason format
+                # For now, we'll check if the username is in the reason, as exact phrasing might vary.
+                self.assertIn(self.user2.username, item.get("reason", ""),
+                              "Reason for friend's post is incorrect or missing friend's username.")
+                break
+
+        self.assertTrue(found_post_while_friend,
+                        f"Post {post_by_user2.id} by friend {self.user2.username} not found in user1's feed when it should be present.")
+
+        # --- Remove friendship and verify exclusion ---
+
+        # 1. Remove the friendship
+        # Query for the friendship record. _create_friendship might create one or two records.
+        # We need to ensure the 'accepted' status is targeted.
+        friendship_record = Friendship.query.filter(
+            ((Friendship.user_id == self.user1_id) & (Friendship.friend_id == self.user2_id) & (Friendship.status == "accepted")) |
+            ((Friendship.user_id == self.user2_id) & (Friendship.friend_id == self.user1_id) & (Friendship.status == "accepted"))
+        ).first()
+
+        self.assertIsNotNone(friendship_record, "Friendship record not found before attempting to remove.")
+
+        if friendship_record:
+            self.db.session.delete(friendship_record)
+            # If _create_friendship creates two records (one for each direction), delete the other one too.
+            # This depends on the implementation of _create_friendship. Assuming it creates one for now.
+            # If issues arise, this part might need adjustment.
+            self.db.session.commit()
+
+        # 2. Fetch user1's personalized feed again (using the same token)
+        response_after_unfriend = self.client.get("/api/personalized-feed", headers=headers_user1)
+        self.assertEqual(response_after_unfriend.status_code, 200,
+                         "Failed to fetch feed for user1 after unfriending user2.")
+
+        data_after_unfriend = json.loads(response_after_unfriend.data)
+        feed_items_after_unfriend = data_after_unfriend.get("feed_items", [])
+
+        # 3. Verify post exclusion
+        found_post_after_unfriend = False
+        for item in feed_items_after_unfriend:
+            if item.get("type") == "post" and item.get("id") == post_by_user2.id:
+                found_post_after_unfriend = True
+                break
+
+        self.assertFalse(found_post_after_unfriend,
+                         f"Post {post_by_user2.id} from formerly friended user {self.user2.username} "
+                         f"was found in user1's feed when it should be excluded.")

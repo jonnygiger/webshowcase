@@ -182,6 +182,22 @@ class User(db.Model):
         "UserAchievement", back_populates="user", lazy="dynamic"
     )
 
+    # UserBlock relationships
+    blocked_users = db.relationship(
+        "UserBlock",
+        foreign_keys="UserBlock.blocker_id",
+        back_populates="blocker",
+        lazy="dynamic",
+        cascade="all, delete-orphan"
+    )
+    blocked_by_users = db.relationship(
+        "UserBlock",
+        foreign_keys="UserBlock.blocked_id",
+        back_populates="blocked_user",
+        lazy="dynamic",
+        cascade="all, delete-orphan"
+    )
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
@@ -884,3 +900,23 @@ class PostLock(db.Model):
 
     def __repr__(self):
         return f"<PostLock id={self.id} post_id={self.post_id} user_id={self.user_id} expires_at={self.expires_at}>"
+
+
+class UserBlock(db.Model):
+    __tablename__ = "user_block"
+    id = db.Column(db.Integer, primary_key=True)
+    blocker_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)  # The user performing the block
+    blocked_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)  # The user being blocked
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships to User
+    blocker = db.relationship("User", foreign_keys=[blocker_id], back_populates="blocked_users")
+    blocked_user = db.relationship("User", foreign_keys=[blocked_id], back_populates="blocked_by_users")
+
+    __table_args__ = (
+        db.UniqueConstraint("blocker_id", "blocked_id", name="uq_blocker_blocked"),
+        db.CheckConstraint("blocker_id != blocked_id", name="ck_blocker_not_blocked_self"),
+    )
+
+    def __repr__(self):
+        return f"<UserBlock blocker_id={self.blocker_id} blocked_id={self.blocked_id}>"

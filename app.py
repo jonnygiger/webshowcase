@@ -63,6 +63,7 @@ from models import (
     Achievement,
     Series,
     SeriesPost,
+    UserBlock, # Added UserBlock
 )
 
 migrate = Migrate()
@@ -1089,6 +1090,14 @@ def create_post():
                         friend.id == post_author.id
                     ):  # Avoid notifying self if self is in friends list
                         continue
+
+                    # Check if the friend (potential recipient) has blocked the post_author
+                    is_blocked = UserBlock.query.filter_by(
+                        blocker_id=friend.id, blocked_id=post_author.id
+                    ).first()
+                    if is_blocked:
+                        app.logger.info(f"Skipping notification for friend {friend.id} (blocked by them) for post {new_post_db.id} by user {post_author.id}")
+                        continue  # Skip to the next friend
 
                     new_friend_notification = FriendPostNotification(
                         user_id=friend.id,

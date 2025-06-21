@@ -3,7 +3,7 @@ from unittest.mock import patch, ANY
 from datetime import datetime, timedelta
 
 # from app import app, db, socketio # COMMENTED OUT - app, db, socketio likely from AppTestCase
-from models import User, Post, FriendPostNotification # Make sure these are available
+from models import User, Post, FriendPostNotification, UserBlock # Make sure these are available
 from tests.test_base import AppTestCase
 
 
@@ -71,18 +71,18 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             # User1 and User2 are friends. User1 posts. User2 gets a notification.
             self._create_friendship(self.user1_id, self.user2_id)
             post1_id_by_user1 = self._create_db_post(user_id=self.user1_id, title="Post 1 by User1", timestamp=datetime.utcnow() - timedelta(minutes=10))
-            post1_by_user1 = db.session.get(Post, post1_id_by_user1)
+            post1_by_user1 = self.db.session.get(Post, post1_id_by_user1)
             # Manually create notification as if post route was hit by user1
             notif1_for_user2 = FriendPostNotification(user_id=self.user2_id, post_id=post1_by_user1.id, poster_id=self.user1_id, timestamp=post1_by_user1.timestamp)
 
             # User3 and User2 are friends. User3 posts. User2 gets another notification (newer).
             self._create_friendship(self.user3_id, self.user2_id)
             post2_id_by_user3 = self._create_db_post(user_id=self.user3_id, title="Post 2 by User3", timestamp=datetime.utcnow() - timedelta(minutes=5))
-            post2_by_user3 = db.session.get(Post, post2_id_by_user3)
+            post2_by_user3 = self.db.session.get(Post, post2_id_by_user3)
             notif2_for_user2 = FriendPostNotification(user_id=self.user2_id, post_id=post2_by_user3.id, poster_id=self.user3_id, timestamp=post2_by_user3.timestamp)
 
-            db.session.add_all([notif1_for_user2, notif2_for_user2])
-            db.session.commit()
+            self.db.session.add_all([notif1_for_user2, notif2_for_user2])
+            self.db.session.commit()
 
             self.login(self.user2.username, 'password')
             response = self.client.get('/friend_post_notifications')
@@ -102,10 +102,10 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
         with self.app.app_context():
             self._create_friendship(self.user1_id, self.user2_id)
             post_id_by_user1 = self._create_db_post(user_id=self.user1_id)
-            post_by_user1 = db.session.get(Post, post_id_by_user1)
+            post_by_user1 = self.db.session.get(Post, post_id_by_user1)
             notification = FriendPostNotification(user_id=self.user2_id, post_id=post_by_user1.id, poster_id=self.user1_id, is_read=False)
-            db.session.add(notification)
-            db.session.commit()
+            self.db.session.add(notification)
+            self.db.session.commit()
             notification_id = notification.id
 
             self.assertFalse(FriendPostNotification.query.get(notification_id).is_read)
@@ -122,7 +122,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             # First, set it back to unread for this part of the test
             notification_db = FriendPostNotification.query.get(notification_id)
             notification_db.is_read = False
-            db.session.commit()
+            self.db.session.commit()
             self.assertFalse(FriendPostNotification.query.get(notification_id).is_read)
 
             self.login(self.user3.username, 'password')
@@ -145,16 +145,16 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             self._create_friendship(self.user1_id, self.user2_id)
             post1_id = self._create_db_post(user_id=self.user1_id, title="Post1")
             post2_id = self._create_db_post(user_id=self.user1_id, title="Post2")
-            post1 = db.session.get(Post, post1_id)
-            post2 = db.session.get(Post, post2_id)
+            post1 = self.db.session.get(Post, post1_id)
+            post2 = self.db.session.get(Post, post2_id)
 
             notif1 = FriendPostNotification(user_id=self.user2_id, post_id=post1.id, poster_id=self.user1_id, is_read=False)
             notif2 = FriendPostNotification(user_id=self.user2_id, post_id=post2.id, poster_id=self.user1_id, is_read=False)
             # Notification for another user (user3) - should not be affected
             notif_for_user3 = FriendPostNotification(user_id=self.user3_id, post_id=post1.id, poster_id=self.user1_id, is_read=False)
 
-            db.session.add_all([notif1, notif2, notif_for_user3])
-            db.session.commit()
+            self.db.session.add_all([notif1, notif2, notif_for_user3])
+            self.db.session.commit()
             notif1_id, notif2_id, notif3_id = notif1.id, notif2.id, notif_for_user3.id
 
 
@@ -266,3 +266,45 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
                     break
             self.assertFalse(called_for_user2,
                              "socketio.emit was called for user2 for a post made before friendship.")
+
+    @patch('app.socketio.emit')
+    def test_no_notification_if_poster_is_blocked(self, mock_socketio_emit):
+        with self.app.app_context():
+            # 1. User1 and User2 are friends
+            self._create_friendship(self.user1_id, self.user2_id, status='accepted')
+
+            # 2. User2 blocks User1
+            user_block = UserBlock(blocker_id=self.user2_id, blocked_id=self.user1_id)
+            self.db.session.add(user_block)
+            self.db.session.commit()
+
+            # 3. User1 creates a new post
+            post_title = "Post By Blocked User"
+            post_content = "This content should not trigger a notification for User2"
+            self._make_post_via_route(self.user1.username, 'password', title=post_title, content=post_content)
+
+            # Retrieve the post created by User1
+            created_post = Post.query.filter_by(user_id=self.user1_id, title=post_title).first()
+            self.assertIsNotNone(created_post, "Post creation failed or post not found.")
+
+            # 4. Assert that no FriendPostNotification record is created in the database for User2 from User1's post
+            notification_for_user2 = FriendPostNotification.query.filter_by(
+                user_id=self.user2_id,
+                post_id=created_post.id,
+                poster_id=self.user1_id
+            ).first()
+            self.assertIsNone(notification_for_user2,
+                              "A FriendPostNotification was created for User2 even though User1 is blocked.")
+
+            # 5. Assert that no new_friend_post socket.io event is emitted to User2's room for this specific post
+            called_for_user2 = False
+            for call_args in mock_socketio_emit.call_args_list:
+                args, kwargs = call_args
+                # args[0] is event name, args[1] is payload, kwargs['room'] is the room
+                if args[0] == 'new_friend_post' and \
+                   kwargs.get('room') == f'user_{self.user2_id}' and \
+                   args[1].get('post_id') == created_post.id:
+                    called_for_user2 = True
+                    break
+            self.assertFalse(called_for_user2,
+                             "socketio.emit was called for User2 for a post from a blocked user.")

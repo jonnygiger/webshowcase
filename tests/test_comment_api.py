@@ -93,3 +93,61 @@ class TestCommentAPI(AppTestCase):
         # Let's adjust the assertion based on this.
         self.assertIn('content', data['message'])
         self.assertEqual(data['message']['content'], 'Comment content cannot be blank')
+    def test_create_comment_by_different_user(self):
+        # 1. Create a post by self.user1
+        post_by_user1 = self._create_db_post(user_id=self.user1_id, title="Post by User1 for User2 Comment")
+        post_id = post_by_user1.id
+
+        # 2. Create a second user, user2
+        user2 = User(username='user2', email='user2@example.com')
+        user2.set_password('password') # Assuming set_password method exists and hashes
+        self.db.session.add(user2)
+        self.db.session.commit()
+        # It's good practice to refresh user2 to get any DB-generated defaults or ensure it's fully loaded
+        # self.db.session.refresh(user2) # Optional, but can be useful
+        user2_id = user2.id
+        user2_username = user2.username
+
+        # 3. Log in as user2 to get an auth token
+        token_user2 = self._get_jwt_token(user2_username, 'password')
+
+        # Store variables for the next steps (actual API call and assertions)
+        # For example, by assigning them to self or returning them if this were a helper
+        # For now, just ensure they are defined in the scope of the test method.
+        # self.post_id_for_user2_comment = post_id
+        # self.token_for_user2 = token_user2
+        # self.user2_id_for_comment = user2_id
+        # self.user2_username_for_comment = user2_username
+        # pass # Next steps will add the API call and assertions
+
+        # 4. Make the API call to create a comment
+        headers = {
+            "Authorization": f"Bearer {token_user2}",
+            "Content-Type": "application/json",
+        }
+        comment_content = "A comment from user2 on user1's post"
+
+        response = self.client.post(
+            f'/api/posts/{post_id}/comments',
+            headers=headers,
+            json={'content': comment_content}
+        )
+
+        # Store for assertions in the next step, e.g.:
+        # self.response_data = json.loads(response.data)
+        # self.response_status_code = response.status_code
+        # self.comment_content_sent = comment_content
+        # pass # Next step will add assertions
+
+        # 5. Assert the expected outcome
+        self.assertEqual(response.status_code, 201, f"Response data: {response.data.decode()}")
+        data = json.loads(response.data)
+
+        self.assertEqual(data['message'], 'Comment created successfully')
+        self.assertIn('comment', data)
+        comment_data = data['comment']
+
+        self.assertEqual(comment_data['content'], comment_content)
+        self.assertEqual(comment_data['user_id'], user2_id)
+        self.assertEqual(comment_data['author_username'], user2_username)
+        self.assertEqual(comment_data['post_id'], post_id)

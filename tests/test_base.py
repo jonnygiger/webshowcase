@@ -42,7 +42,7 @@ from werkzeug.security import generate_password_hash
 class AppTestCase(unittest.TestCase):
     app = None  # Class attribute for the Flask app
     db = None   # Class attribute for SQLAlchemy instance
-    socketio = None # Class attribute for SocketIO instance
+    socketio_class_level = None # Stores the SocketIO object at class level
 
     @classmethod
     def setUpClass(cls):
@@ -70,11 +70,12 @@ class AppTestCase(unittest.TestCase):
         # db.create_all() should respect this new URI when called within app_context.
         cls.db = app_db # Assign to class attribute for use in methods
 
-        # Initialize SocketIO with the test app if needed by tests
-        # For now, let's assume a new SocketIO instance is fine for tests
-        # if it doesn't rely on specific handlers from the main app.py socketio instance.
-        # If specific handlers are needed, this approach might need refinement.
-        cls.socketio = SocketIO(cls.app, message_queue=cls.app.config["SOCKETIO_MESSAGE_QUEUE"])
+        # Initialize SocketIO with the test app
+        # Store the SocketIO object at class level
+        cls.socketio_class_level = SocketIO(cls.app,
+                                            message_queue=cls.app.config["SOCKETIO_MESSAGE_QUEUE"],
+                                            manage_session=False) # Good for tests
+        assert cls.socketio_class_level is not None, "socketio_class_level is None in setUpClass!"
 
         # Initialize JWTManager
         JWTManager(cls.app)
@@ -144,6 +145,11 @@ class AppTestCase(unittest.TestCase):
     def setUp(self):
         """Set up for each test."""
         self.client = self.app.test_client() # Use the class's app instance
+
+        # Create the SocketIO test client for each test instance
+        assert self.socketio_class_level is not None, "socketio_class_level is None in setUp instance method!"
+        self.socketio_client = self.socketio_class_level.test_client(self.app)
+
         with self.app.app_context(): # Use the class's app instance for context
             self._clean_tables_for_setup()
             self._setup_base_users()  # This would require live User model and db session

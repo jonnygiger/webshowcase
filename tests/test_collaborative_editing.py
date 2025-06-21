@@ -22,7 +22,7 @@ class TestCollaborativeEditing(AppTestCase):
 
         # Initialize SocketIO test client using the app and socketio instance from AppTestCase
         # AppTestCase.app and AppTestCase.socketio are class attributes
-        self.socketio_client = AppTestCase.socketio.test_client(AppTestCase.app)
+        # self.socketio_client is now created in AppTestCase.setUp()
 
     def tearDown(self):
         if self.socketio_client and self.socketio_client.connected:
@@ -169,6 +169,19 @@ class TestCollaborativeEditing(AppTestCase):
         self.assertEqual(response.status_code, 401)
         response_data = json.loads(response.data.decode())
         self.assertIn("Missing JWT", response_data.get("msg", "")) # Or specific message from flask_jwt_extended
+
+    def test_api_acquire_lock_on_non_existent_post(self):
+        token = self._get_jwt_token(self.collaborator.username, "password")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Assuming 99999 is an ID that will not exist
+        non_existent_post_id = 99999
+
+        response = self.client.post(f'/api/posts/{non_existent_post_id}/lock', headers=headers)
+        response_data = json.loads(response.data.decode())
+
+        self.assertEqual(response.status_code, 404, f"Response data: {response_data}")
+        self.assertIn('Post not found', response_data.get('message', ''), "Response message did not indicate post not found.")
 
     # --- SocketIO Event Tests ---
     # These tests are more complex and depend heavily on live app, socketio, and db.

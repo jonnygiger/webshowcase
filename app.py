@@ -24,7 +24,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_  # Added for inbox query
 from flask_migrate import Migrate
 from flask_restful import Api
-from flask_jwt_extended import JWTManager, create_access_token
+from flask_jwt_extended import JWTManager, create_access_token, decode_token # Added decode_token
 import uuid  # For generating unique filenames
 import random
 import queue
@@ -2269,19 +2269,48 @@ def handle_send_group_message_event(data):
 
 @socketio.on("edit_post_content")
 def handle_edit_post_content(data):
-    user_id = session.get("user_id")
+    user_id = None
+    token = data.get('token')
+
+    if token:
+        try:
+            # Assuming token is passed in data when session might not be available (e.g., pure WebSocket client or test client)
+            decoded_token = decode_token(token) # Decodes and verifies signature, expiry, etc.
+            identity = decoded_token['sub'] # 'sub' is standard claim for identity in JWT
+            # Ensure user_id is int if your DB expects it and JWT stores it as string
+            if isinstance(identity, str) and identity.isdigit():
+                user_id = int(identity)
+            elif isinstance(identity, int):
+                user_id = identity
+            else:
+                app.logger.warning(f"Token for edit_post_content yielded non-integer, non-numeric-string sub: {identity}")
+                user_id = None # Treat as invalid user_id
+        except Exception as e: # Catches expired, invalid signature, etc.
+            app.logger.error(f"Token validation failed for edit_post_content: {e}")
+            app.logger.debug(f"Token validation failed: {e}")
+            emit('edit_error', {'message': f'Token error: {str(e)}'}, room=request.sid)
+            return
+    app.logger.debug(f"User ID from token: {user_id}")
+
+    if not user_id: # If token auth failed or no token was provided
+        user_id = session.get("user_id") # Fallback to session
+        app.logger.debug(f"User ID from session: {user_id}")
+
     if not user_id:
+        app.logger.debug("Authentication failed (no token or session user_id).")
         emit(
             "edit_error",
-            {"message": "Authentication required. Please log in."},
+            {"message": "Authentication required. Please log in or provide a valid token."},
             room=request.sid,
         )
         return
+    app.logger.debug(f"Authenticated user_id for edit: {user_id}, type: {type(user_id)}")
 
     post_id = data.get("post_id")
     new_content = data.get("new_content")  # Frontend should send this
 
     if not post_id or new_content is None:  # new_content can be an empty string
+        app.logger.debug(f"Invalid data: post_id={post_id}, new_content is None: {new_content is None}")
         emit(
             "edit_error",
             {"message": "Invalid data: Post ID and new content are required."},
@@ -2291,14 +2320,15 @@ def handle_edit_post_content(data):
 
     post = Post.query.get(post_id)
     if not post:
+        app.logger.debug(f"Post not found for post_id={post_id}")
         emit("edit_error", {"message": "Post not found."}, room=request.sid)
         return
+    app.logger.debug(f"Post found: {post.id}")
 
     # Verify lock status
-    # The Post model has lock_info = db.relationship('PostLock', uselist=False, backref='post_locked')
     lock = post.lock_info
-
     if not lock:
+        app.logger.debug(f"No lock found for post_id={post_id}. Post lock_info: {post.lock_info}")
         emit(
             "edit_error",
             {"message": "Post is not locked for editing. Please acquire a lock first."},
@@ -2306,9 +2336,13 @@ def handle_edit_post_content(data):
         )
         return
 
+    app.logger.debug(f"Lock details: lock.user_id={lock.user_id} (type: {type(lock.user_id)}), lock.expires_at={lock.expires_at}")
+
     if lock.user_id != user_id:
+        app.logger.debug(f"Lock user_id ({lock.user_id}) does not match authenticated user_id ({user_id}).")
         # Check if lock is expired. If so, another user might be able to take it.
         if lock.expires_at <= datetime.utcnow():
+            app.logger.debug("Lock is expired.")
             emit(
                 "edit_error",
                 {
@@ -2317,6 +2351,7 @@ def handle_edit_post_content(data):
                 room=request.sid,
             )
         else:
+            app.logger.debug("Lock is held by another user and is not expired.")
             emit(
                 "edit_error",
                 {"message": "Post is locked by another user."},
@@ -2325,12 +2360,12 @@ def handle_edit_post_content(data):
         return
 
     if lock.expires_at <= datetime.utcnow():
+        app.logger.debug("User's own lock has expired.")
         # Though the current user holds the lock, it has expired.
-        # Depending on policy, we could auto-renew, or force them to re-acquire.
-        # For now, let's treat it as an error and they should re-acquire.
-        db.session.delete(lock)  # Delete the expired lock
+        db.session.delete(lock)
         try:
             db.session.commit()
+            app.logger.debug("Expired lock deleted from DB.")
             socketio.emit(
                 "post_lock_released",
                 {
@@ -2352,12 +2387,15 @@ def handle_edit_post_content(data):
         )
         return
 
+    app.logger.debug("All checks passed. Proceeding with update.")
     # All checks passed, proceed with update
     post.content = new_content
     post.last_edited = datetime.utcnow()  # Update last_edited timestamp
 
     try:
+        app.logger.debug(f"Attempting to commit changes for post {post.id}")
         db.session.commit()
+        app.logger.debug(f"Commit successful for post {post.id}")
         # Broadcast to all clients in the post's room
         update_payload = {
             "post_id": post.id,

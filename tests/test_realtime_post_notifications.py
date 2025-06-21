@@ -59,7 +59,7 @@ class TestRealtimePostNotifications(AppTestCase):
 
     @patch('app.new_post_sse_queues', new_callable=list) # Patch the list directly
     @patch('app.app.logger') # Mock app.logger
-    @patch('flask.url_for') # Mock flask.url_for used by broadcast_new_post
+    @patch('app.url_for') # Mock app.url_for (where it's used)
     def test_broadcast_new_post_with_url(self, mock_url_for, mock_logger, mock_new_post_sse_queues_list):
         # Setup: Add a mock queue to our patched list
         mock_queue = MagicMock()
@@ -159,7 +159,7 @@ class TestRealtimePostNotifications(AppTestCase):
 
     @patch('app.new_post_sse_queues', new_callable=list) # Patch the list
     @patch('app.app.logger') # Mock app.logger
-    @patch('flask.url_for') # Mock flask.url_for
+    @patch('app.url_for') # Mock app.url_for (where it's used)
     def test_broadcast_new_post_url_for_exception(self, mock_url_for, mock_logger, mock_new_post_sse_queues_list):
         # Setup: Add a mock queue to our patched list
         mock_queue = MagicMock()
@@ -201,7 +201,7 @@ class TestRealtimePostNotifications(AppTestCase):
         self.assertNotIn('url', broadcasted_data) # url should not be present due to exception
 
     @patch('app.app.logger') # To mock app.logger
-    @patch('flask.url_for')   # To mock flask.url_for
+    @patch('app.url_for')   # To mock app.url_for (where it's used)
     def test_broadcast_new_post_with_no_queues(self, mock_url_for, mock_logger):
         import app as app_module # Import the module where new_post_sse_queues is defined
 
@@ -213,11 +213,81 @@ class TestRealtimePostNotifications(AppTestCase):
             self.assertEqual(len(app_module.new_post_sse_queues), 0)
 
             with self.app.app_context(): # Ensure Flask app context for logger (and url_for if it were called)
-                broadcast_new_post({'title': 'Test No Queues'}) # 'id' is not needed as url_for should not be called
+                broadcast_new_post({'title': 'Test No Queues'}) # 'id' is missing
 
-            mock_logger.warning.assert_called_once_with("No SSE queues to send new post notifications to.")
+            # Check for both warnings
+            expected_warning_id_missing = "Post data missing 'id' field, cannot generate URL for SSE notification. Sending notification without URL."
+            expected_warning_no_queues = "No SSE queues to send new post notifications to."
+
+            called_warnings = [c[0][0] for c in mock_logger.warning.call_args_list]
+            self.assertIn(expected_warning_id_missing, called_warnings)
+            self.assertIn(expected_warning_no_queues, called_warnings)
+            self.assertEqual(len(called_warnings), 2) # Ensure exactly these two warnings
+
             mock_url_for.assert_not_called()
         finally:
             # Restore original list
             app_module.new_post_sse_queues.clear()
             app_module.new_post_sse_queues.extend(original_queues)
+
+    @patch('app.app.logger')
+    @patch('app.new_post_sse_queues', new_callable=list)
+    @patch('app.url_for') # Mock app.url_for (where it's used)
+    def test_broadcast_new_post_empty_data_no_queues(self, mock_url_for, mock_new_post_sse_queues_list, mock_logger):
+        """
+        Tests broadcast_new_post with empty data and no SSE queues.
+        Checks for appropriate logging and no flask.url_for call.
+        """
+        # Ensure new_post_sse_queues is empty (handled by new_callable=list)
+        self.assertEqual(len(mock_new_post_sse_queues_list), 0)
+
+        with self.app.app_context():
+            broadcast_new_post({})
+
+        # Assert that flask.url_for was not called
+        mock_url_for.assert_not_called()
+
+        # Assert logger warnings
+        expected_warning_id_missing = "Post data missing 'id' field, cannot generate URL for SSE notification. Sending notification without URL."
+        expected_warning_no_queues = "No SSE queues to send new post notifications to."
+
+        # Check all calls to warning
+        called_warnings = [c[0][0] for c in mock_logger.warning.call_args_list]
+        self.assertIn(expected_warning_id_missing, called_warnings)
+        self.assertIn(expected_warning_no_queues, called_warnings)
+
+    @patch('app.app.logger')
+    @patch('app.new_post_sse_queues', new_callable=list)
+    @patch('app.url_for') # Mock app.url_for (where it's used)
+    def test_broadcast_new_post_empty_data_with_queue(self, mock_url_for, mock_new_post_sse_queues_list, mock_logger):
+        """
+        Tests broadcast_new_post with empty data but with an SSE queue.
+        Checks for appropriate logging, no flask.url_for call, and queue interaction.
+        """
+        # Add a mock queue
+        mock_queue = MagicMock()
+        mock_new_post_sse_queues_list.append(mock_queue)
+
+        with self.app.app_context():
+            broadcast_new_post({})
+
+        # Assert that flask.url_for was not called
+        mock_url_for.assert_not_called()
+
+        # Assert logger warnings
+        expected_warning_id_missing = "Post data missing 'id' field, cannot generate URL for SSE notification. Sending notification without URL."
+        warning_no_queues = "No SSE queues to send new post notifications to."
+
+        called_warnings = [c[0][0] for c in mock_logger.warning.call_args_list]
+        self.assertIn(expected_warning_id_missing, called_warnings)
+        self.assertNotIn(warning_no_queues, called_warnings)
+
+        # Assert queue interaction
+        mock_queue.put.assert_called_once()
+
+        # Assert the data put to the queue
+        args, _ = mock_queue.put.call_args
+        broadcasted_data = args[0]
+        self.assertEqual(broadcasted_data, {}) # Should be an empty dict
+        self.assertNotIn('id', broadcasted_data)
+        self.assertNotIn('url', broadcasted_data)

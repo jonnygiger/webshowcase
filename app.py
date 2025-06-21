@@ -3582,6 +3582,66 @@ def delete_series(series_id):
     return redirect(url_for("user_profile", username=series.author.username))
 
 
+@app.route("/series/<int:series_id>/reorder_posts", methods=["POST"])
+@login_required
+def reorder_series_posts(series_id):
+    series = Series.query.get_or_404(series_id)
+    current_user_id = session.get("user_id")
+
+    if series.user_id != current_user_id:
+        return jsonify({"status": "error", "message": "Forbidden"}), 403
+
+    data = request.get_json()
+    if not data or "post_ids" not in data or not isinstance(data["post_ids"], list):
+        return jsonify({"status": "error", "message": "Malformed request payload"}), 400
+
+    new_post_ids_order = data["post_ids"]
+
+    # Validate that all posts exist and belong to the series author
+    # and that all posts in the series are included in the new order.
+    current_series_posts_assoc = SeriesPost.query.filter_by(series_id=series.id).all()
+    current_post_ids_in_series = {sp.post_id for sp in current_series_posts_assoc}
+
+    if set(new_post_ids_order) != current_post_ids_in_series:
+        return jsonify({"status": "error", "message": "The set of post IDs does not match the posts currently in the series."}), 400
+
+    # Check if all posts belong to the series author (redundant if they are already in SeriesPost and SeriesPost implies authorship, but good for safety)
+    for post_id in new_post_ids_order:
+        post = Post.query.get(post_id)
+        if not post:
+            # This case should ideally be caught by the set comparison above if SeriesPost entries are consistent
+            return jsonify({"status": "error", "message": f"Post with ID {post_id} not found."}), 404
+        if post.user_id != current_user_id:
+            # This is a critical check if somehow a post from another user was associated with the series
+            return jsonify({"status": "error", "message": f"Post with ID {post_id} does not belong to you."}), 403
+
+    try:
+        # Start a transaction (Flask-SQLAlchemy handles this implicitly with db.session.commit/rollback)
+        # However, explicit transaction management might be needed for complex scenarios,
+        # but for this loop, standard commit/rollback is fine.
+
+        series_posts_map = {sp.post_id: sp for sp in current_series_posts_assoc}
+
+        for index, post_id in enumerate(new_post_ids_order):
+            series_post_entry = series_posts_map.get(post_id)
+            if series_post_entry: # Should always be true due to earlier checks
+                series_post_entry.order = index
+            else:
+                # This should not be reached if the set comparison was correct.
+                # If it is, it indicates an inconsistency or a bug in the logic.
+                db.session.rollback()
+                return jsonify({"status": "error", "message": f"Error finding SeriesPost entry for post ID {post_id}."}), 500
+
+        series.updated_at = datetime.utcnow() # Update series timestamp
+        db.session.add(series)
+        db.session.commit()
+        return jsonify({"status": "success", "message": "Posts reordered successfully."})
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error reordering posts for series {series_id}: {e}")
+        return jsonify({"status": "error", "message": "An internal error occurred."}), 500
+
+
 @app.route("/live_feed")
 @login_required
 def live_feed():

@@ -5,7 +5,7 @@ from unittest.mock import (
     ANY,
     MagicMock,
 )  # Added MagicMock here as it's used in helper
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from werkzeug.security import (
     generate_password_hash,
 )  # For new user creation in one test
@@ -39,7 +39,7 @@ def _create_db_user_activity(
         target_user_id=target_user_id,
         content_preview=content_preview,
         link=link,
-        timestamp=timestamp or datetime.utcnow()
+        timestamp=timestamp or datetime.now(timezone.utc)
     )
     db.session.add(activity)
     db.session.commit()
@@ -189,7 +189,7 @@ class TestLiveActivityFeed(AppTestCase):
                 related_id=post_by_user2_id_val,
                 content_preview=post_by_user2_content_preview,
                 link=f"/blog/post/{post_by_user2_id_val}",
-                timestamp=datetime.utcnow() - timedelta(minutes=10)
+                timestamp=datetime.now(timezone.utc) - timedelta(minutes=10)
             )
 
             # Activity 2: user2 comments on a post (let's say user3's post for variety)
@@ -208,7 +208,7 @@ class TestLiveActivityFeed(AppTestCase):
                 related_id=post_by_user3_id_val, # related_id is the post commented on
                 content_preview=comment_by_user2_content[:100],
                 link=f"/blog/post/{post_by_user3_id_val}",
-                timestamp=datetime.utcnow() - timedelta(minutes=5)
+                timestamp=datetime.now(timezone.utc) - timedelta(minutes=5)
             )
 
             # Activity 3: user2 follows user3 (new_follow)
@@ -220,7 +220,7 @@ class TestLiveActivityFeed(AppTestCase):
                 activity_type="new_follow",
                 target_user_id=self.user3.id, # user2 followed user3
                 link=f"/user/{self.user3.username}", # Link to target user's profile
-                timestamp=datetime.utcnow() - timedelta(minutes=2)
+                timestamp=datetime.now(timezone.utc) - timedelta(minutes=2)
             )
 
         self.login(self.user1.username, "password")

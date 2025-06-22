@@ -35,7 +35,7 @@ from models import (
     PollVote,
     PostLock,
 )  # COMMENTED OUT - Added EventRSVP, PollVote, PostLock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash
 
 
@@ -240,7 +240,7 @@ class AppTestCase(unittest.TestCase):
                 user_id=user_id,
                 title=title,
                 content=content,
-                timestamp=timestamp or datetime.utcnow(),
+                timestamp=timestamp or datetime.now(timezone.utc),
             )
             self.db.session.add(post) # Use class's db
             self.db.session.commit() # Use class's db
@@ -287,7 +287,7 @@ class AppTestCase(unittest.TestCase):
                 sender_id=sender_id,
                 receiver_id=receiver_id,
                 content=content,
-                timestamp=timestamp or datetime.utcnow(),
+                timestamp=timestamp or datetime.now(timezone.utc),
                 is_read=is_read,
             )
             self.db.session.add(msg) # Use class's db
@@ -342,7 +342,7 @@ class AppTestCase(unittest.TestCase):
                 description=description,
                 date=event_datetime_obj, # Store the datetime object
                 location=location,
-                created_at=created_at or datetime.utcnow(),
+                created_at=created_at or datetime.now(timezone.utc),
             )
             self.db.session.add(event) # Use class's db
             self.db.session.commit() # Use class's db
@@ -359,7 +359,7 @@ class AppTestCase(unittest.TestCase):
             poll = Poll(
                 user_id=user_id,
                 question=question,
-                created_at=created_at or datetime.utcnow(),
+                created_at=created_at or datetime.now(timezone.utc),
             )
             self.db.session.add(poll) # Use class's db
             self.db.session.commit()  # Commit to get poll.id, use class's db
@@ -377,7 +377,7 @@ class AppTestCase(unittest.TestCase):
 
         with self.app.app_context(): # Ensure app context for DB operations
             like = Like(
-                user_id=user_id, post_id=post_id, timestamp=timestamp or datetime.utcnow()
+                user_id=user_id, post_id=post_id, timestamp=timestamp or datetime.now(timezone.utc)
             )
             self.db.session.add(like) # Use class's db
             self.db.session.commit() # Use class's db
@@ -393,7 +393,7 @@ class AppTestCase(unittest.TestCase):
                 user_id=user_id,
                 post_id=post_id,
                 content=content,
-                timestamp=timestamp or datetime.utcnow(),
+                timestamp=timestamp or datetime.now(timezone.utc),
             )
             self.db.session.add(comment) # Use class's db
             self.db.session.commit() # Use class's db
@@ -409,7 +409,7 @@ class AppTestCase(unittest.TestCase):
                 user_id=user_id,
                 event_id=event_id,
                 status=status,
-                timestamp=timestamp or datetime.utcnow(),
+                timestamp=timestamp or datetime.now(timezone.utc),
             )
             self.db.session.add(rsvp) # Use class's db
             self.db.session.commit() # Use class's db
@@ -423,7 +423,7 @@ class AppTestCase(unittest.TestCase):
                 user_id=user_id,
                 poll_id=poll_id,
                 poll_option_id=poll_option_id,
-                created_at=created_at or datetime.utcnow(),
+                created_at=created_at or datetime.now(timezone.utc),
             )
             self.db.session.add(vote) # Use class's db
             self.db.session.commit() # Use class's db
@@ -443,8 +443,8 @@ class AppTestCase(unittest.TestCase):
                 user_id=user_id,
                 title=title,
                 description=description,
-                created_at=created_at or datetime.utcnow(),
-                updated_at=updated_at or datetime.utcnow(),
+                created_at=created_at or datetime.now(timezone.utc),
+                updated_at=updated_at or datetime.now(timezone.utc),
             )
             self.db.session.add(series) # Use class's db
             self.db.session.commit() # Use class's db
@@ -470,7 +470,7 @@ class AppTestCase(unittest.TestCase):
         from models import PostLock
 
         with self.app.app_context(): # Ensure app context for DB operations
-            expires_at = datetime.utcnow() + timedelta(minutes=minutes_offset)
+            expires_at = datetime.now(timezone.utc) + timedelta(minutes=minutes_offset)
             lock = PostLock(post_id=post_id, user_id=user_id, expires_at=expires_at)
             self.db.session.add(lock) # Use class's db
             self.db.session.commit() # Use class's db

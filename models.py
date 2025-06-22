@@ -1,5 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
@@ -31,7 +31,7 @@ class Group(db.Model):
     name = db.Column(db.String(100), nullable=False, unique=True)
     description = db.Column(db.Text, nullable=True)
     creator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationship to User (creator)
     creator = db.relationship("User", back_populates="created_groups")
@@ -198,7 +198,7 @@ class User(db.Model):
         cascade="all, delete-orphan"
     )
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -277,7 +277,7 @@ class UserActivity(db.Model):
         db.Text, nullable=True
     )  # e.g., a snippet of the post or comment
     link = db.Column(db.String(255), nullable=True)  # e.g., URL to the post or event
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     target_user = db.relationship(
         "User", foreign_keys=[target_user_id]
@@ -291,7 +291,7 @@ class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     last_edited = db.Column(db.DateTime, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     hashtags = db.Column(db.Text, nullable=True)  # Stores comma-separated hashtags
@@ -369,15 +369,18 @@ class Post(db.Model):
 
     def is_locked(self):
         """Checks if the post is currently actively locked."""
-        if self.lock_info and self.lock_info.expires_at > datetime.utcnow():
-            return True
+        if self.lock_info and self.lock_info.expires_at:
+            # Assume expires_at from DB is naive UTC, make it aware
+            expires_at_aware = self.lock_info.expires_at.replace(tzinfo=timezone.utc)
+            if expires_at_aware > datetime.now(timezone.utc):
+                return True
         return False
 
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
 
@@ -389,7 +392,7 @@ class Like(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (db.UniqueConstraint("user_id", "post_id", name="_user_post_uc"),)
 
@@ -401,7 +404,7 @@ class Review(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     rating = db.Column(db.Integer, nullable=False)  # Assuming 1-5
     review_text = db.Column(db.Text, nullable=True)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
 
@@ -414,7 +417,7 @@ class Message(db.Model):
     sender_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     receiver_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     content = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     is_read = db.Column(db.Boolean, default=False, nullable=False)
 
     def __repr__(self):
@@ -424,7 +427,7 @@ class Message(db.Model):
 class Poll(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     question = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
     )  # Author of the poll
@@ -475,7 +478,7 @@ class PollVote(db.Model):
     # A direct unique constraint on (user_id, poll_id) is cleaner if poll_id is directly on PollVote.
     # Let's add poll_id to PollVote for easier constraint definition.
     poll_id = db.Column(db.Integer, db.ForeignKey("poll.id"), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (db.UniqueConstraint("user_id", "poll_id", name="_user_poll_uc"),)
 
@@ -490,7 +493,7 @@ class Event(db.Model):
     date = db.Column(db.DateTime, nullable=False)  # Changed to DateTime
     # time field is removed as it's part of the date (DateTime object)
     location = db.Column(db.String(200), nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
     )  # Organizer
@@ -523,7 +526,7 @@ class EventRSVP(db.Model):
     )  # e.g., "Attending", "Maybe", "Not Attending"
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         db.UniqueConstraint("user_id", "event_id", name="_user_event_uc"),
@@ -536,7 +539,7 @@ class EventRSVP(db.Model):
 class Reaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     emoji = db.Column(db.String(10), nullable=False)  # Emoji character
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
 
@@ -549,7 +552,7 @@ class Reaction(db.Model):
 class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     message = db.Column(db.String(255), nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     type = db.Column(db.String(50), nullable=False)  # e.g., 'new_post', 'new_event'
     related_id = db.Column(db.Integer, nullable=True)  # e.g., post_id, event_id
     is_read = db.Column(db.Boolean, default=False, nullable=False)
@@ -567,7 +570,7 @@ class TodoItem(db.Model):
     task = db.Column(db.String(255), nullable=False)
     is_done = db.Column(db.Boolean, default=False, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     due_date = db.Column(db.DateTime, nullable=True)
     priority = db.Column(db.String(50), nullable=True)
 
@@ -598,9 +601,9 @@ class Series(db.Model):
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
     )
 
     # Relationship to User (author)
@@ -643,7 +646,7 @@ class Bookmark(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         db.UniqueConstraint("user_id", "post_id", name="_user_post_bookmark_uc"),
@@ -657,7 +660,7 @@ class SharedPost(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     original_post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
     shared_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    shared_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    shared_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     sharing_user_comment = db.Column(db.Text, nullable=True)
 
     # Relationship to the original Post
@@ -681,7 +684,7 @@ class Friendship(db.Model):
     status = db.Column(
         db.String(20), nullable=False, default="pending"
     )  # e.g., pending, accepted, rejected
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     # To prevent a user from being their own friend or having duplicate requests
     __table_args__ = (
@@ -704,7 +707,7 @@ class FlaggedContent(db.Model):
     status = db.Column(
         db.String(50), nullable=False, default="pending"
     )  # e.g., 'pending', 'approved', 'rejected'
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     moderator_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=True
     )  # User who resolved it
@@ -736,7 +739,7 @@ class FriendPostNotification(db.Model):
     poster_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
     )  # User who created the post
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     is_read = db.Column(db.Boolean, default=False, nullable=False)
 
     # Relationships
@@ -765,7 +768,7 @@ class TrendingHashtag(db.Model):
     hashtag = db.Column(db.String, nullable=False, unique=True)
     score = db.Column(db.Float, nullable=False, default=0.0)
     rank = db.Column(db.Integer, nullable=True)
-    calculated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    calculated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
         return (
@@ -790,7 +793,7 @@ class SharedFile(db.Model):
     receiver_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     original_filename = db.Column(db.String(255), nullable=False)
     saved_filename = db.Column(db.String(255), nullable=False, unique=True)
-    upload_timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    upload_timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     is_read = db.Column(db.Boolean, default=False, nullable=False)
     message = db.Column(db.Text, nullable=True)
 
@@ -810,7 +813,7 @@ class UserStatus(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     status_text = db.Column(db.String(280), nullable=True)
     emoji = db.Column(db.String(10), nullable=True)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
         return f"<UserStatus {self.id} by User {self.user_id}>"
@@ -853,7 +856,7 @@ class UserAchievement(db.Model):
     achievement_id = db.Column(
         db.Integer, db.ForeignKey("achievement.id"), nullable=False
     )
-    awarded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    awarded_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     user = db.relationship("User", back_populates="achievements")
@@ -890,7 +893,7 @@ class PostLock(db.Model):
     user_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
     )  # User who holds the lock
-    locked_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    locked_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     expires_at = db.Column(
         db.DateTime, nullable=False
     )  # When the lock automatically expires
@@ -909,7 +912,7 @@ class UserBlock(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     blocker_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)  # The user performing the block
     blocked_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)  # The user being blocked
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     # Relationships to User
     blocker = db.relationship("User", foreign_keys=[blocker_id], back_populates="blocked_users")

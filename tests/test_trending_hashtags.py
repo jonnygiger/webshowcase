@@ -1,7 +1,7 @@
 import unittest
 import json
 from unittest.mock import patch, ANY  # Kept ANY for potential future use
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # from app import app, db, socketio # COMMENTED OUT
 # from models import User, Post, TrendingHashtag # COMMENTED OUT

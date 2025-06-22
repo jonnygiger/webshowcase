@@ -4,7 +4,7 @@ from unittest.mock import (
     patch,
     ANY,
 )  # Kept patch and ANY for potential future use or AppTestCase interactions
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # from app import app, db, socketio # COMMENTED OUT
 from models import Friendship # Ensure Friendship is imported
@@ -41,25 +41,25 @@ class TestPersonalizedFeedAPI(AppTestCase):
         post1_by_user3 = self._create_db_post(
             user_id=self.user3_id,
             title="Post by User3, Liked by User2",
-            timestamp=datetime.utcnow() - timedelta(hours=1),
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=1),
         )
         self._create_db_like(
             user_id=self.user2_id,
             post_id=post1_by_user3.id,
-            timestamp=datetime.utcnow() - timedelta(minutes=30),
+            timestamp=datetime.now(timezone.utc) - timedelta(minutes=30),
         )
 
         # Post by user3 (not friend), commented by user2 (friend of user1)
         post2_by_user3 = self._create_db_post(
             user_id=self.user3_id,
             title="Another Post by User3, Commented by User2",
-            timestamp=datetime.utcnow() - timedelta(hours=3),
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=3),
         )
         self._create_db_comment(
             user_id=self.user2_id,
             post_id=post2_by_user3.id,
             content="Friend comment",
-            timestamp=datetime.utcnow() - timedelta(hours=2),
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=2),
         )
 
         # Events:
@@ -67,9 +67,9 @@ class TestPersonalizedFeedAPI(AppTestCase):
         event1_by_user3 = self._create_db_event(
             user_id=self.user3_id,
             title="Event by User3, User2 Attending",
-            date_str=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d"),
+            date_str=(datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d"),
         )
-        # event1_by_user3.created_at = datetime.utcnow() - timedelta(days=1) # Set created_at for sorting - _create_db_event in AppTestCase should handle this
+        # event1_by_user3.created_at = datetime.now(timezone.utc) - timedelta(days=1) # Set created_at for sorting - _create_db_event in AppTestCase should handle this
         # db.session.commit() # commit is in _create_db_event
         self._create_db_event_rsvp(
             user_id=self.user2_id, event_id=event1_by_user3.id, status="Attending"
@@ -80,7 +80,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         poll1_by_user2 = self._create_db_poll(
             user_id=self.user2_id, question="Poll by User2 (Friend)?"
         )
-        # poll1_by_user2.created_at = datetime.utcnow() - timedelta(days=2) # Set created_at - _create_db_poll in AppTestCase should handle this
+        # poll1_by_user2.created_at = datetime.now(timezone.utc) - timedelta(days=2) # Set created_at - _create_db_poll in AppTestCase should handle this
         # db.session.commit() # commit is in _create_db_poll
         # Add a vote from user3 to make it seem active
         with self.app.app_context(): # Add app context for accessing .options
@@ -199,12 +199,12 @@ class TestPersonalizedFeedAPI(AppTestCase):
             user_id=self.user1_id,
             title="User1 Own Post",
             content="Content by User1",
-            timestamp=datetime.utcnow() - timedelta(hours=5)
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=5)
         )
         self._create_db_like(
             user_id=self.user2_id,
             post_id=post_by_user1.id,
-            timestamp=datetime.utcnow() - timedelta(hours=4) # Older interaction
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=4) # Older interaction
         )
 
         # 3. User1 creates an event, User2 RSVPs
@@ -212,12 +212,12 @@ class TestPersonalizedFeedAPI(AppTestCase):
             user_id=self.user1_id,
             title="User1 Own Event",
             description="Event by User1",
-            date_str=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
+            date_str=(datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
         )
         # Explicitly set older creation for the event itself
         with self.app.app_context(): # Add app context here
             event_by_user1_merged = self.db.session.merge(event_by_user1)
-            event_by_user1_merged.created_at = datetime.utcnow() - timedelta(hours=3)
+            event_by_user1_merged.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
             self.db.session.commit()
             event_by_user1 = event_by_user1_merged # Use the merged object
 
@@ -228,7 +228,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
                 user_id=self.user2_id,
                 event_id=event_for_rsvp.id, # Use ID from merged object
                 status="Attending",
-                timestamp=datetime.utcnow() - timedelta(hours=2) # Older interaction
+                timestamp=datetime.now(timezone.utc) - timedelta(hours=2) # Older interaction
             )
             event_by_user1 = event_for_rsvp # Update event_by_user1 to the merged instance
 
@@ -240,7 +240,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         # Explicitly set older creation for the poll itself
         with self.app.app_context(): # Add app context here
             poll_by_user1_merged = self.db.session.merge(poll_by_user1)
-            poll_by_user1_merged.created_at = datetime.utcnow() - timedelta(hours=1)
+            poll_by_user1_merged.created_at = datetime.now(timezone.utc) - timedelta(hours=1)
             self.db.session.commit()
             poll_by_user1 = poll_by_user1_merged # Use the merged object
 
@@ -254,7 +254,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
                 user_id=self.user2_id,
                 poll_id=poll_for_vote_options.id, # Use ID from merged object
                 poll_option_id=option_for_poll1.id,
-                created_at=datetime.utcnow() - timedelta(minutes=45) # Changed 'timestamp' to 'created_at'
+                created_at=datetime.now(timezone.utc) - timedelta(minutes=45) # Changed 'timestamp' to 'created_at'
             )
             poll_by_user1 = poll_for_vote_options # Update reference
 
@@ -265,9 +265,9 @@ class TestPersonalizedFeedAPI(AppTestCase):
             user_id=self.user3_id,
             title="User3 Post for Feed",
             content="Content by User3",
-            timestamp=datetime.utcnow() - timedelta(minutes=30) # Content creation time
+            timestamp=datetime.now(timezone.utc) - timedelta(minutes=30) # Content creation time
         )
-        self.like_on_user3_post_timestamp = datetime.utcnow() - timedelta(minutes=15) # Most recent interaction
+        self.like_on_user3_post_timestamp = datetime.now(timezone.utc) - timedelta(minutes=15) # Most recent interaction
         self._create_db_like(
             user_id=self.user2_id,
             post_id=post_by_user3.id,
@@ -398,7 +398,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
             user_id=self.user2_id,
             title="Post by User2",
             content="Content by User2, friend of User1",
-            timestamp=datetime.utcnow() - timedelta(hours=1)
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=1)
         )
 
         # 3. Obtain a JWT token for self.user1

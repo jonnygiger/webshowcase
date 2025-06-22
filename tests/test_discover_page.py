@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, ANY, MagicMock
-from datetime import datetime  # Removed timedelta
+from datetime import datetime, timezone # Removed timedelta
 
 # from app import app, db, socketio # COMMENTED OUT
 from models import User, Post # COMMENTED OUT (add other models if this class uses them)
@@ -36,7 +36,7 @@ class TestDiscoverPageViews(AppTestCase):
         mock_post.author = mock_author
         # Add other attributes that might be accessed if post.to_dict() was called, or by template directly
         mock_post.user_id = self.user2_id  # Assuming user2 might be an author
-        mock_post.timestamp = datetime.utcnow()
+        mock_post.timestamp = datetime.now(timezone.utc)
         mock_post.comments = []  # For len(post.comments) if used
         mock_post.likes = []  # For len(post.likes) if used
         mock_post.reviews = []  # For len(post.reviews) if used # Assuming reviews is not used or part of Post spec
@@ -93,7 +93,7 @@ class TestDiscoverPageViews(AppTestCase):
             mock_post.title = "Post with Image"
             mock_post.content = "This post has an image."
             mock_post.author = mock_author
-            mock_post.timestamp = datetime.utcnow()
+            mock_post.timestamp = datetime.now(timezone.utc)
             mock_post.comments = []
             mock_post.likes = []
             mock_post.hashtags = ""
@@ -149,7 +149,7 @@ class TestDiscoverPageViews(AppTestCase):
             mock_post.title = "Test Post with <Special> & \"Chars\""
             mock_post.content = "This content has 'single' & \"double\" quotes, plus <tags>."
             mock_post.author = mock_author
-            mock_post.timestamp = datetime.utcnow()
+            mock_post.timestamp = datetime.now(timezone.utc)
             mock_post.comments = []
             mock_post.likes = []
             mock_post.hashtags = None
@@ -199,7 +199,7 @@ class TestDiscoverPageViews(AppTestCase):
             mock_post.title = "Post without optional data"
             mock_post.content = "This is the content of the post."
             mock_post.author = mock_author
-            mock_post.timestamp = datetime.utcnow()
+            mock_post.timestamp = datetime.now(timezone.utc)
             # Optional data missing
             mock_post.comments = []
             mock_post.likes = []

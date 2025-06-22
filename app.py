@@ -16,7 +16,7 @@ from flask import (
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import Counter  # Added for reaction counts
 from flask_socketio import SocketIO, emit, join_room
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -151,7 +151,7 @@ def emit_new_activity_event(activity_log):
         "timestamp": (
             activity_log.timestamp.isoformat()
             if activity_log.timestamp
-            else datetime.utcnow().isoformat()
+            else datetime.now(timezone.utc).isoformat()
         ),
         "target_user_id": None,
         "target_username": None,
@@ -260,7 +260,7 @@ app.config["SHARED_FILES_ALLOWED_EXTENSIONS"] = {
 }
 app.config["SHARED_FILES_MAX_SIZE"] = 16 * 1024 * 1024  # 16MB limit
 
-app.last_activity_check_time = datetime.utcnow()  # Changed to utcnow for consistency
+app.last_activity_check_time = datetime.now(timezone.utc)  # Changed to utcnow for consistency
 
 # Ensure the upload folder exists
 # Note: In-memory data structures (users, blog_posts, comments, post_likes, private_messages,
@@ -311,7 +311,7 @@ def generate_activity_summary():
     # However, if called from within a request or app startup (like current test endpoint), context is usually present.
     # For APScheduler BackgroundScheduler, it's better to ensure context.
     with app.app_context():
-        current_check_time = datetime.utcnow()  # Use UTC now
+        current_check_time = datetime.now(timezone.utc)  # Use UTC now
         new_notifications_added = False
         notifications_created_count = 0
 
@@ -438,7 +438,7 @@ def get_featured_post():
 
         random_post = random.choice(all_posts)
         random_post.is_featured = True
-        random_post.featured_at = datetime.utcnow()
+        random_post.featured_at = datetime.now(timezone.utc)
         db.session.add(random_post)
         try:
             db.session.commit()
@@ -1285,7 +1285,7 @@ def edit_post(post_id):
         post.title = request.form["title"]
         post.content = request.form["content"]
         post.hashtags = request.form.get("hashtags", "")  # Get and update hashtags
-        post.last_edited = datetime.utcnow()
+        post.last_edited = datetime.now(timezone.utc)
         db.session.commit()
 
         # SSE Event for post_edited
@@ -1355,7 +1355,7 @@ def admin_feature_post(post_id):
         flash(f'Post "{post.title}" is no longer featured.', "success")
     else:
         post.is_featured = True
-        post.featured_at = datetime.utcnow()
+        post.featured_at = datetime.now(timezone.utc)
         flash(f'Post "{post.title}" has been featured.', "success")
 
     try:
@@ -1756,7 +1756,7 @@ def react_to_post(post_id):
             # User is changing their reaction
             existing_reaction_any_emoji.emoji = emoji
             existing_reaction_any_emoji.timestamp = (
-                datetime.utcnow()
+                datetime.now(timezone.utc)
             )  # Update timestamp
             flash("Reaction updated.", "success")
         else:
@@ -2181,13 +2181,13 @@ def handle_send_group_message_event(data):
         message_payload = {
             "message_content": message_content.strip(),  # Use content directly
             "sender_username": username,  # Username from session
-            "timestamp": datetime.utcnow().strftime(
+            "timestamp": datetime.now(timezone.utc).strftime(
                 "%Y-%m-%d %H:%M:%S"
             ),  # Generate timestamp
             "group_id": group_id,
             "user_id": user_id,  # Include user_id for client-side logic if needed
             "message_id": "temp_id_"
-            + datetime.utcnow().isoformat(),  # Temporary ID, as message is not saved
+            + datetime.now(timezone.utc).isoformat(),  # Temporary ID, as message is not saved
         }
         socketio.emit("receive_group_message", message_payload, room=room_name)
         app.logger.info(
@@ -2306,7 +2306,7 @@ def handle_edit_post_content(data):
     if lock.user_id != user_id:
         app.logger.debug(f"Lock user_id ({lock.user_id}) does not match authenticated user_id ({user_id}).")
         # Check if lock is expired. If so, another user might be able to take it.
-        if lock.expires_at <= datetime.utcnow():
+        if lock.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
             app.logger.debug("Lock is expired.")
             emit(
                 "edit_error",
@@ -2324,7 +2324,7 @@ def handle_edit_post_content(data):
             )
         return
 
-    if lock.expires_at <= datetime.utcnow():
+    if lock.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc): # This line was already fixed, no change needed
         app.logger.debug("User's own lock has expired.")
         # Though the current user holds the lock, it has expired.
         db.session.delete(lock)
@@ -2355,7 +2355,7 @@ def handle_edit_post_content(data):
     app.logger.debug("All checks passed. Proceeding with update.")
     # All checks passed, proceed with update
     post.content = new_content
-    post.last_edited = datetime.utcnow()  # Update last_edited timestamp
+    post.last_edited = datetime.now(timezone.utc)  # Update last_edited timestamp
 
     try:
         app.logger.debug(f"Attempting to commit changes for post {post.id}")
@@ -3487,7 +3487,7 @@ def edit_series(series_id):
 
         series.title = title.strip()
         series.description = description.strip() if description else None
-        series.updated_at = datetime.utcnow()
+        series.updated_at = datetime.now(timezone.utc)
 
         db.session.commit()
         flash("Series details updated successfully!", "success")
@@ -3657,7 +3657,7 @@ def reorder_series_posts(series_id):
                 db.session.rollback()
                 return jsonify({"status": "error", "message": f"Error finding SeriesPost entry for post ID {post_id}."}), 500
 
-        series.updated_at = datetime.utcnow() # Update series timestamp
+        series.updated_at = datetime.now(timezone.utc) # Update series timestamp
         db.session.add(series)
         db.session.commit()
         return jsonify({"status": "success", "message": "Posts reordered successfully."})
@@ -3862,7 +3862,7 @@ def approve_flagged_content(flag_id):
     flag.status = "approved"
     flag.moderator_id = session["user_id"]
     flag.moderator_comment = request.form.get("moderator_comment")
-    flag.resolved_at = datetime.utcnow()
+    flag.resolved_at = datetime.now(timezone.utc)
     db.session.commit()
     flash(f"Flag ID {flag.id} has been approved.", "success")
     return redirect(url_for("moderation_dashboard"))
@@ -3880,7 +3880,7 @@ def reject_flagged_content(flag_id):
     flag.status = "rejected"
     flag.moderator_id = session["user_id"]
     flag.moderator_comment = request.form.get("moderator_comment")
-    flag.resolved_at = datetime.utcnow()
+    flag.resolved_at = datetime.now(timezone.utc)
     db.session.commit()
     flash(f"Flag ID {flag.id} has been rejected.", "success")
     return redirect(url_for("moderation_dashboard"))
@@ -3938,7 +3938,7 @@ def remove_content_and_reject_flag(flag_id):
 
     flag.moderator_id = session["user_id"]
     flag.moderator_comment = request.form.get("moderator_comment")
-    flag.resolved_at = datetime.utcnow()
+    flag.resolved_at = datetime.now(timezone.utc)
     db.session.commit()
     flash(flash_message, "success")
     return redirect(url_for("moderation_dashboard"))

@@ -464,6 +464,96 @@ class TestPollAPI(AppTestCase):
         self.assertTrue(found_option_B, "Strategy B not found in results")
         self.assertTrue(found_option_C, "Strategy C not found in results")
 
+    def test_view_poll_html_renders_vote_counts(self):
+        """
+        Tests that the HTML view for a poll correctly renders vote counts
+        after the fix for accessing vote_count in the template.
+        """
+        # 1. Setup Users and Tokens
+        token_user1 = self._get_jwt_token(self.user1.username, "password")
+        # User2 and User3 will vote via UI/form submission after login
+
+        # 2. User1 creates a poll via API (simpler setup than UI for creation)
+        poll_question = "HTML Render Test Poll"
+        poll_options_texts = ["RenderOpt1", "RenderOpt2"]
+        poll_id = self._create_poll_via_api(
+            token_user1, poll_question, poll_options_texts
+        )
+        self.assertIsNotNone(poll_id)
+
+        # Retrieve option IDs to use for voting
+        headers_user1 = {"Authorization": f"Bearer {token_user1}"}
+        response_get_poll = self.client.get(
+            f"/api/polls/{poll_id}", headers=headers_user1
+        )
+        self.assertEqual(response_get_poll.status_code, 200)
+        poll_data_api = response_get_poll.get_json()["poll"]
+        option_id_1 = next(
+            opt["id"]
+            for opt in poll_data_api["options"]
+            if opt["text"] == "RenderOpt1"
+        )
+        option_id_2 = next(
+            opt["id"]
+            for opt in poll_data_api["options"]
+            if opt["text"] == "RenderOpt2"
+        )
+
+        # 3. Users vote on the poll (simulating form submissions)
+        # User1 votes for RenderOpt1
+        self._login(self.user1.username, "password")
+        self.client.post(
+            f"/poll/{poll_id}/vote", data={"option_id": str(option_id_1)}
+        )
+        self._logout()
+
+        # User2 votes for RenderOpt1
+        self._login(self.user2.username, "password")
+        self.client.post(
+            f"/poll/{poll_id}/vote", data={"option_id": str(option_id_1)}
+        )
+        self._logout()
+
+        # User3 votes for RenderOpt2
+        self.user3 = self._create_user("testuser3", "password") # Ensure user3 exists
+        self._login(self.user3.username, "password")
+        self.client.post(
+            f"/poll/{poll_id}/vote", data={"option_id": str(option_id_2)}
+        )
+        self._logout()
+
+        # Expected counts: RenderOpt1: 2 votes, RenderOpt2: 1 vote
+
+        # 4. Fetch the HTML page for the poll (as an anonymous user or logged-in user)
+        self._login(self.user1.username, "password") # Or view as anonymous
+        response_html = self.client.get(f"/poll/{poll_id}")
+        self.assertEqual(response_html.status_code, 200)
+        html_content = response_html.data.decode()
+
+        # 5. Assertions for rendered HTML content
+        self.assertIn(poll_question, html_content)
+        self.assertIn("RenderOpt1", html_content)
+        self.assertIn("RenderOpt2", html_content)
+
+        # Check for vote counts (e.g., "2 vote(s)", "1 vote(s)")
+        # This is a basic check; more robust might involve parsing HTML structure
+        self.assertIn("RenderOpt1", html_content)
+        # Check that "2 vote(s)" appears after "RenderOpt1" for that option's display
+        # A more robust way would be to use an HTML parser, but for this, string finding should be okay.
+        # We expect something like: <li>RenderOpt1 ... <span ...>2 vote(s)</span></li>
+        # This can be fragile. Let's check for the specific badge text.
+        self.assertRegex(html_content, r"RenderOpt1.*?<span.*?badge.*?>\s*2\s*vote\(s\)\s*</span>", "Vote count for RenderOpt1 not rendered correctly or not found.")
+        self.assertRegex(html_content, r"RenderOpt2.*?<span.*?badge.*?>\s*1\s*vote\(s\)\s*</span>", "Vote count for RenderOpt2 not rendered correctly or not found.")
+
+
+        # Check progress bar percentages (approximate)
+        # Opt1: 2/3 = 66.6%
+        # Opt2: 1/3 = 33.3%
+        # Example: style="width: 66.6...%;"
+        # Using regex to find the style attribute for progress bars
+        self.assertRegex(html_content, r"width:\s*66\.[67]%", "Progress bar for RenderOpt1 (2/3 votes) not rendered correctly.") # Allows for 66.6 or 66.7 due to formatting "%.1f"
+        self.assertRegex(html_content, r"width:\s*33\.3%", "Progress bar for RenderOpt2 (1/3 votes) not rendered correctly.")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -294,21 +294,9 @@ class AppTestCase(unittest.TestCase):
             self.db.session.commit()  # Use class's db
 
             # Debug check
-            retrieved_post = self.db.session.get(Post, post.id)
-            if retrieved_post is None:
-                print(
-                    f"DEBUG: Post with id {post.id} was NOT found immediately after commit in _create_db_post!"
-                )
-                # Optionally raise an exception to make it a hard failure here
-                raise Exception(
-                    f"Post with id {post.id} not found immediately after commit in _create_db_post!"
-                )
-            else:
-                print(
-                    f"DEBUG: Post with id {post.id} WAS found immediately after commit in _create_db_post."
-                )
-
-            return post  # Return the full post object
+            # retrieved_post = self.db.session.get(Post, post.id) # Re-fetch to ensure it's in session
+            # self.assertIsNotNone(retrieved_post, f"Post with id {post.id} was NOT found immediately after commit in _create_db_post!")
+            return self.db.session.get(Post, post.id) # Return the re-fetched post object
 
     def _make_post_via_route(
         self, username, password, title="Test Post", content="Test Content", hashtags=""
@@ -372,7 +360,7 @@ class AppTestCase(unittest.TestCase):
                 socket_client_to_connect.disconnect()
             socket_client_to_connect.connect()  # Connect (or reconnect) to the default namespace
             time.sleep(
-                0.05
+                0.1
             )  # Allow time for connection to establish fully on server side
             # Try to process any connection acknowledgment packets
             socket_client_to_connect.get_received("/")

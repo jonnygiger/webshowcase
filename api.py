@@ -312,8 +312,9 @@ class PostLockResource(Resource):
                 "post_id": new_lock.post_id,
                 "locked_by_user_id": new_lock.user_id,
                 "locked_by_username": user.username,
-                "locked_at": new_lock.locked_at.isoformat(),
-                "expires_at": new_lock.expires_at.isoformat(),
+                # Ensure timestamps are aware UTC before isoformat if they are naive from DB
+                "locked_at": new_lock.locked_at.replace(tzinfo=timezone.utc).isoformat() if new_lock.locked_at.tzinfo is None else new_lock.locked_at.isoformat(),
+                "expires_at": new_lock.expires_at.replace(tzinfo=timezone.utc).isoformat() if new_lock.expires_at.tzinfo is None else new_lock.expires_at.isoformat(),
             },
         }, 200
 

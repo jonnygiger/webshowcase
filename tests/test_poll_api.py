@@ -505,27 +505,28 @@ class TestPollAPI(AppTestCase):
         self.client.post(
             f"/poll/{poll_id}/vote", data={"option_id": str(option_id_1)}
         )
-        self._logout()
+        self.logout()
 
         # User2 votes for RenderOpt1
-        self._login(self.user2.username, "password")
+        self.login(self.user2.username, "password")
         self.client.post(
             f"/poll/{poll_id}/vote", data={"option_id": str(option_id_1)}
         )
-        self._logout()
+        self.logout()
 
         # User3 votes for RenderOpt2
-        self.user3 = self._create_user("testuser3", "password") # Ensure user3 exists
-        self._login(self.user3.username, "password")
+        # self.user3 = self._create_user("testuser3", "password") # _create_user does not exist in AppTestCase, use _create_db_user
+        # self.user3 = self._create_db_user("testuser3", "password") # user3 is already created in AppTestCase.setUp
+        self.login(self.user3.username, "password")
         self.client.post(
             f"/poll/{poll_id}/vote", data={"option_id": str(option_id_2)}
         )
-        self.logout() # Corrected: self.logout
+        self.logout()
 
         # Expected counts: RenderOpt1: 2 votes, RenderOpt2: 1 vote
 
         # 4. Fetch the HTML page for the poll (as an anonymous user or logged-in user)
-        self.login(self.user1.username, "password") # Corrected: self.login # Or view as anonymous
+        self.login(self.user1.username, "password")
         response_html = self.client.get(f"/poll/{poll_id}")
         self.assertEqual(response_html.status_code, 200)
         html_content = response_html.data.decode()

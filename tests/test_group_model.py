@@ -20,6 +20,10 @@ class TestGroupModel(AppTestCase):
             member = self._create_db_user(username="group_member_add")
             group = self._create_db_group(creator_id=creator.id, name="Group For Adding Members")
 
+            # Ensure both are in the current session context before operating on the relationship
+            group = db.session.merge(group)
+            member = db.session.merge(member)
+
             group.members.append(member)
             db.session.commit()
 
@@ -27,8 +31,8 @@ class TestGroupModel(AppTestCase):
             group = db.session.get(Group, group.id)
             member = db.session.get(User, member.id)
 
-            self.assertIn(member, group.members)
-            self.assertIn(group, member.joined_groups)
+            self.assertIn(member, group.members.all())
+            self.assertIn(group, member.joined_groups.all())
 
     def test_remove_member_from_group(self):
         with self.app.app_context():
@@ -36,13 +40,21 @@ class TestGroupModel(AppTestCase):
             member = self._create_db_user(username="group_member_remove")
             group = self._create_db_group(creator_id=creator.id, name="Group For Removing Members")
 
+            # Ensure both are in the current session context
+            group = db.session.merge(group)
+            member = db.session.merge(member)
+
             group.members.append(member)
             db.session.commit()
 
             # Re-fetch to ensure relationship is loaded
             group = db.session.get(Group, group.id)
-            self.assertIn(member, group.members)
+            member = db.session.get(User, member.id) # Also fetch member to ensure it's in session
+            self.assertIn(member, group.members.all())
 
+            # Ensure objects are in session before removal operation
+            group = db.session.merge(group)
+            member = db.session.merge(member)
             group.members.remove(member)
             db.session.commit()
 
@@ -50,8 +62,8 @@ class TestGroupModel(AppTestCase):
             group = db.session.get(Group, group.id)
             member = db.session.get(User, member.id)
 
-            self.assertNotIn(member, group.members)
-            self.assertNotIn(group, member.joined_groups)
+            self.assertNotIn(member, group.members.all())
+            self.assertNotIn(group, member.joined_groups.all())
 
     def test_group_to_dict(self):
         with self.app.app_context():

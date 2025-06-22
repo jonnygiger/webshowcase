@@ -24,7 +24,7 @@ class TestSocketIOEvents(AppTestCase):
             # Client for post_author to receive notifications
             author_socket_client = self.create_socketio_client()
             # Simulate author joining their own user room
-            author_socket_client.emit('join_room', {'room': f'user_{post_author.id}'})
+            author_socket_client.emit('join_room', {'room': f'user_{post_author.id}'}, namespace='/')
             author_socket_client.get_received() # Clear any initial messages
 
             # Liker performs the action that triggers the notification (e.g., POST to like route)
@@ -54,7 +54,7 @@ class TestSocketIOEvents(AppTestCase):
 
             # Client to listen on the post's room
             listener_client = self.create_socketio_client()
-            listener_client.emit('join_room', {'room': f'post_{post_to_lock.id}'})
+            listener_client.emit('join_room', {'room': f'post_{post_to_lock.id}'}, namespace='/')
             listener_client.get_received()
 
             # User1 locks the post via API

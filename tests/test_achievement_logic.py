@@ -279,3 +279,45 @@ class AchievementLogicTests(AppTestCase):
             self.logout()
 
     # assertInHTML is in AppTestCase
+
+    def test_bookworm_achievement_awarded(self):
+        with app.app_context():
+            # Ensure the "Bookworm" achievement exists or seed it
+            bookworm_ach_data = {
+                "name": "Bookworm",
+                "description": "Bookmarked 5 posts.",
+                "icon_url": "[BOOKMARK_ICON]",
+                "criteria_type": "num_bookmarks_created",
+                "criteria_value": 5,
+            }
+            existing_bookworm = Achievement.query.filter_by(name="Bookworm").first()
+            if not existing_bookworm:
+                db.session.add(Achievement(**bookworm_ach_data))
+                db.session.commit()
+
+            bookworm_achievement_id = Achievement.query.filter_by(name="Bookworm").first().id
+
+            bookmarker_user = self._create_db_user("bookworm_user", "pass", "bw@example.com")
+
+            # Create 5 posts (can be by anyone for this test)
+            posts_to_bookmark = [self._create_db_post(self.user1_id, f"Bookmark Post {i+1}") for i in range(5)]
+
+            # User bookmarks 4 posts
+            for i in range(4):
+                self._create_db_bookmark(bookmarker_user.id, posts_to_bookmark[i].id)
+
+            check_and_award_achievements(bookmarker_user.id)
+            user_ach_check1 = UserAchievement.query.filter_by(
+                user_id=bookmarker_user.id, achievement_id=bookworm_achievement_id
+            ).first()
+            self.assertIsNone(user_ach_check1, "Bookworm achievement should not be awarded after 4 bookmarks.")
+
+            # User bookmarks the 5th post
+            self._create_db_bookmark(bookmarker_user.id, posts_to_bookmark[4].id)
+            check_and_award_achievements(bookmarker_user.id)
+
+            user_ach_check2 = UserAchievement.query.filter_by(
+                user_id=bookmarker_user.id, achievement_id=bookworm_achievement_id
+            ).first()
+            self.assertIsNotNone(user_ach_check2, "Bookworm achievement should be awarded after 5 bookmarks.")
+            self.assertEqual(user_ach_check2.achievement.name, "Bookworm")

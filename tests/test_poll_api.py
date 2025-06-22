@@ -501,7 +501,7 @@ class TestPollAPI(AppTestCase):
 
         # 3. Users vote on the poll (simulating form submissions)
         # User1 votes for RenderOpt1
-        self._login(self.user1.username, "password")
+        self.login(self.user1.username, "password") # Corrected: self.login
         self.client.post(
             f"/poll/{poll_id}/vote", data={"option_id": str(option_id_1)}
         )
@@ -520,12 +520,12 @@ class TestPollAPI(AppTestCase):
         self.client.post(
             f"/poll/{poll_id}/vote", data={"option_id": str(option_id_2)}
         )
-        self._logout()
+        self.logout() # Corrected: self.logout
 
         # Expected counts: RenderOpt1: 2 votes, RenderOpt2: 1 vote
 
         # 4. Fetch the HTML page for the poll (as an anonymous user or logged-in user)
-        self._login(self.user1.username, "password") # Or view as anonymous
+        self.login(self.user1.username, "password") # Corrected: self.login # Or view as anonymous
         response_html = self.client.get(f"/poll/{poll_id}")
         self.assertEqual(response_html.status_code, 200)
         html_content = response_html.data.decode()

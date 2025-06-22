@@ -609,3 +609,79 @@ class AppTestCase(unittest.TestCase):
             self.db.session.commit()  # Use class's db
             # Re-fetch the lock to ensure it's bound to the session and has its ID populated.
             return self.db.session.get(PostLock, lock.id)
+
+    def _create_db_user(self, username, password="password", email=None, role="user"):
+        if email is None:
+            email = f"{username}@example.com"
+        user = User(
+            username=username,
+            email=email,
+            password_hash=generate_password_hash(password),
+            role=role
+        )
+        self.db.session.add(user)
+        self.db.session.commit()
+        self.db.session.refresh(user) # Ensure ID and other defaults are loaded
+        return user
+
+    def _create_db_series(self, user_id, title="Test Series", description="A series for testing.", created_at=None, updated_at=None):
+        # This method was named _create_series before, standardizing to _create_db_series
+        with self.app.app_context():
+            series = Series(
+                user_id=user_id,
+                title=title,
+                description=description,
+                created_at=created_at or datetime.now(timezone.utc),
+                updated_at=updated_at or datetime.now(timezone.utc),
+            )
+            self.db.session.add(series)
+            self.db.session.commit()
+            return self.db.session.get(Series, series.id)
+
+    def _create_db_bookmark(self, user_id, post_id, timestamp=None):
+        from models import Bookmark # Local import just in case
+        with self.app.app_context():
+            bookmark = Bookmark(
+                user_id=user_id,
+                post_id=post_id,
+                timestamp=timestamp or datetime.now(timezone.utc)
+            )
+            self.db.session.add(bookmark)
+            self.db.session.commit()
+            return bookmark
+
+    def _create_db_block(self, blocker_user_obj, blocked_user_obj, timestamp=None):
+        from models import UserBlock # Local import
+        with self.app.app_context():
+            block = UserBlock(
+                blocker_id=blocker_user_obj.id,
+                blocked_id=blocked_user_obj.id,
+                timestamp=timestamp or datetime.now(timezone.utc)
+            )
+            self.db.session.add(block)
+            self.db.session.commit()
+            return block
+
+    def _create_db_friendship(self, user_obj_1, user_obj_2, status="accepted", timestamp=None):
+        # This method was _create_friendship before, standardizing and using user objects
+        with self.app.app_context():
+            friendship = Friendship(
+                user_id=user_obj_1.id,
+                friend_id=user_obj_2.id,
+                status=status,
+                timestamp=timestamp or datetime.now(timezone.utc)
+            )
+            self.db.session.add(friendship)
+            self.db.session.commit()
+            self.db.session.refresh(friendship)
+            return friendship
+
+    def _remove_db_friendship(self, user_obj_1, user_obj_2):
+        with self.app.app_context():
+            friendship = Friendship.query.filter(
+                ((Friendship.user_id == user_obj_1.id) & (Friendship.friend_id == user_obj_2.id)) |
+                ((Friendship.user_id == user_obj_2.id) & (Friendship.friend_id == user_obj_1.id))
+            ).first()
+            if friendship:
+                self.db.session.delete(friendship)
+                self.db.session.commit()

@@ -7,24 +7,25 @@ from datetime import datetime
 class TestEventRendering(AppTestCase):
 
     def test_event_description_nl2br(self):
-        # 1. Create a test user (organizer)
-        organizer = User(username="event_organizer", email="organizer@example.com", password_hash="testpassword")
-        db.session.add(organizer)
-        db.session.commit()
+        with self.app.app_context(): # Add app context wrapper
+            # 1. Create a test user (organizer)
+            organizer = User(username="event_organizer", email="organizer@example.com", password_hash="testpassword")
+            db.session.add(organizer)
+            db.session.commit()
 
-        # 2. Create an event with a multi-line description
-        event_description_with_newlines = "This is line one.\nThis is line two.\nAnd this is line three."
-        event_description_with_br = "This is line one.<br>\nThis is line two.<br>\nAnd this is line three."
+            # 2. Create an event with a multi-line description
+            event_description_with_newlines = "This is line one.\nThis is line two.\nAnd this is line three."
+            event_description_with_br = "This is line one.<br>\nThis is line two.<br>\nAnd this is line three."
 
-        event = Event(
-            title="Test Event NL2BR",
-            description=event_description_with_newlines,
-            date=datetime.utcnow(),
-            location="Test Location",
-            user_id=organizer.id
-        )
-        db.session.add(event)
-        db.session.commit()
+            event = Event(
+                title="Test Event NL2BR",
+                description=event_description_with_newlines,
+                date=datetime.utcnow(),
+                location="Test Location",
+                user_id=organizer.id
+            )
+            db.session.add(event)
+            db.session.commit()
 
         # 3. Log in as a user (can be the organizer or another user)
         #    For simplicity, we'll access the page as an unauthenticated user if possible,

@@ -1,7 +1,7 @@
 import unittest
 import json
 from unittest.mock import patch, ANY
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # from app import app, db, socketio # COMMENTED OUT or ensure app context is handled by AppTestCase
 from models import User, Post, Group, Event, Poll, PollOption, Like, Comment, EventRSVP, PollVote # Ensure this line is active or add necessary imports
@@ -32,7 +32,7 @@ class TestRecommendationAPI(AppTestCase):
         self.event_by_user2 = self._create_db_event(
             user_id=self.user2_id,
             title="User2's Event",
-            date_str=(datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d"),
+            date_str=(datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d"),
         )
         self.poll_by_user2 = self._create_db_poll(
             user_id=self.user2_id, question="User2's Poll?"

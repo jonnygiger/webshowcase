@@ -4,7 +4,7 @@ from unittest.mock import (
     patch,
     ANY,
 )  # ANY is kept as tests are commented out but might use it
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # from app import app, db, socketio # COMMENTED OUT
 # from models import User, Post, Event # COMMENTED OUT
@@ -21,7 +21,7 @@ class TestOnThisDayPage(AppTestCase):
     def setUp(self):
         super().setUp()
         self.test_user = self.user1
-        self.fixed_today = datetime(2023, 10, 26, 12, 0, 0)
+        self.fixed_today = datetime(2023, 10, 26, 12, 0, 0, tzinfo=timezone.utc)
 
         self.post_target_correct = self._create_db_post(
             user_id=self.test_user.id,
@@ -55,9 +55,9 @@ class TestOnThisDayPage(AppTestCase):
     @patch("app.datetime")
     @patch("recommendations.datetime")
     def test_on_this_day_page_no_content(self, mock_reco_datetime, mock_app_datetime):
-        no_content_date = datetime(2023, 1, 1, 12, 0, 0)
-        mock_app_datetime.utcnow.return_value = no_content_date
-        mock_reco_datetime.utcnow.return_value = no_content_date
+        no_content_date = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        mock_app_datetime.now.return_value = no_content_date # Changed from utcnow
+        mock_reco_datetime.now.return_value = no_content_date # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
 
         self.login(self.test_user.username, "password")
@@ -79,8 +79,8 @@ class TestOnThisDayPage(AppTestCase):
     ):
         from flask import url_for
 
-        mock_app_datetime.utcnow.return_value = self.fixed_today
-        mock_reco_datetime.utcnow.return_value = self.fixed_today
+        mock_app_datetime.now.return_value = self.fixed_today # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
 
         self.login(self.test_user.username, "password")
@@ -106,8 +106,8 @@ class TestOnThisDayPage(AppTestCase):
     def test_on_this_day_page_only_posts(
         self, mock_reco_datetime, mock_app_datetime
     ):
-        mock_app_datetime.utcnow.return_value = self.fixed_today
-        mock_reco_datetime.utcnow.return_value = self.fixed_today
+        mock_app_datetime.now.return_value = self.fixed_today # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
 
         # Create a new user for this test to ensure no other events interfere
@@ -151,8 +151,8 @@ class TestOnThisDayPage(AppTestCase):
     def test_on_this_day_page_only_events(
         self, mock_reco_datetime, mock_app_datetime
     ):
-        mock_app_datetime.utcnow.return_value = self.fixed_today
-        mock_reco_datetime.utcnow.return_value = self.fixed_today
+        mock_app_datetime.now.return_value = self.fixed_today # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
 
         # Create a new user for this test to ensure no other posts interfere
@@ -195,8 +195,8 @@ class TestOnThisDayPage(AppTestCase):
     @patch("recommendations.datetime")
     def test_on_this_day_page_current_year_and_wrong_day_content_only(self, mock_reco_datetime, mock_app_datetime):
         # 1. Mock datetime BEFORE any logic that might use it
-        mock_app_datetime.utcnow.return_value = self.fixed_today
-        mock_reco_datetime.utcnow.return_value = self.fixed_today
+        mock_app_datetime.now.return_value = self.fixed_today # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
         # Ensure that strptime used by recommendations.py is the real one
         mock_reco_datetime.strptime = datetime.strptime
 
@@ -280,8 +280,8 @@ class TestOnThisDayPage(AppTestCase):
     @patch("recommendations.datetime")
     def test_on_this_day_page_content_from_wrong_day_only(self, mock_reco_datetime, mock_app_datetime):
         # Mock datetime objects and set fixed_today
-        mock_app_datetime.utcnow.return_value = self.fixed_today
-        mock_reco_datetime.utcnow.return_value = self.fixed_today
+        mock_app_datetime.now.return_value = self.fixed_today # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
 
         # Create a new unique user
@@ -422,9 +422,9 @@ class TestOnThisDayAPI(AppTestCase):
     def test_on_this_day_with_content_and_filtering(
         self, mock_api_datetime, mock_reco_datetime
     ):
-        mock_reco_datetime.utcnow.return_value = self.fixed_today
+        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
-        mock_api_datetime.utcnow.return_value = self.fixed_today
+        mock_api_datetime.now.return_value = self.fixed_today # Changed from utcnow
 
         token = self._get_jwt_token(self.test_user.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
@@ -464,10 +464,10 @@ class TestOnThisDayAPI(AppTestCase):
     @patch("recommendations.datetime")
     @patch("api.datetime")
     def test_on_this_day_no_content_api(self, mock_api_datetime, mock_reco_datetime):
-        no_content_date = datetime(2023, 1, 1, 12, 0, 0)
-        mock_reco_datetime.utcnow.return_value = no_content_date
+        no_content_date = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        mock_reco_datetime.now.return_value = no_content_date # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
-        mock_api_datetime.utcnow.return_value = no_content_date
+        mock_api_datetime.now.return_value = no_content_date # Changed from utcnow
 
         token = self._get_jwt_token(self.test_user.username, "password")
         headers = {"Authorization": f"Bearer {token}"}

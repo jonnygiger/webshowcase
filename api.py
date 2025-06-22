@@ -2,7 +2,7 @@
 from flask_restful import Resource, reqparse
 from flask import request, g, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 
 # import app as main_app  # Removed to break circular dependency
@@ -246,7 +246,7 @@ class PostLockResource(Resource):
         if existing_lock:
             if (
                 existing_lock.user_id != current_user_id
-                and existing_lock.expires_at > datetime.utcnow()
+                and existing_lock.expires_at.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)
             ):
                 return {
                     "message": "Post is currently locked by another user.",
@@ -258,7 +258,7 @@ class PostLockResource(Resource):
                 db.session.flush() # Ensure DELETE is processed before potential INSERT
 
         lock_duration_minutes = 15
-        expires_at = datetime.utcnow() + timedelta(minutes=lock_duration_minutes)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=lock_duration_minutes)
 
         new_lock = PostLock(
             post_id=post.id, user_id=current_user_id, expires_at=expires_at

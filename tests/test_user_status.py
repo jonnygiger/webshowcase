@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, ANY  # Kept patch and ANY
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # from app import app, db, socketio # COMMENTED OUT
 # from models import User, UserStatus # COMMENTED OUT

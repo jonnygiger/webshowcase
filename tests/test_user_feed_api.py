@@ -27,7 +27,7 @@ class TestUserFeedAPI(AppTestCase):
         response = self.client.get("/api/users/99999/feed", headers=headers)
         self.assertEqual(response.status_code, 404) # Now it should hit the user not found logic
 
-    @patch("recommendations.get_personalized_feed_posts") # Changed patch target
+    @patch("api.get_personalized_feed_posts") # Reverted patch target to where it's looked up
     def test_get_feed_empty_for_new_user_no_relevant_content(
         self, mock_get_feed_posts_func
     ):

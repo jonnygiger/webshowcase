@@ -17,7 +17,7 @@ from models import (
 )  # Added SharedPost and TrendingHashtag
 from sqlalchemy import func, or_, extract
 from collections import defaultdict, Counter
-from datetime import datetime, timedelta  # Ensure datetime and timedelta are imported
+from datetime import datetime, timedelta, timezone # Ensure datetime and timedelta are imported
 from flask import current_app
 
 
@@ -261,7 +261,8 @@ def suggest_posts_to_read(user_id, limit=5):
         # Post Recency Score
         # Using a simple decay: score = factor / (days_old + 1)
         # More sophisticated decay: factor * (0.5 ^ (days_old / half_life_days))
-        days_old = (datetime.utcnow() - post.timestamp).days
+        post_timestamp_aware = post.timestamp.replace(tzinfo=timezone.utc)
+        days_old = (datetime.now(timezone.utc) - post_timestamp_aware).days
         if days_old < 0:
             days_old = (
                 0  # Handle potential future timestamps gracefully, though unlikely
@@ -661,7 +662,7 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     if not current_user:
         return []
 
-    cutoff_date = datetime.utcnow() - timedelta(days=since_days)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=since_days)
 
     # 1. Exclusions: Posts by the user, liked, commented, or bookmarked by the user
     user_liked_post_ids = {
@@ -683,24 +684,24 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     #    - Having shares within since_days
 
     # Posts created recently
-    recent_posts_query = Post.query.filter(Post.timestamp >= cutoff_date)
+    recent_posts_query = Post.query.filter(Post.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None))
 
     # Posts with recent likes
     posts_with_recent_likes_ids = (
-        db.session.query(Like.post_id).filter(Like.timestamp >= cutoff_date).distinct()
+        db.session.query(Like.post_id).filter(Like.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None)).distinct()
     )
 
     # Posts with recent comments
     posts_with_recent_comments_ids = (
         db.session.query(Comment.post_id)
-        .filter(Comment.timestamp >= cutoff_date)
+        .filter(Comment.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None))
         .distinct()
     )
 
     # Posts with recent shares
     posts_with_recent_shares_ids = (
         db.session.query(SharedPost.original_post_id)
-        .filter(SharedPost.shared_at >= cutoff_date)
+        .filter(SharedPost.shared_at.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None))
         .distinct()
     )
 
@@ -735,7 +736,7 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     recent_likes_counts = (
         db.session.query(Like.post_id, func.count(Like.id).label("like_count"))
         .filter(
-            Like.post_id.in_(valid_candidate_post_ids), Like.timestamp >= cutoff_date
+            Like.post_id.in_(valid_candidate_post_ids), Like.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None)
         )
         .group_by(Like.post_id)
         .all()
@@ -746,7 +747,7 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
         db.session.query(Comment.post_id, func.count(Comment.id).label("comment_count"))
         .filter(
             Comment.post_id.in_(valid_candidate_post_ids),
-            Comment.timestamp >= cutoff_date,
+            Comment.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None),
         )
         .group_by(Comment.post_id)
         .all()
@@ -759,7 +760,7 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
         )
         .filter(
             SharedPost.original_post_id.in_(valid_candidate_post_ids),
-            SharedPost.shared_at >= cutoff_date,
+            SharedPost.shared_at.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None),
         )
         .group_by(SharedPost.original_post_id)
         .all()
@@ -785,7 +786,8 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
         # We consider the age from the start of the window (cutoff_date) or its actual creation if newer.
         # Or simply its age from now, normalized by since_days.
 
-        post_age_days = (datetime.utcnow() - post.timestamp).days
+        post_timestamp_aware = post.timestamp.replace(tzinfo=timezone.utc)
+        post_age_days = (datetime.now(timezone.utc) - post_timestamp_aware).days
         if post_age_days < 0:
             post_age_days = 0  # Should not happen
 
@@ -830,8 +832,8 @@ def update_trending_hashtags(top_n=10, since_days=7):
         f"Starting update_trending_hashtags job. Top N: {top_n}, Since Days: {since_days}"
     )
     try:
-        cutoff_date = datetime.utcnow() - timedelta(days=since_days)
-        recent_posts = Post.query.filter(Post.timestamp >= cutoff_date).all()
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=since_days)
+        recent_posts = Post.query.filter(Post.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None)).all()
 
         if not recent_posts:
             current_app.logger.info(
@@ -885,7 +887,7 @@ def update_trending_hashtags(top_n=10, since_days=7):
                     hashtag=tag,
                     score=float(score),
                     rank=rank,
-                    calculated_at=datetime.utcnow(),
+                    calculated_at=datetime.now(timezone.utc),
                 )
                 db.session.add(new_trending_hashtag)
 
@@ -951,7 +953,9 @@ def get_personalized_feed_posts(user_id, limit=20):
     )
 
     def calculate_recency_score(post_timestamp):
-        days_old = (datetime.utcnow() - post_timestamp).days
+        # Assuming post_timestamp from DB is naive UTC, make it aware
+        post_timestamp_aware = post_timestamp.replace(tzinfo=timezone.utc)
+        days_old = (datetime.now(timezone.utc) - post_timestamp_aware).days
         if days_old < 0:
             days_old = 0
         score = RECENCY_MAX_SCORE * (0.5 ** (days_old / RECENCY_HALFLIFE_DAYS))
@@ -1101,7 +1105,7 @@ def get_on_this_day_content(user_id):
     """
     Retrieves posts and events created by the user on the current month and day from previous years.
     """
-    today = datetime.utcnow()
+    today = datetime.now(timezone.utc)
     current_month = today.month
     current_day = today.day
     current_year = today.year

@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, ANY
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # from app import app, db, socketio # COMMENTED OUT - app, db, socketio likely from AppTestCase
 from models import User, Post, FriendPostNotification, UserBlock, Friendship # Make sure these are available
@@ -71,7 +71,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             # User1 and User2 are friends. User1 posts. User2 gets a notification.
             self._create_friendship(self.user1_id, self.user2_id)
             # _create_db_post returns the post object directly
-            post1_obj_by_user1 = self._create_db_post(user_id=self.user1_id, title="Post 1 by User1", timestamp=datetime.utcnow() - timedelta(minutes=10))
+            post1_obj_by_user1 = self._create_db_post(user_id=self.user1_id, title="Post 1 by User1", timestamp=datetime.now(timezone.utc) - timedelta(minutes=10))
             # No need to fetch again if _create_db_post returns a usable object
             # post1_by_user1 = self.db.session.get(Post, post1_obj_by_user1.id)
             self.assertIsNotNone(post1_obj_by_user1, "Post1 object by User1 should not be None.")
@@ -80,7 +80,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
 
             # User3 and User2 are friends. User3 posts. User2 gets another notification (newer).
             self._create_friendship(self.user3_id, self.user2_id)
-            post2_obj_by_user3 = self._create_db_post(user_id=self.user3_id, title="Post 2 by User3", timestamp=datetime.utcnow() - timedelta(minutes=5))
+            post2_obj_by_user3 = self._create_db_post(user_id=self.user3_id, title="Post 2 by User3", timestamp=datetime.now(timezone.utc) - timedelta(minutes=5))
             # post2_by_user3 = self.db.session.get(Post, post2_obj_by_user3.id)
             self.assertIsNotNone(post2_obj_by_user3, "Post2 object by User3 should not be None.")
             notif2_for_user2 = FriendPostNotification(user_id=self.user2_id, post_id=post2_obj_by_user3.id, poster_id=self.user3_id, timestamp=post2_obj_by_user3.timestamp)

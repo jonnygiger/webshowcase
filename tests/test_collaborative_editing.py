@@ -1,7 +1,7 @@
 import unittest
 import json
 from unittest.mock import patch, call, ANY, MagicMock  # Added MagicMock here
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # from app import app, db, socketio # COMMENTED OUT
 from models import Post, User, PostLock # Import PostLock for querying
@@ -52,7 +52,8 @@ class TestCollaborativeEditing(AppTestCase):
             self.assertIsNotNone(lock.id, "Lock ID should not be None after creation and re-fetch.") # ID should be populated by _create_db_lock now
             self.assertEqual(lock.post_id, test_post_merged.id)
             self.assertEqual(lock.user_id, self.post_author.id)
-            self.assertTrue(lock.expires_at > datetime.utcnow())
+            expires_at_aware = lock.expires_at.replace(tzinfo=timezone.utc)
+            self.assertTrue(expires_at_aware > datetime.now(timezone.utc))
 
             # Verify it's in the database again, though _create_db_lock should ensure this
             queried_lock_again = self.db.session.get(PostLock, lock.id)
@@ -237,7 +238,7 @@ class TestCollaborativeEditing(AppTestCase):
             self.assertIsNotNone(lock, "Lock not found in database for author.")
 
             # Set expiry to the past
-            lock.expires_at = datetime.utcnow() - timedelta(minutes=1)
+            lock.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
             self.db.session.add(lock)
             self.db.session.commit()
 

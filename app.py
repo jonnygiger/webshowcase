@@ -122,6 +122,15 @@ app.user_notification_queues = {}
 # new_post_sse_queues and broadcast_new_post are now imported from notifications.py
 # to break a circular dependency with api.py
 
+# Custom Jinja2 filter for nl2br
+def nl2br(value):
+    """Converts newlines in a string to HTML <br> tags."""
+    if not isinstance(value, str):
+        return value
+    return value.replace('\n', '<br>\n')
+
+app.jinja_env.filters['nl2br'] = nl2br
+
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///site.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)

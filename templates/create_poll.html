@@ -4,22 +4,107 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Create a New Poll</h2>
-    <form method="POST" action="{{ url_for('create_poll') }}">
-        <div class="mb-3">
-            <label for="question" class="form-label">Poll Question:</label>
-            <input type="text" class="form-control" id="question" name="question" required>
-        </div>
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-7">
+            <h2 class="mb-4 pb-2 border-bottom">Create a New Poll</h2>
 
-        <div class="mb-3">
-            <label class="form-label">Options (provide at least 2):</label>
-            <input type="text" class="form-control mb-2" name="options[]" placeholder="Option 1" required>
-            <input type="text" class="form-control mb-2" name="options[]" placeholder="Option 2" required>
-            <input type="text" class="form-control mb-2" name="options[]" placeholder="Option 3 (optional)">
-            <input type="text" class="form-control mb-2" name="options[]" placeholder="Option 4 (optional)">
-        </div>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
 
-        <button type="submit" class="btn btn-primary">Create Poll</button>
-    </form>
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('create_poll') }}">
+                        {# {{ form.hidden_tag() if form and form.hidden_tag }} #}
+                        <div class="mb-3">
+                            <label for="question" class="form-label">Poll Question</label>
+                            <input type="text" class="form-control" id="question" name="question" required>
+                        </div>
+
+                        <fieldset class="mb-3">
+                            <legend class="form-label fs-6">Poll Options</legend>
+                            <small class="form-text text-muted mb-2 d-block">Provide at least 2 options. You can add more later if needed (feature not yet implemented).</small>
+                            <div id="poll-options-container">
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">1.</span>
+                                    <input type="text" class="form-control" name="options[]" placeholder="Option 1" required>
+                                </div>
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">2.</span>
+                                    <input type="text" class="form-control" name="options[]" placeholder="Option 2" required>
+                                </div>
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">3.</span>
+                                    <input type="text" class="form-control" name="options[]" placeholder="Option 3 (optional)">
+                                </div>
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">4.</span>
+                                    <input type="text" class="form-control" name="options[]" placeholder="Option 4 (optional)">
+                                </div>
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">5.</span>
+                                    <input type="text" class="form-control" name="options[]" placeholder="Option 5 (optional)">
+                                </div>
+                            </div>
+                            {# Button to add more options could be here - JS required #}
+                            {# <button type="button" id="addPollOptionBtn" class="btn btn-sm btn-outline-secondary mt-1">Add Option</button> #}
+                        </fieldset>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-bar-chart-line-fill"></i> Create Poll
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# Add script for dynamically adding poll options if implemented
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const addOptionButton = document.getElementById('addPollOptionBtn');
+    const optionsContainer = document.getElementById('poll-options-container');
+    let optionCount = optionsContainer.querySelectorAll('input[name="options[]"]').length;
+
+    if (addOptionButton) {
+        addOptionButton.addEventListener('click', function() {
+            optionCount++;
+            const newOptionDiv = document.createElement('div');
+            newOptionDiv.classList.add('input-group', 'mb-2');
+            newOptionDiv.innerHTML = `
+                <span class="input-group-text">${optionCount}.</span>
+                <input type="text" class="form-control" name="options[]" placeholder="Option ${optionCount} (optional)">
+                <button type="button" class="btn btn-outline-danger remove-option-btn">Remove</button>
+            `;
+            optionsContainer.appendChild(newOptionDiv);
+
+            newOptionDiv.querySelector('.remove-option-btn').addEventListener('click', function() {
+                newOptionDiv.remove();
+                // Renumber options if needed, though backend should handle varying numbers
+                // This simple version doesn't renumber visually after removal
+            });
+        });
+    }
+    // Initial setup for any existing remove buttons (if options could be pre-filled and removable)
+    optionsContainer.querySelectorAll('.remove-option-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            button.closest('.input-group').remove();
+        });
+    });
+});
+</script>
+#}
 {% endblock %}

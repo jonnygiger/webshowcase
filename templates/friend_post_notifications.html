@@ -3,78 +3,109 @@
 {% block title %}Friend Post Notifications{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h2>Friend Post Notifications</h2>
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <h2 class="mb-0">Friend Post Notifications</h2>
+        {% if notifications %}
+            <button id="mark-all-as-read-btn" class="btn btn-primary btn-sm">
+                <i class="bi bi-check2-all"></i> Mark All as Read
+            </button>
+        {% endif %}
+    </div>
+
+    {% include '_flash_messages.html' %}
 
     {% if notifications %}
-        <button id="mark-all-as-read-btn" class="btn btn-primary mb-3">Mark All as Read</button>
         <ul class="list-group">
             {% for notification in notifications %}
-                <li class="list-group-item {% if not notification.is_read %}list-group-item-info{% endif %}" id="notification-{{ notification.id }}">
+                <li class="list-group-item {% if not notification.is_read %}list-group-item-info{% else %}list-group-item-light{% endif %} mb-2 shadow-sm p-3" id="notification-{{ notification.id }}">
                     <div class="d-flex w-100 justify-content-between">
-                        <h5 class="mb-1">
+                        <div class="notification-text">
                             {% if not notification.is_read %}<strong>{% endif %}
-                            <a href="{{ url_for('user_profile', username=notification.poster.username) }}">{{ notification.poster.username }}</a>
+                            <a href="{{ url_for('user_profile', username=notification.poster.username) }}" class="text-decoration-none">{{ notification.poster.username }}</a>
                             created a new post:
-                            <a href="{{ url_for('view_post', post_id=notification.post_id) }}">{{ notification.post.title }}</a>
+                            <a href="{{ url_for('view_post', post_id=notification.post_id) }}" class="text-decoration-none">{{ notification.post.title | truncate(50, True) }}</a>
                             {% if not notification.is_read %}</strong>{% endif %}
-                        </h5>
-                        <small>{{ notification.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                        </div>
+                        <small class="text-muted flex-shrink-0 ms-3">{{ notification.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
                     </div>
-                    <p class="mb-1">
+                    <div class="mt-2 d-flex justify-content-between align-items-center">
+                        <span class="badge rounded-pill {% if not notification.is_read %}bg-primary{% else %}bg-secondary{% endif %}">
+                            {{ 'Unread' if not notification.is_read else 'Read' }}
+                        </span>
                         {% if not notification.is_read %}
-                            <span class="badge badge-pill badge-primary">Unread</span>
-                        {% else %}
-                            <span class="badge badge-pill badge-secondary">Read</span>
+                            <button class="btn btn-sm btn-outline-secondary mark-as-read-btn" data-notification-id="{{ notification.id }}">
+                                <i class="bi bi-check2"></i> Mark as Read
+                            </button>
                         {% endif %}
-                    </p>
-                    {% if not notification.is_read %}
-                        <button class="btn btn-sm btn-outline-secondary mark-as-read-btn" data-notification-id="{{ notification.id }}">Mark as Read</button>
-                    {% endif %}
+                    </div>
                 </li>
             {% endfor %}
         </ul>
     {% else %}
-        <p>You have no friend post notifications.</p>
+        <div class="alert alert-info mt-3" role="alert">
+            <h4 class="alert-heading">All Caught Up!</h4>
+            You have no new friend post notifications.
+        </div>
     {% endif %}
 </div>
+{% endblock %}
 
+{% block scripts %}
+{{ super() }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Function to update a single notification item visually
+    function updateNotificationItemUI(notificationId, isRead) {
+        const listItem = document.getElementById(`notification-${notificationId}`);
+        if (listItem) {
+            if (isRead) {
+                listItem.classList.remove('list-group-item-info');
+                listItem.classList.add('list-group-item-light'); // Default for read items
+                const strongTag = listItem.querySelector('.notification-text strong');
+                if (strongTag) {
+                    strongTag.outerHTML = strongTag.innerHTML; // Unwrap strong tag
+                }
+                const badge = listItem.querySelector('.badge');
+                if (badge) {
+                    badge.classList.remove('bg-primary');
+                    badge.classList.add('bg-secondary');
+                    badge.textContent = 'Read';
+                }
+                listItem.querySelector('.mark-as-read-btn')?.remove();
+            }
+            // Could handle 'unread' state update if needed, but current logic focuses on marking as read
+        }
+    }
+
     // Mark single notification as read
     document.querySelectorAll('.mark-as-read-btn').forEach(button => {
         button.addEventListener('click', function() {
             const notificationId = this.dataset.notificationId;
+            // Optimistic UI update
+            // updateNotificationItemUI(notificationId, true); // Can do this here for faster perceived response
+
             fetch(`/friend_post_notifications/mark_as_read/${notificationId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    // Include CSRF token if your app uses them for POST requests
+                    // 'X-CSRFToken': '{{ csrf_token() if csrf_token else "" }}' // Add CSRF if needed
                 }
             })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    // Visually update the notification item
-                    const listItem = document.getElementById(`notification-${notificationId}`);
-                    if (listItem) {
-                        listItem.classList.remove('list-group-item-info'); // Remove bold/highlight
-                        listItem.querySelector('strong')?.outerHTML = listItem.querySelector('strong').innerHTML; // Remove strong tag but keep content
-                        const badge = listItem.querySelector('.badge');
-                        if (badge) {
-                            badge.classList.remove('badge-primary');
-                            badge.classList.add('badge-secondary');
-                            badge.textContent = 'Read';
-                        }
-                        this.remove(); // Remove the button
-                    }
-                    // Optionally, show a success flash message or update an unread count
+                    updateNotificationItemUI(notificationId, true); // Definite UI update
                 } else {
+                    // Revert optimistic update if it failed
+                    // updateNotificationItemUI(notificationId, false); // This function would need extension
                     alert('Error: ' + data.message);
                 }
             })
             .catch(error => {
                 console.error('Error marking notification as read:', error);
+                // Revert optimistic update
+                // updateNotificationItemUI(notificationId, false);
                 alert('An error occurred. Please try again.');
             });
         });
@@ -84,31 +115,28 @@ document.addEventListener('DOMContentLoaded', function() {
     const markAllAsReadButton = document.getElementById('mark-all-as-read-btn');
     if (markAllAsReadButton) {
         markAllAsReadButton.addEventListener('click', function() {
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Marking...';
+
             fetch(`/friend_post_notifications/mark_all_as_read`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    // Include CSRF token if your app uses them
+                    // 'X-CSRFToken': '{{ csrf_token() if csrf_token else "" }}'
                 }
             })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    // Visually update all notification items
-                    document.querySelectorAll('.list-group-item').forEach(listItem => {
-                        listItem.classList.remove('list-group-item-info');
-                        listItem.querySelector('strong')?.outerHTML = listItem.querySelector('strong').innerHTML;
-                        const badge = listItem.querySelector('.badge');
-                        if (badge) {
-                            badge.classList.remove('badge-primary');
-                            badge.classList.add('badge-secondary');
-                            badge.textContent = 'Read';
+                    document.querySelectorAll('.list-group-item').forEach(item => {
+                        const notificationId = item.id.split('-')[1];
+                        if (notificationId) {
+                            updateNotificationItemUI(notificationId, true);
                         }
-                        listItem.querySelector('.mark-as-read-btn')?.remove();
                     });
-                    // Optionally, show a success flash message
-                    alert('All notifications marked as read.'); // Simple feedback
-                    // Could also reload the page: location.reload();
+                    // this.remove(); // Remove the "Mark all as read" button after success
+                    alert('All notifications marked as read.');
+                    // location.reload(); // Or reload to refresh state from server
                 } else {
                     alert('Error: ' + data.message);
                 }
@@ -116,6 +144,13 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(error => {
                 console.error('Error marking all notifications as read:', error);
                 alert('An error occurred. Please try again.');
+            })
+            .finally(() => {
+                // Reset button state if not removing it
+                if (document.getElementById('mark-all-as-read-btn')) { // Check if button still exists
+                    this.disabled = false;
+                    this.innerHTML = '<i class="bi bi-check2-all"></i> Mark All as Read';
+                }
             });
         });
     }

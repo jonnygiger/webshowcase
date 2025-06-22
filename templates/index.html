@@ -3,27 +3,33 @@
 {% block title %}Home Page{% endblock %}
 
 {% block content %}
-    <h1 class="page-title">Hello, World!</h1>
-    <div class="content-box">
-        <p>This is the home page of our awesome Flask application.</p>
-        <p>We are demonstrating how static files (like CSS) are served.</p>
-    </div>
-
-    <div class="featured-post-section mt-5">
-        <h2>Featured Post of the Day</h2>
-        {% if featured_post %}
-            <div class="card">
-                <div class="card-body">
-                    <h3 class="card-title">{{ featured_post.title }}</h3>
-                    {% if featured_post.author %}
-                        <h6 class="card-subtitle mb-2 text-muted">By: {{ featured_post.author.username }}</h6>
-                    {% endif %}
-                    <p class="card-text">{{ featured_post.content[:150] }}{% if featured_post.content|length > 150 %}...{% endif %}</p>
-                    <a href="{{ url_for('view_post', post_id=featured_post.id) }}" class="btn btn-primary">Read more</a>
-                </div>
+    <div class="container mt-4">
+        <div class="p-5 mb-4 bg-light rounded-3">
+            <div class="container-fluid py-5">
+                <h1 class="display-5 fw-bold">Hello, World!</h1>
+                <p class="col-md-8 fs-4">This is the home page of our awesome Flask application. Welcome!</p>
+                <p>We are demonstrating how Bootstrap enhances the look and feel.</p>
             </div>
-        {% else %}
-            <p>No featured post available yet.</p>
-        {% endif %}
+        </div>
+
+        <div class="featured-post-section my-5">
+            <h2 class="pb-2 border-bottom">Featured Post of the Day</h2>
+            {% if featured_post %}
+                <div class="card shadow-sm mt-3">
+                    <div class="card-body">
+                        <h3 class="card-title">{{ featured_post.title }}</h3>
+                        {% if featured_post.author %}
+                            <h6 class="card-subtitle mb-2 text-muted">By: {{ featured_post.author.username }}</h6>
+                        {% endif %}
+                        <p class="card-text">{{ featured_post.content[:200] }}{% if featured_post.content|length > 200 %}...{% endif %}</p>
+                        <a href="{{ url_for('view_post', post_id=featured_post.id) }}" class="btn btn-primary">Read more</a>
+                    </div>
+                </div>
+            {% else %}
+                <div class="alert alert-info mt-3" role="alert">
+                    No featured post available yet. Check back later!
+                </div>
+            {% endif %}
+        </div>
     </div>
 {% endblock %}

@@ -4,30 +4,43 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>{{ user.username }}'s Friends</h2>
+    <h2 class="mb-4 pb-2 border-bottom">{{ user.username }}'s Friends</h2>
+
+    {% include '_flash_messages.html' %}
 
     {% if friends_list %}
-        <ul class="list-group">
+        <div class="list-group">
             {% for friend_user in friends_list %}
-                <li class="list-group-item">
-                    <a href="{{ url_for('user_profile', username=friend_user.username) }}">{{ friend_user.username }}</a>
-                    {# Optionally, add a remove friend button if viewing your own friends list #}
-                    {# This would require passing the current_user or checking session #}
+                <div class="list-group-item d-flex justify-content-between align-items-center mb-2 shadow-sm p-3">
+                    <a href="{{ url_for('user_profile', username=friend_user.username) }}" class="text-decoration-none d-flex align-items-center">
+                        <img src="{{ friend_user.profile_picture or url_for('static', filename='profile_pics/default.png') }}" alt="{{ friend_user.username }}" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;">
+                        <span class="fw-bold">{{ friend_user.username }}</span>
+                    </a>
                     {% if session.get('user_id') == user.id %}
-                        {# This is the logged-in user's own friends list, so show remove button #}
-                        <form action="{{ url_for('remove_friend', friend_user_id=friend_user.id) }}" method="POST" style="display: inline; float: right;">
-                            <button type="submit" class="btn btn-warning btn-sm">Remove Friend</button>
+                        <form action="{{ url_for('remove_friend', friend_user_id=friend_user.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to remove {{ friend_user.username }} as a friend?');">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">
+                                <i class="bi bi-person-x-fill"></i> Remove
+                            </button>
                         </form>
                     {% endif %}
-                </li>
+                </div>
             {% endfor %}
-        </ul>
+        </div>
     {% else %}
-        <p>{{ user.username }} has no friends yet.</p>
+        <div class="alert alert-info mt-3" role="alert">
+            {{ user.username }} has no friends yet.
+        </div>
     {% endif %}
 
-    <div class="mt-3">
-        <a href="{{ url_for('user_profile', username=user.username) }}" class="btn btn-outline-secondary">Back to {{ user.username }}'s Profile</a>
+    <div class="mt-4">
+        <a href="{{ url_for('user_profile', username=user.username) }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left-circle"></i> Back to {{ user.username }}'s Profile
+        </a>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# Ensure Bootstrap Icons are loaded #}
 {% endblock %}

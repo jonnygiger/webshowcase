@@ -4,74 +4,103 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Edit Series: {{ series.title }}</h2>
+    <div class="row justify-content-center">
+        <div class="col-lg-10 col-xl-8"> {# Wider column for this more complex page #}
+            <h2 class="mb-4 pb-2 border-bottom">Edit Series: <span class="text-primary">{{ series.title }}</span></h2>
 
-    {% include '_flash_messages.html' %}
+            {% include '_flash_messages.html' %}
 
-    <form method="POST" action="{{ url_for('edit_series', series_id=series.id) }}">
-        <div class="mb-3">
-            <label for="title" class="form-label">Title</label>
-            <input type="text" class="form-control" id="title" name="title" value="{{ series.title }}" required>
-        </div>
-        <div class="mb-3">
-            <label for="description" class="form-label">Description</label>
-            <textarea class="form-control" id="description" name="description" rows="5">{{ series.description if series.description is not none else '' }}</textarea>
-        </div>
-        <button type="submit" class="btn btn-primary">Save Series Details</button>
-        <a href="{{ url_for('view_series', series_id=series.id) }}" class="btn btn-secondary">Cancel</a>
-    </form>
-
-    <hr class="my-4">
-
-    {# Posts currently in the series #}
-    <h4>Posts in this Series</h4>
-    {% if posts_in_series and posts_in_series|length > 0 %}
-        <ul class="list-group mb-3" id="posts-in-series-list" data-series-id="{{ series.id }}">
-            {% for post in posts_in_series %} {# series.posts is already ordered by SeriesPost.order #}
-                <li class="list-group-item d-flex justify-content-between align-items-center" data-post-id="{{ post.id }}">
-                    <span>
-                        <a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a>
-                    </span>
-                    <div>
-                        <button class="btn btn-secondary btn-sm me-1 move-up">Move Up</button>
-                        <button class="btn btn-secondary btn-sm me-1 move-down">Move Down</button>
-                        <form method="POST" action="{{ url_for('remove_post_from_series', series_id=series.id, post_id=post.id) }}" style="display: inline;">
-                            <button type="submit" class="btn btn-danger btn-sm">Remove</button>
-                        </form>
-                    </div>
-                </li>
-            {% endfor %}
-        </ul>
-        <button id="save-order-btn" class="btn btn-success mb-3">Save Order</button>
-    {% else %}
-        <p>No posts currently in this series.</p>
-    {% endif %}
-
-    <hr class="my-4">
-
-    {# Available posts to add to the series #}
-    <h4>Add Posts to this Series</h4>
-    {% if available_posts and available_posts|length > 0 %}
-        <ul class="list-group mb-3">
-            {% for post in available_posts %}
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    <a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a>
-                    <form method="POST" action="{{ url_for('add_post_to_series', series_id=series.id, post_id=post.id) }}" style="display: inline;">
-                        <button type="submit" class="btn btn-success btn-sm">Add to Series</button>
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Series Details</h5>
+                </div>
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('edit_series', series_id=series.id) }}">
+                        {# {{ form.hidden_tag() if form and form.hidden_tag }} #}
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Title</label>
+                            <input type="text" class="form-control" id="title" name="title" value="{{ series.title }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="5" placeholder="Describe your series...">{{ series.description if series.description is not none else '' }}</textarea>
+                        </div>
+                        <div class="d-flex justify-content-end">
+                            <a href="{{ url_for('view_series', series_id=series.id) }}" class="btn btn-outline-secondary me-2">Cancel</a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-save"></i> Save Series Details
+                            </button>
+                        </div>
                     </form>
-                </li>
-            {% endfor %}
-        </ul>
-    {% else %}
-        <p>You have no other posts available to add to this series.</p>
-    {% endif %}
+                </div>
+            </div>
 
-    <hr class="my-4">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Posts in this Series</h5>
+                </div>
+                <div class="card-body">
+                    {% if posts_in_series and posts_in_series|length > 0 %}
+                        <ul class="list-group list-group-flush mb-3" id="posts-in-series-list" data-series-id="{{ series.id }}">
+                            {% for post in posts_in_series %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center" data-post-id="{{ post.id }}">
+                                    <a href="{{ url_for('view_post', post_id=post.id) }}" class="text-decoration-none">{{ post.title }}</a>
+                                    <div class="btn-group" role="group">
+                                        <button class="btn btn-outline-secondary btn-sm move-up" title="Move Up"><i class="bi bi-arrow-up"></i></button>
+                                        <button class="btn btn-outline-secondary btn-sm move-down" title="Move Down"><i class="bi bi-arrow-down"></i></button>
+                                        <form method="POST" action="{{ url_for('remove_post_from_series', series_id=series.id, post_id=post.id) }}" class="d-inline">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Remove from series"><i class="bi bi-x-lg"></i></button>
+                                        </form>
+                                    </div>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                        <button id="save-order-btn" class="btn btn-success">
+                            <i class="bi bi-check-circle"></i> Save Order
+                        </button>
+                    {% else %}
+                        <div class="alert alert-info" role="alert">
+                            No posts currently in this series. Add some from the list below.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
 
-    <form method="POST" action="{{ url_for('delete_series', series_id=series.id) }}" style="display: inline-block; margin-top: 20px;">
-        <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this series? This action cannot be undone.');">Delete Entire Series</button>
-    </form>
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Add Posts to this Series</h5>
+                </div>
+                <div class="card-body">
+                    {% if available_posts and available_posts|length > 0 %}
+                        <ul class="list-group list-group-flush">
+                            {% for post in available_posts %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <a href="{{ url_for('view_post', post_id=post.id) }}" class="text-decoration-none">{{ post.title }}</a>
+                                    <form method="POST" action="{{ url_for('add_post_to_series', series_id=series.id, post_id=post.id) }}" class="d-inline">
+                                        <button type="submit" class="btn btn-success btn-sm">
+                                            <i class="bi bi-plus-circle-fill"></i> Add to Series
+                                        </button>
+                                    </form>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                         <div class="alert alert-info" role="alert">
+                            You have no other posts available to add to this series. <a href="{{ url_for('create_post')}}" class="alert-link">Create a new post?</a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
 
+            <div class="mt-4 text-end">
+                <form method="POST" action="{{ url_for('delete_series', series_id=series.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this entire series? This action cannot be undone.');">
+                        <i class="bi bi-trash-fill"></i> Delete Entire Series
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
 {% block scripts %}
@@ -85,7 +114,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const saveOrderBtn = document.getElementById('save-order-btn');
 
     function updateButtonStates() {
-        const items = postsList.querySelectorAll('li');
+        const items = postsList.querySelectorAll('li.list-group-item'); // More specific selector
         items.forEach((item, index) => {
             const moveUpBtn = item.querySelector('.move-up');
             const moveDownBtn = item.querySelector('.move-down');
@@ -93,26 +122,28 @@ document.addEventListener('DOMContentLoaded', function () {
             if (moveUpBtn) moveUpBtn.disabled = (index === 0);
             if (moveDownBtn) moveDownBtn.disabled = (index === items.length - 1);
         });
-        if (saveOrderBtn) { // Enable save button if there are items to save
+        if (saveOrderBtn) {
              saveOrderBtn.disabled = items.length === 0;
         }
     }
 
     postsList.addEventListener('click', function (event) {
-        const target = event.target;
-        const currentItem = target.closest('li');
+        const targetButton = event.target.closest('button'); // Ensure we get the button if icon is clicked
+        if (!targetButton) return;
+
+        const currentItem = targetButton.closest('li.list-group-item');
         if (!currentItem) return;
 
-        if (target.classList.contains('move-up')) {
+        if (targetButton.classList.contains('move-up')) {
             const previousItem = currentItem.previousElementSibling;
             if (previousItem) {
                 postsList.insertBefore(currentItem, previousItem);
                 updateButtonStates();
             }
-        } else if (target.classList.contains('move-down')) {
+        } else if (targetButton.classList.contains('move-down')) {
             const nextItem = currentItem.nextElementSibling;
             if (nextItem) {
-                postsList.insertBefore(nextItem, currentItem); // Insert next before current effectively moves current down
+                postsList.insertBefore(nextItem, currentItem);
                 updateButtonStates();
             }
         }
@@ -120,23 +151,31 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (saveOrderBtn) {
         saveOrderBtn.addEventListener('click', function () {
-            const postIds = Array.from(postsList.querySelectorAll('li')).map(li => li.dataset.postId);
+            const postIds = Array.from(postsList.querySelectorAll('li.list-group-item')).map(li => li.dataset.postId);
 
             if (!seriesId) {
+                // Use Bootstrap modal or toast for user feedback instead of alert
+                console.error('Error: Series ID is missing.');
+                // Example: showToast('Error: Series ID is missing.', 'danger');
                 alert('Error: Series ID is missing.');
                 return;
             }
+
+            // Add a loading state to the button
+            saveOrderBtn.disabled = true;
+            saveOrderBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
 
             fetch(`/series/${seriesId}/reorder_posts`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    // Include CSRF token if your app uses them for AJAX
-                    // 'X-CSRFToken': '{{ csrf_token() }}' // Example if using Flask-WTF
+                    // 'X-CSRFToken': '{{ csrf_token() if csrf_token else "" }}' // Ensure csrf_token() is defined or fallback
                 },
                 body: JSON.stringify({ post_ids: postIds })
             })
             .then(response => {
+                saveOrderBtn.disabled = false; // Re-enable button
+                saveOrderBtn.innerHTML = '<i class="bi bi-check-circle"></i> Save Order'; // Reset button text
                 if (!response.ok) {
                     return response.json().then(err => { throw new Error(err.message || 'Failed to save order.') });
                 }
@@ -144,20 +183,25 @@ document.addEventListener('DOMContentLoaded', function () {
             })
             .then(data => {
                 if (data.status === 'success') {
+                    // Example: showToast(data.message || 'Order saved successfully!', 'success');
                     alert(data.message || 'Order saved successfully!');
-                    window.location.reload(); // Reload to see changes and ensure clean state
+                    window.location.reload();
                 } else {
+                    // Example: showToast(data.message || 'An unknown error occurred.', 'danger');
                     alert(data.message || 'An unknown error occurred.');
                 }
             })
             .catch(error => {
+                saveOrderBtn.disabled = false; // Re-enable button
+                saveOrderBtn.innerHTML = '<i class="bi bi-check-circle"></i> Save Order'; // Reset button text
                 console.error('Error saving order:', error);
+                // Example: showToast('Error saving order: ' + error.message, 'danger');
                 alert('Error saving order: ' + error.message);
             });
         });
     }
 
-    updateButtonStates(); // Initial setup
+    updateButtonStates();
 });
 </script>
 {% endblock %}

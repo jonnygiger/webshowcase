@@ -3,163 +3,124 @@
 {% block title %}Real-Time Chat{% endblock %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{{ super() }}
+{# <link rel="stylesheet" href="{{ url_for('static', filename='chat_style.css') }}"> #}
 <style>
-    .chat-container {
-        display: flex;
-        height: calc(100vh - 120px); /* Adjust based on your header/footer height */
-        border: 1px solid #ccc;
-        border-radius: 5px;
-        overflow: hidden;
+    /* Minimal custom styles needed after Bootstrap integration */
+    /* Height of chat container might still need vh units or be handled by Bootstrap's viewport height utilities if suitable */
+    .chat-container-bs {
+        /* Consider using vh-100 or similar if you want full viewport height minus navbar */
+        /* For now, let's use a fixed height that works with Bootstrap's structure */
+        height: calc(100vh - 150px); /* Adjust based on navbar and other elements */
+        max-height: 700px; /* Example max height */
     }
 
-    .chat-sidebar {
-        width: 25%;
-        border-right: 1px solid #ccc;
-        padding: 15px;
-        background-color: #f9f9f9;
-        overflow-y: auto;
-    }
-
-    .chat-main {
-        width: 75%;
-        display: flex;
-        flex-direction: column;
-    }
-
-    .chat-room-header {
-        padding: 15px;
-        border-bottom: 1px solid #ccc;
-        background-color: #f1f1f1;
-    }
-
-    .chat-room-header h3 {
-        margin: 0;
-    }
-
-    .messages-area {
-        flex-grow: 1;
-        padding: 15px;
-        overflow-y: auto;
+    .messages-area-bs {
         display: flex;
         flex-direction: column-reverse; /* New messages at the bottom */
+        overflow-y: auto;
+        flex-grow: 1; /* Fill available space */
     }
 
-    .message-input-area {
-        padding: 15px;
-        border-top: 1px solid #ccc;
-        background-color: #f1f1f1;
+    .room-list-item.active { /* Ensure custom active style for rooms is distinct or uses BS primary */
+        background-color: #0d6efd; /* Bootstrap primary blue */
+        color: white;
     }
-
-    .message-input-area form {
-        display: flex;
-    }
-
-    .message-input-area input[type="text"] {
-        flex-grow: 1;
-        padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 3px;
-        margin-right: 10px;
-    }
-
-    .message-input-area button {
-        padding: 10px 15px;
-    }
-
-    .room-list-item {
-        padding: 10px;
-        border-bottom: 1px solid #eee;
-        cursor: pointer;
-        transition: background-color 0.2s;
-    }
-
-    .room-list-item:hover, .room-list-item.active {
-        background-color: #e9e9e9;
-    }
-    .room-list-item small {
-        font-size: 0.8em;
-        color: #777;
+    .room-list-item.active small {
+        color: #e0e0e0;
     }
 
     .message {
-        margin-bottom: 10px;
-        padding: 8px 12px;
-        border-radius: 15px;
+        margin-bottom: 0.75rem; /* Bootstrap spacing unit */
+        padding: 0.5rem 0.75rem; /* Bootstrap padding units */
+        border-radius: 15px; /* Custom, or use Bootstrap .rounded-pill or .rounded-3 */
         max-width: 70%;
         word-wrap: break-word;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
 
     .message.sent {
-        background-color: #dcf8c6;
+        background-color: #dcf8c6; /* Keeping custom color for sent */
         align-self: flex-end;
-        margin-left: auto; /* Push to the right */
+        margin-left: auto;
     }
 
     .message.received {
-        background-color: #f0f0f0;
+        background-color: #e9ecef; /* Bootstrap light grey */
         align-self: flex-start;
-        margin-right: auto; /* Push to the left */
+        margin-right: auto;
     }
 
     .message .username {
         font-weight: bold;
-        font-size: 0.9em;
-        color: #555;
+        font-size: 0.85em;
+        color: #495057; /* Bootstrap muted text color */
         display: block;
-        margin-bottom: 3px;
+        margin-bottom: 0.15rem;
     }
     .message .timestamp {
-        font-size: 0.75em;
-        color: #888;
+        font-size: 0.7em;
+        color: #6c757d; /* Bootstrap secondary text color */
         display: block;
-        margin-top: 2px;
+        margin-top: 0.1rem;
         text-align: right;
     }
     .system-message {
         text-align: center;
-        color: #888;
+        color: #6c757d; /* Bootstrap secondary text color */
         font-style: italic;
         font-size: 0.9em;
-        margin: 10px 0;
+        margin: 0.75rem 0; /* Bootstrap spacing */
     }
+    /* Sidebar scrollbar styling (optional) */
+    .chat-sidebar-bs::-webkit-scrollbar { width: 8px; }
+    .chat-sidebar-bs::-webkit-scrollbar-thumb { background-color: #adb5bd; border-radius: 4px; }
+    .messages-area-bs::-webkit-scrollbar { width: 8px; }
+    .messages-area-bs::-webkit-scrollbar-thumb { background-color: #adb5bd; border-radius: 4px; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2>Real-Time Chat</h2>
+<div class="container-fluid mt-4"> {# Changed to container-fluid for wider layout #}
+    <h2 class="mb-3">Real-Time Chat</h2>
 
-    <div class="chat-container mt-3">
-        <div class="chat-sidebar">
-            <h4>Chat Rooms</h4>
-            <button id="createRoomBtn" class="btn btn-sm btn-primary mb-2">Create Room</button>
-            <div id="chatRoomList">
+    <div class="row border rounded shadow-sm chat-container-bs overflow-hidden">
+        <!-- Sidebar -->
+        <div class="col-md-4 col-lg-3 border-end p-0 d-flex flex-column chat-sidebar-bs bg-light">
+            <div class="p-3 border-bottom">
+                <h4 class="mb-1">Chat Rooms</h4>
+                <button id="createRoomBtn" class="btn btn-sm btn-primary w-100">Create New Room</button>
+            </div>
+            <div id="chatRoomList" class="list-group list-group-flush overflow-auto flex-grow-1">
                 <!-- Chat rooms will be loaded here by JavaScript -->
-                <p>Loading rooms...</p>
+                <div class="list-group-item">Loading rooms...</div>
             </div>
         </div>
-        <div class="chat-main">
-            <div class="chat-room-header">
-                <h3 id="currentRoomName">Select a room</h3>
+
+        <!-- Main Chat Area -->
+        <div class="col-md-8 col-lg-9 p-0 d-flex flex-column">
+            <div class="chat-room-header p-3 border-bottom bg-light">
+                <h3 id="currentRoomName" class="h5 mb-0">Select a room</h3>
             </div>
-            <div class="messages-area" id="messagesArea">
+            <div class="messages-area-bs p-3">
                 <!-- Messages will be loaded here -->
-                <p class="text-center" id="chatPlaceholder">Please select a room to start chatting or create a new one.</p>
+                <p class="text-center text-muted" id="chatPlaceholder">Please select a room to start chatting or create a new one.</p>
             </div>
-            <div class="message-input-area">
-                <form id="messageForm" class="d-none"> {# Initially hidden #}
+            <div class="message-input-area p-3 border-top bg-light">
+                <form id="messageForm" class="d-none input-group"> {# Initially hidden, added input-group #}
                     <input type="text" id="messageInput" class="form-control" placeholder="Type your message..." autocomplete="off">
-                    <button type="submit" class="btn btn-primary">Send</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-send-fill"></i> Send
+                    </button>
                 </form>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Create Room Modal (optional, or simple prompt) -->
+<!-- Create Room Modal -->
 <div class="modal fade" id="createRoomModal" tabindex="-1" aria-labelledby="createRoomModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="createRoomModalLabel">Create New Chat Room</h5>
@@ -171,7 +132,7 @@
                         <label for="newRoomNameInput" class="form-label">Room Name</label>
                         <input type="text" class="form-control" id="newRoomNameInput" required>
                     </div>
-                    <button type="submit" class="btn btn-primary">Create Room</button>
+                    <button type="submit" class="btn btn-primary w-100">Create Room</button>
                 </form>
             </div>
         </div>
@@ -189,12 +150,10 @@
     let activeRoomName = null; // e.g., "chat_room_123"
     let activeRoomId = null; // e.g., 123
 
-    // Initialize Socket.IO connection
-    const socket = io(); // Connects to the server that served the page
+    const socket = io();
 
     socket.on('connect', () => {
         console.log('Connected to Socket.IO server');
-        // If rejoining a room is needed on reconnect, handle here
         if (activeRoomName) {
             socket.emit('join_chat_room', { room_name: activeRoomName });
         }
@@ -206,25 +165,22 @@
 
     socket.on('chat_error', (data) => {
         console.error('Chat Error:', data.message);
-        alert(`Chat Error: ${data.message}`); // Simple alert for user feedback
+        // Consider using a Bootstrap toast for errors
+        alert(`Chat Error: ${data.message}`);
     });
 
-    // Listen for new messages
     socket.on('new_chat_message', (data) => {
         if (data.room_name === activeRoomName) {
             appendMessage(data, data.user_id === currentUserId);
         }
-        // Potentially update unread count for other rooms if UI supports it
     });
 
-    // Listen for users joining
     socket.on('user_joined_chat', (data) => {
         if (data.room === activeRoomName) {
             appendSystemMessage(`${data.username} has joined the room.`);
         }
     });
 
-    // Listen for users leaving
     socket.on('user_left_chat', (data) => {
         if (data.room === activeRoomName) {
             appendSystemMessage(`${data.username} has left the room.`);
@@ -232,68 +188,68 @@
     });
 
     function appendSystemMessage(message) {
-        const messagesArea = document.getElementById('messagesArea');
+        const messagesArea = document.querySelector('.messages-area-bs');
         const msgDiv = document.createElement('div');
         msgDiv.classList.add('system-message');
         msgDiv.textContent = message;
-        messagesArea.prepend(msgDiv); // Prepend to keep new messages at the bottom (due to flex-direction: column-reverse)
+        messagesArea.prepend(msgDiv);
     }
 
-
-    // Function to fetch and display chat rooms
     async function fetchChatRooms() {
         try {
             const response = await fetch('/api/chat/rooms', {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}` // Assuming JWT token is stored
-                }
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
             });
-            if (!response.ok) {
-                throw new Error(`Failed to fetch chat rooms: ${response.statusText}`);
-            }
+            if (!response.ok) throw new Error(`Failed to fetch chat rooms: ${response.statusText}`);
+
             const data = await response.json();
             const roomListDiv = document.getElementById('chatRoomList');
-            roomListDiv.innerHTML = ''; // Clear current list
+            roomListDiv.innerHTML = '';
 
             if (data.chat_rooms && data.chat_rooms.length > 0) {
                 data.chat_rooms.forEach(room => {
-                    const roomDiv = document.createElement('div');
-                    roomDiv.classList.add('room-list-item');
-                    roomDiv.textContent = room.name;
-                    roomDiv.dataset.roomId = room.id;
-                    roomDiv.dataset.roomName = `chat_room_${room.id}`; // Construct consistent room name for SocketIO
+                    const roomLink = document.createElement('a'); // Changed to <a> for list-group-item-action
+                    roomLink.href = "#"; // Prevent page jump
+                    roomLink.classList.add('list-group-item', 'list-group-item-action', 'room-list-item');
+                    roomLink.dataset.roomId = room.id;
+                    roomLink.dataset.roomName = `chat_room_${room.id}`;
+
+                    const roomNameSpan = document.createElement('span');
+                    roomNameSpan.textContent = room.name;
+                    roomLink.appendChild(roomNameSpan);
 
                     const creatorSpan = document.createElement('small');
-                    creatorSpan.textContent = ` (Creator: ${room.creator_username || 'System'})`;
-                    roomDiv.appendChild(creatorSpan);
+                    creatorSpan.classList.add('d-block', 'text-muted'); // Bootstrap classes for styling
+                    creatorSpan.textContent = `Creator: ${room.creator_username || 'System'}`;
+                    roomLink.appendChild(creatorSpan);
 
-                    roomDiv.onclick = () => selectRoom(room.id, room.name, `chat_room_${room.id}`);
-                    roomListDiv.appendChild(roomDiv);
+                    roomLink.onclick = (e) => {
+                        e.preventDefault();
+                        selectRoom(room.id, room.name, `chat_room_${room.id}`);
+                    };
+                    roomListDiv.appendChild(roomLink);
                 });
             } else {
-                roomListDiv.innerHTML = '<p>No chat rooms available. Create one!</p>';
+                roomListDiv.innerHTML = '<div class="list-group-item">No chat rooms available. Create one!</div>';
             }
         } catch (error) {
             console.error('Error fetching chat rooms:', error);
-            document.getElementById('chatRoomList').innerHTML = '<p>Error loading rooms.</p>';
+            document.getElementById('chatRoomList').innerHTML = '<div class="list-group-item text-danger">Error loading rooms.</div>';
         }
     }
 
-    // Function to select a room and load its messages
     async function selectRoom(roomId, roomDisplayName, socketRoomName) {
         if (activeRoomName && activeRoomName !== socketRoomName) {
             socket.emit('leave_chat_room', { room_name: activeRoomName });
         }
 
         activeRoomId = roomId;
-        activeRoomName = socketRoomName; // This is the SocketIO room identifier like "chat_room_1"
+        activeRoomName = socketRoomName;
         document.getElementById('currentRoomName').textContent = roomDisplayName;
-        document.getElementById('messagesArea').innerHTML = ''; // Clear messages
+        document.querySelector('.messages-area-bs').innerHTML = '';
         document.getElementById('chatPlaceholder').style.display = 'none';
         document.getElementById('messageForm').classList.remove('d-none');
 
-
-        // Highlight active room
         document.querySelectorAll('.room-list-item').forEach(item => item.classList.remove('active'));
         const selectedRoomItem = document.querySelector(`.room-list-item[data-room-id='${roomId}']`);
         if (selectedRoomItem) {
@@ -304,13 +260,9 @@
 
         try {
             const response = await fetch(`/api/chat/rooms/${roomId}/messages`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-                }
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
             });
-            if (!response.ok) {
-                throw new Error(`Failed to fetch messages: ${response.statusText}`);
-            }
+            if (!response.ok) throw new Error(`Failed to fetch messages: ${response.statusText}`);
             const data = await response.json();
             data.messages.forEach(msg => appendMessage(msg, msg.user_id === currentUserId));
         } catch (error) {
@@ -319,21 +271,21 @@
         }
     }
 
-    // Function to append a message to the messages area
     function appendMessage(msgData, isSentByCurrentUser) {
-        const messagesArea = document.getElementById('messagesArea');
-        // Remove placeholder if it exists
+        const messagesArea = document.querySelector('.messages-area-bs');
         const placeholder = document.getElementById('chatPlaceholder');
         if (placeholder) placeholder.style.display = 'none';
 
         const msgDiv = document.createElement('div');
         msgDiv.classList.add('message', isSentByCurrentUser ? 'sent' : 'received');
+        // Add Bootstrap utility classes if desired, e.g., p-2, rounded-3, shadow-sm
 
         const usernameSpan = document.createElement('span');
         usernameSpan.classList.add('username');
-        usernameSpan.textContent = msgData.username || 'Unknown User'; // Fallback for username
+        usernameSpan.textContent = msgData.username || 'Unknown User';
 
         const contentP = document.createElement('p');
+        contentP.classList.add('mb-0'); // Remove bottom margin from paragraph
         contentP.textContent = msgData.message;
 
         const timestampSpan = document.createElement('span');
@@ -344,11 +296,9 @@
         msgDiv.appendChild(contentP);
         msgDiv.appendChild(timestampSpan);
 
-        // messagesArea is flex-direction: column-reverse, so prepend to add to bottom
         messagesArea.prepend(msgDiv);
     }
 
-    // Handle message form submission
     document.getElementById('messageForm').addEventListener('submit', (e) => {
         e.preventDefault();
         const messageInput = document.getElementById('messageInput');
@@ -359,13 +309,11 @@
                 room_name: activeRoomName,
                 message: messageText
             });
-            messageInput.value = ''; // Clear input
+            messageInput.value = '';
         }
     });
 
-    // Handle create room button and form submission
     document.getElementById('createRoomBtn').addEventListener('click', () => {
-        // Using Bootstrap's Modal
         var createRoomModal = new bootstrap.Modal(document.getElementById('createRoomModal'));
         createRoomModal.show();
     });
@@ -387,12 +335,10 @@
                 });
                 const result = await response.json();
                 if (response.ok) {
-                    fetchChatRooms(); // Refresh room list
+                    fetchChatRooms();
                     newRoomNameInput.value = '';
-                    var createRoomModalEl = document.getElementById('createRoomModal');
-                    var modal = bootstrap.Modal.getInstance(createRoomModalEl);
+                    var modal = bootstrap.Modal.getInstance(document.getElementById('createRoomModal'));
                     modal.hide();
-                    // Optionally, auto-select the new room
                     if (result.chat_room) {
                         selectRoom(result.chat_room.id, result.chat_room.name, `chat_room_${result.chat_room.id}`);
                     }
@@ -406,21 +352,17 @@
         }
     });
 
-
-    // Initial load
     document.addEventListener('DOMContentLoaded', () => {
         if (!currentUserId) {
-            // Handle case where user is not logged in or token is not available
-            // For now, assume JWT token is fetched and stored by login logic
-            // Or redirect to login if no token.
-            // This example proceeds assuming token will be available for API calls.
             console.warn("User not logged in or access token not available. Chat functionality may be limited.");
-            // Potentially disable chat features or prompt login
-            document.getElementById('chatRoomList').innerHTML = '<p>Please log in to use chat.</p>';
+            document.getElementById('chatRoomList').innerHTML = '<div class="list-group-item text-muted">Please log in to use chat.</div>';
             document.getElementById('createRoomBtn').disabled = true;
+            document.getElementById('messageForm').classList.add('d-none'); // Hide message form too
             return;
         }
         fetchChatRooms();
+        // Ensure Bootstrap Icons are available if used, e.g. for send button
+        // This template uses <i class="bi bi-send-fill"></i>
     });
 
 </script>

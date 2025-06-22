@@ -3,27 +3,72 @@
 {% block title %}Image Gallery{% endblock %}
 
 {% block content %}
-    <h1>Image Gallery</h1>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <ul class="flashes">
-            {% for category, message in messages %}
-                <li class="{{ category }}">{{ message }}</li>
-            {% endfor %}
-            </ul>
-        {% endif %}
-    {% endwith %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <h1 class="mb-0">Image Gallery</h1>
+        <a href="{{ url_for('upload_image') }}" class="btn btn-primary">
+            <i class="bi bi-upload"></i> Upload Image
+        </a>
+    </div>
+
+    {% include '_flash_messages.html' %}
 
     {% if images %}
-        <div class="gallery-grid">
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4">
             {% for image_filename in images %}
-                <div class="gallery-item">
-                    <img src="{{ url_for('uploaded_file', filename=image_filename) }}" alt="{{ image_filename }}">
+                <div class="col">
+                    <div class="card h-100 shadow-sm">
+                        <a href="{{ url_for('uploaded_file', filename=image_filename) }}" data-bs-toggle="modal" data-bs-target="#imageModal" data-bs-imageurl="{{ url_for('uploaded_file', filename=image_filename) }}">
+                            <img src="{{ url_for('uploaded_file', filename=image_filename) }}" class="card-img-top img-fluid" alt="{{ image_filename }}" style="object-fit: cover; height: 200px;">
+                        </a>
+                        {# Optionally, add card body for image name or actions #}
+                        {# <div class="card-body p-2 text-center">
+                            <small class="text-muted">{{ image_filename }}</small>
+                        </div> #}
+                    </div>
                 </div>
             {% endfor %}
         </div>
     {% else %}
-        <p>No images uploaded yet. <a href="{{ url_for('upload_image') }}">Upload one!</a></p>
+        <div class="alert alert-info mt-3" role="alert">
+            <h4 class="alert-heading">No Images Yet!</h4>
+            <p>No images have been uploaded to the gallery. Why not be the first?</p>
+            <a href="{{ url_for('upload_image') }}" class="btn btn-success"><i class="bi bi-plus-circle-fill"></i> Upload one!</a>
+        </div>
     {% endif %}
-    <p><a href="{{ url_for('upload_image') }}">Upload Another Image</a></p>
+</div>
+
+<!-- Modal for Image Preview -->
+<div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="imageModalLabel">Image Preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <img src="" class="img-fluid rounded" id="modalImagePreview" alt="Image Preview">
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var imageModal = document.getElementById('imageModal');
+    if (imageModal) {
+        imageModal.addEventListener('show.bs.modal', function (event) {
+            var button = event.relatedTarget; // Button that triggered the modal
+            var imageUrl = button.getAttribute('data-bs-imageurl'); // Extract info from data-bs-* attributes
+            var modalImage = imageModal.querySelector('#modalImagePreview');
+            modalImage.src = imageUrl;
+            // var modalTitle = imageModal.querySelector('.modal-title');
+            // modalTitle.textContent = 'Preview: ' + button.querySelector('img').alt; // If you want to set title
+        });
+    }
+});
+</script>
 {% endblock %}

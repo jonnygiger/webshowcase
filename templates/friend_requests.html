@@ -4,36 +4,45 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Friend Requests</h2>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-                <div class="alert alert-{{ category }}">{{ message }}</div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
+    <h2 class="mb-4 pb-2 border-bottom">Friend Requests</h2>
+
+    {% include '_flash_messages.html' %}
 
     {% if pending_requests %}
-        <ul class="list-group">
+        <div class="list-group">
             {% for request_item in pending_requests %}
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <a href="{{ url_for('user_profile', username=request_item.requester.username) }}">{{ request_item.requester.username }}</a>
-                        <small class="text-muted">sent on {{ request_item.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center mb-2 shadow-sm p-3">
+                    <div class="me-3 mb-2 mb-md-0">
+                        <img src="{{ request_item.requester.profile_picture or url_for('static', filename='profile_pics/default.png') }}" alt="{{ request_item.requester.username }}" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;">
+                        <a href="{{ url_for('user_profile', username=request_item.requester.username) }}" class="text-decoration-none fw-bold">{{ request_item.requester.username }}</a>
+                        <br>
+                        <small class="text-muted">Sent on {{ request_item.timestamp.strftime('%b %d, %Y at %I:%M %p') }}</small>
                     </div>
-                    <div>
-                        <form action="{{ url_for('accept_friend_request', request_id=request_item.id) }}" method="POST" style="display: inline;">
-                            <button type="submit" class="btn btn-success btn-sm">Accept</button>
+                    <div class="btn-group" role="group" aria-label="Friend request actions">
+                        <form action="{{ url_for('accept_friend_request', request_id=request_item.id) }}" method="POST" class="d-inline">
+                            <button type="submit" class="btn btn-success btn-sm">
+                                <i class="bi bi-check-lg"></i> Accept
+                            </button>
                         </form>
-                        <form action="{{ url_for('reject_friend_request', request_id=request_item.id) }}" method="POST" style="display: inline;">
-                            <button type="submit" class="btn btn-danger btn-sm ms-1">Reject</button>
+                        <form action="{{ url_for('reject_friend_request', request_id=request_item.id) }}" method="POST" class="d-inline">
+                            <button type="submit" class="btn btn-danger btn-sm ms-2">
+                                <i class="bi bi-x-lg"></i> Reject
+                            </button>
                         </form>
                     </div>
-                </li>
+                </div>
             {% endfor %}
-        </ul>
+        </div>
     {% else %}
-        <p>You have no pending friend requests.</p>
+        <div class="alert alert-info mt-3" role="alert">
+            <h4 class="alert-heading">No Pending Requests!</h4>
+            You have no pending friend requests at the moment.
+        </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# Ensure Bootstrap Icons are loaded #}
 {% endblock %}

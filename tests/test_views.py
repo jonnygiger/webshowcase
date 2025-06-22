@@ -26,7 +26,7 @@ class TestViewRoutes(AppTestCase):
             self.login("viewer_a", "password_a")
             response = self.client.get(f"/user/{user_b.username}")
             self.assertEqual(response.status_code, 200)
-            self.assertIn("Friend Request Sent", response.data.decode())
+            self.assertIn("Friend request pending", response.data.decode()) # Corrected to match template
             self.logout()
             self._remove_db_friendship(user_a, user_b) # Clean up
 
@@ -35,7 +35,7 @@ class TestViewRoutes(AppTestCase):
             self.login("viewer_a", "password_a")
             response = self.client.get(f"/user/{user_b.username}")
             self.assertEqual(response.status_code, 200)
-            self.assertIn("Respond to Request", response.data.decode()) # Or "Accept Friend Request" etc.
+            self.assertIn("Accept Friend Request", response.data.decode()) # Corrected to match button text
             # Check that the form to accept/reject is present
             self.assertIn(f"/friend_request/{fs_b_to_a.id}/accept", response.data.decode())
             self.logout()

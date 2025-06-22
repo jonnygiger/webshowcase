@@ -2,11 +2,12 @@
 # Initially, it will house new_post_sse_queues and broadcast_new_post.
 
 from flask import current_app, url_for
-import queue # broadcast_new_post uses queue.Queue for sse_listeners, and app.py uses it for new_post_sse_queues
+import queue  # broadcast_new_post uses queue.Queue for sse_listeners, and app.py uses it for new_post_sse_queues
 
 # Global list for SSE queues for new posts.
 # Each item in the list is a queue.Queue instance.
 new_post_sse_queues = []
+
 
 def broadcast_new_post(post_data):
     """
@@ -17,7 +18,7 @@ def broadcast_new_post(post_data):
     # The original function in app.py had extensive logging and error handling.
     # It's important to replicate or adapt that as needed.
 
-    logger = current_app.logger # Get logger from current_app
+    logger = current_app.logger  # Get logger from current_app
 
     post_data_with_url = post_data.copy()
 
@@ -31,15 +32,17 @@ def broadcast_new_post(post_data):
             logger.error(
                 f"Error generating URL for post ID {post_data_with_url.get('id')} in broadcast_new_post: {e}. Sending notification without URL."
             )
-            if 'url' in post_data_with_url:
-                del post_data_with_url['url']
+            if "url" in post_data_with_url:
+                del post_data_with_url["url"]
     else:
         logger.warning(
             "Post data missing 'id' field in broadcast_new_post, cannot generate URL for SSE notification. Sending notification without URL."
         )
 
     if not new_post_sse_queues:
-        logger.warning("No SSE queues in new_post_sse_queues to send new post notifications to.")
+        logger.warning(
+            "No SSE queues in new_post_sse_queues to send new post notifications to."
+        )
         return
 
     logger.info(
@@ -49,4 +52,6 @@ def broadcast_new_post(post_data):
         try:
             q_item.put(post_data_with_url)
         except Exception as e:
-            logger.error(f"Error putting post_data_with_url into a queue in broadcast_new_post: {e}")
+            logger.error(
+                f"Error putting post_data_with_url into a queue in broadcast_new_post: {e}"
+            )

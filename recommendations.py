@@ -1,4 +1,5 @@
 from flask import current_app
+
 # from app import db # Removed this line
 from models import (
     User,
@@ -13,11 +14,15 @@ from models import (
     Comment,
     SharedPost,
     TrendingHashtag,
-    db, # Added db import
+    db,  # Added db import
 )  # Added SharedPost and TrendingHashtag
 from sqlalchemy import func, or_, extract
 from collections import defaultdict, Counter
-from datetime import datetime, timedelta, timezone # Ensure datetime and timedelta are imported
+from datetime import (
+    datetime,
+    timedelta,
+    timezone,
+)  # Ensure datetime and timedelta are imported
 from flask import current_app
 
 
@@ -88,7 +93,7 @@ def suggest_users_to_follow(user_id, limit=5):
 
 def suggest_posts_to_read(user_id, limit=5):
     """Suggest posts liked or commented on by the current user's friends, ranked by recency of interaction."""
-    db_session = current_app.extensions['sqlalchemy'].session
+    db_session = current_app.extensions["sqlalchemy"].session
     current_user = db_session.get(User, user_id)
     if not current_user:
         return []
@@ -114,7 +119,7 @@ def suggest_posts_to_read(user_id, limit=5):
 
     # 2. Fetch Posts Liked by Friends
     likes_by_friends = (
-        db_session.query(Like.post_id, Like.timestamp) # Use db_session
+        db_session.query(Like.post_id, Like.timestamp)  # Use db_session
         .filter(Like.user_id.in_(friend_ids))
         .all()
     )
@@ -128,7 +133,7 @@ def suggest_posts_to_read(user_id, limit=5):
 
     # 3. Fetch Posts Commented on by Friends
     comments_by_friends = (
-        db_session.query(Comment.post_id, Comment.timestamp) # Use db_session
+        db_session.query(Comment.post_id, Comment.timestamp)  # Use db_session
         .filter(Comment.user_id.in_(friend_ids))
         .all()
     )
@@ -219,7 +224,7 @@ def suggest_posts_to_read(user_id, limit=5):
 
     # Pre-fetch all likes and comments for efficiency if dealing with many posts
     # This avoids N+1 queries within the loop when accessing post.likes or post.comments
-    db = current_app.extensions['sqlalchemy']
+    db = current_app.extensions["sqlalchemy"]
     all_likes_query = db.session.query(Like.post_id, Like.user_id).all()
     post_likes_map = defaultdict(list)
     for post_id, liker_id in all_likes_query:
@@ -431,7 +436,7 @@ def suggest_groups_to_join(user_id, limit=5):
 
 
 def suggest_events_to_attend(user_id, limit=5):
-    db_ext = current_app.extensions['sqlalchemy'] # Use db_ext for clarity
+    db_ext = current_app.extensions["sqlalchemy"]  # Use db_ext for clarity
     current_user = db_ext.session.get(User, user_id)
     if not current_user:
         return []
@@ -510,7 +515,7 @@ def suggest_events_to_attend(user_id, limit=5):
 
 
 def suggest_polls_to_vote(user_id, limit=5):
-    db_ext = current_app.extensions['sqlalchemy'] # Use db_ext
+    db_ext = current_app.extensions["sqlalchemy"]  # Use db_ext
     current_user = db_ext.session.get(User, user_id)
     if not current_user:
         return []
@@ -657,7 +662,7 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     Suggests trending posts based on recent activity (likes, comments) and post recency.
     Excludes posts by the user, or already interacted with/bookmarked by the user.
     """
-    db_ext = current_app.extensions['sqlalchemy'] # Use db_ext
+    db_ext = current_app.extensions["sqlalchemy"]  # Use db_ext
     current_user = None
     if user_id is not None:
         current_user = db_ext.session.get(User, user_id)
@@ -674,15 +679,22 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     user_commented_post_ids = set()
     user_bookmarked_post_ids = set()
 
-    if user_id is not None: # Only fetch user-specific exclusions if user_id is provided
+    if (
+        user_id is not None
+    ):  # Only fetch user-specific exclusions if user_id is provided
         user_liked_post_ids = {
             like.post_id for like in Like.query.filter_by(user_id=user_id).all()
         }
         user_commented_post_ids = {
-            comment.post_id for comment in Comment.query.filter_by(user_id=user_id).all()
+            comment.post_id
+            for comment in Comment.query.filter_by(user_id=user_id).all()
         }
-        if current_user: # current_user might be None if user_id was provided but user not found
-            user_bookmarked_post_ids = {bookmark.post_id for bookmark in current_user.bookmarks}
+        if (
+            current_user
+        ):  # current_user might be None if user_id was provided but user not found
+            user_bookmarked_post_ids = {
+                bookmark.post_id for bookmark in current_user.bookmarks
+            }
 
     excluded_post_ids = user_liked_post_ids.union(user_commented_post_ids).union(
         user_bookmarked_post_ids
@@ -699,7 +711,9 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
 
     # Posts with recent likes
     posts_with_recent_likes_ids = (
-        db.session.query(Like.post_id).filter(Like.timestamp >= cutoff_date_naive).distinct()
+        db.session.query(Like.post_id)
+        .filter(Like.timestamp >= cutoff_date_naive)
+        .distinct()
     )
 
     # Posts with recent comments
@@ -747,7 +761,8 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     recent_likes_counts = (
         db.session.query(Like.post_id, func.count(Like.id).label("like_count"))
         .filter(
-            Like.post_id.in_(valid_candidate_post_ids), Like.timestamp >= cutoff_date_naive
+            Like.post_id.in_(valid_candidate_post_ids),
+            Like.timestamp >= cutoff_date_naive,
         )
         .group_by(Like.post_id)
         .all()
@@ -798,7 +813,9 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
         # Or simply its age from now, normalized by since_days.
 
         # Assuming post.timestamp is naive UTC from the database
-        post_age_days = (datetime.utcnow() - post.timestamp).days # Compare naive with naive
+        post_age_days = (
+            datetime.utcnow() - post.timestamp
+        ).days  # Compare naive with naive
         if post_age_days < 0:
             post_age_days = 0  # Should not happen
 
@@ -838,7 +855,7 @@ def update_trending_hashtags(top_n=10, since_days=7):
     Calculates hashtag frequencies from recent posts, deletes existing trending
     hashtags, and populates TrendingHashtag table with the new top N hashtags.
     """
-    db = current_app.extensions['sqlalchemy']
+    db = current_app.extensions["sqlalchemy"]
     current_app.logger.info(
         f"Starting update_trending_hashtags job. Top N: {top_n}, Since Days: {since_days}"
     )
@@ -919,7 +936,7 @@ def get_personalized_feed_posts(user_id, limit=20):
     Combines posts from followed users, friends' activity, trending posts, and user's groups.
     Ensures posts are not duplicated and are ranked appropriately.
     """
-    current_user = db.session.get(User, user_id) # Use db.session.get
+    current_user = db.session.get(User, user_id)  # Use db.session.get
     if not current_user:
         current_app.logger.warning(
             f"get_personalized_feed_posts: User with ID {user_id} not found."
@@ -1137,7 +1154,7 @@ def get_on_this_day_content(user_id):
     events_on_this_day = []
     for event in all_user_events:
         # event.date is now a datetime object
-        if event.date: # Ensure event.date is not None
+        if event.date:  # Ensure event.date is not None
             if (
                 event.date.month == current_month
                 and event.date.day == current_day
@@ -1146,7 +1163,8 @@ def get_on_this_day_content(user_id):
                 events_on_this_day.append(event)
         else:
             # Log if an event unexpectedly has no date
-            current_app.logger.warning(f"Event ID {event.id} has no date attribute or it is None.")
-
+            current_app.logger.warning(
+                f"Event ID {event.id} has no date attribute or it is None."
+            )
 
     return {"posts": posts_on_this_day, "events": events_on_this_day}

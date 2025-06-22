@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 # from models import User, Post, Event # COMMENTED OUT
 # from recommendations import get_on_this_day_posts_and_events # Potentially used by API
 from tests.test_base import AppTestCase
-from models import User # Needed for direct user creation
-from werkzeug.security import generate_password_hash # Needed for hashing password
+from models import User  # Needed for direct user creation
+from werkzeug.security import generate_password_hash  # Needed for hashing password
 
 # from flask import url_for # Conditional import is good practice
 
@@ -56,8 +56,8 @@ class TestOnThisDayPage(AppTestCase):
     @patch("recommendations.datetime")
     def test_on_this_day_page_no_content(self, mock_reco_datetime, mock_app_datetime):
         no_content_date = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-        mock_app_datetime.now.return_value = no_content_date # Changed from utcnow
-        mock_reco_datetime.now.return_value = no_content_date # Changed from utcnow
+        mock_app_datetime.now.return_value = no_content_date  # Changed from utcnow
+        mock_reco_datetime.now.return_value = no_content_date  # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
 
         self.login(self.test_user.username, "password")
@@ -69,7 +69,9 @@ class TestOnThisDayPage(AppTestCase):
         self.assertIn("No posts from this day in previous years.", response_data)
         self.assertIn("No events from this day in previous years.", response_data)
         # Assert that the general "Nothing to show..." message is NOT present
-        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
+        self.assertNotIn(
+            "Nothing to show for 'On This Day' from previous years.", response_data
+        )
         self.logout()
 
     @patch("app.datetime")
@@ -79,8 +81,8 @@ class TestOnThisDayPage(AppTestCase):
     ):
         from flask import url_for
 
-        mock_app_datetime.now.return_value = self.fixed_today # Changed from utcnow
-        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
+        mock_app_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
 
         self.login(self.test_user.username, "password")
@@ -103,11 +105,9 @@ class TestOnThisDayPage(AppTestCase):
 
     @patch("app.datetime")
     @patch("recommendations.datetime")
-    def test_on_this_day_page_only_posts(
-        self, mock_reco_datetime, mock_app_datetime
-    ):
-        mock_app_datetime.now.return_value = self.fixed_today # Changed from utcnow
-        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
+    def test_on_this_day_page_only_posts(self, mock_reco_datetime, mock_app_datetime):
+        mock_app_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
 
         # Create a new user for this test to ensure no other events interfere
@@ -119,14 +119,18 @@ class TestOnThisDayPage(AppTestCase):
             )
             self.db.session.add(test_user_for_only_posts)
             self.db.session.commit()
-            test_user_for_only_posts_id = test_user_for_only_posts.id # Get ID before context closes
+            test_user_for_only_posts_id = (
+                test_user_for_only_posts.id
+            )  # Get ID before context closes
 
         # Create a post for this user on "this day" in a previous year
         post_only = self._create_db_post(
             user_id=test_user_for_only_posts_id,
             title="Post From Last Year, No Events",
             content="This post is from Oct 26, 2022.",
-            timestamp=datetime(2022, 10, 26, 9, 0, 0),  # Matches self.fixed_today's date, previous year
+            timestamp=datetime(
+                2022, 10, 26, 9, 0, 0
+            ),  # Matches self.fixed_today's date, previous year
         )
 
         self.login(test_user_for_only_posts.username, "password")
@@ -148,11 +152,9 @@ class TestOnThisDayPage(AppTestCase):
 
     @patch("app.datetime")
     @patch("recommendations.datetime")
-    def test_on_this_day_page_only_events(
-        self, mock_reco_datetime, mock_app_datetime
-    ):
-        mock_app_datetime.now.return_value = self.fixed_today # Changed from utcnow
-        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
+    def test_on_this_day_page_only_events(self, mock_reco_datetime, mock_app_datetime):
+        mock_app_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
 
         # Create a new user for this test to ensure no other posts interfere
@@ -164,7 +166,9 @@ class TestOnThisDayPage(AppTestCase):
             )
             self.db.session.add(test_user_for_only_events)
             self.db.session.commit()
-            test_user_for_only_events_id = test_user_for_only_events.id # Get ID before context closes
+            test_user_for_only_events_id = (
+                test_user_for_only_events.id
+            )  # Get ID before context closes
 
         # Create an event for this user on "this day" in a previous year
         event_only = self._create_db_event(
@@ -193,10 +197,12 @@ class TestOnThisDayPage(AppTestCase):
 
     @patch("app.datetime")
     @patch("recommendations.datetime")
-    def test_on_this_day_page_current_year_and_wrong_day_content_only(self, mock_reco_datetime, mock_app_datetime):
+    def test_on_this_day_page_current_year_and_wrong_day_content_only(
+        self, mock_reco_datetime, mock_app_datetime
+    ):
         # 1. Mock datetime BEFORE any logic that might use it
-        mock_app_datetime.now.return_value = self.fixed_today # Changed from utcnow
-        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
+        mock_app_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
         # Ensure that strptime used by recommendations.py is the real one
         mock_reco_datetime.strptime = datetime.strptime
 
@@ -205,7 +211,7 @@ class TestOnThisDayPage(AppTestCase):
             no_otd_content_user = User(
                 username="no_otd_content_user",
                 email="no_otd@example.com",
-                password_hash=generate_password_hash("password")
+                password_hash=generate_password_hash("password"),
             )
             self.db.session.add(no_otd_content_user)
             self.db.session.commit()
@@ -224,28 +230,28 @@ class TestOnThisDayPage(AppTestCase):
             user_id=self.no_otd_content_user.id,
             title="Current Year Post (OTD)",
             content="This post is from Oct 26, 2023.",
-            timestamp=datetime(2023, 10, 26, 10, 0, 0)
+            timestamp=datetime(2023, 10, 26, 10, 0, 0),
         )
 
         event_current_year_same_day = self._create_db_event(
             user_id=self.no_otd_content_user.id,
             title="Current Year Event (OTD)",
             date_str="2023-10-26",
-            description="This event is on Oct 26, 2023."
+            description="This event is on Oct 26, 2023.",
         )
 
         post_prev_year_diff_day = self._create_db_post(
             user_id=self.no_otd_content_user.id,
             title="Previous Year Wrong Day Post",
             content="This post is from Nov 26, 2022.",
-            timestamp=datetime(2022, 11, 26, 10, 0, 0)
+            timestamp=datetime(2022, 11, 26, 10, 0, 0),
         )
 
         event_prev_year_diff_day = self._create_db_event(
             user_id=self.no_otd_content_user.id,
             title="Previous Year Wrong Day Event",
             date_str="2022-11-26",
-            description="This event is on Nov 26, 2022."
+            description="This event is on Nov 26, 2022.",
         )
 
         # Perform login and request
@@ -272,16 +278,20 @@ class TestOnThisDayPage(AppTestCase):
         self.assertIn("No posts from this day in previous years.", response_data)
         self.assertIn("No events from this day in previous years.", response_data)
         # The overall "Nothing to show" message should NOT be present if specific ones are.
-        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
+        self.assertNotIn(
+            "Nothing to show for 'On This Day' from previous years.", response_data
+        )
 
         self.logout()
 
     @patch("app.datetime")
     @patch("recommendations.datetime")
-    def test_on_this_day_page_content_from_wrong_day_only(self, mock_reco_datetime, mock_app_datetime):
+    def test_on_this_day_page_content_from_wrong_day_only(
+        self, mock_reco_datetime, mock_app_datetime
+    ):
         # Mock datetime objects and set fixed_today
-        mock_app_datetime.now.return_value = self.fixed_today # Changed from utcnow
-        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
+        mock_app_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
 
         # Create a new unique user
@@ -303,16 +313,16 @@ class TestOnThisDayPage(AppTestCase):
         post_wrong_day = self._create_db_post(
             user_id=self.wrong_day_user.id,
             title="Previous Year Wrong Day Post",
-            content="This post is from Nov 25, 2022.", # Different day and month
-            timestamp=datetime(2022, 11, 25, 10, 0, 0)
+            content="This post is from Nov 25, 2022.",  # Different day and month
+            timestamp=datetime(2022, 11, 25, 10, 0, 0),
         )
 
         # Create an event by this user from a previous year but a different day/month
         event_wrong_day = self._create_db_event(
             user_id=self.wrong_day_user.id,
             title="Previous Year Wrong Day Event",
-            date_str="2022-09-15", # Different day and month
-            description="This event is on Sep 15, 2022."
+            date_str="2022-09-15",  # Different day and month
+            description="This event is on Sep 15, 2022.",
         )
 
         # Log in as the new test user
@@ -338,7 +348,9 @@ class TestOnThisDayPage(AppTestCase):
         self.assertIn("No events from this day in previous years.", response_data)
 
         # Assert that the page does not show "Nothing to show for 'On This Day' from previous years."
-        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
+        self.assertNotIn(
+            "Nothing to show for 'On This Day' from previous years.", response_data
+        )
 
         self.logout()
 
@@ -422,9 +434,9 @@ class TestOnThisDayAPI(AppTestCase):
     def test_on_this_day_with_content_and_filtering(
         self, mock_api_datetime, mock_reco_datetime
     ):
-        mock_reco_datetime.now.return_value = self.fixed_today # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
-        mock_api_datetime.now.return_value = self.fixed_today # Changed from utcnow
+        mock_api_datetime.now.return_value = self.fixed_today  # Changed from utcnow
 
         token = self._get_jwt_token(self.test_user.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
@@ -465,9 +477,9 @@ class TestOnThisDayAPI(AppTestCase):
     @patch("api.datetime")
     def test_on_this_day_no_content_api(self, mock_api_datetime, mock_reco_datetime):
         no_content_date = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-        mock_reco_datetime.now.return_value = no_content_date # Changed from utcnow
+        mock_reco_datetime.now.return_value = no_content_date  # Changed from utcnow
         mock_reco_datetime.strptime = datetime.strptime
-        mock_api_datetime.now.return_value = no_content_date # Changed from utcnow
+        mock_api_datetime.now.return_value = no_content_date  # Changed from utcnow
 
         token = self._get_jwt_token(self.test_user.username, "password")
         headers = {"Authorization": f"Bearer {token}"}

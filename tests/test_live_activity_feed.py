@@ -10,10 +10,10 @@ from werkzeug.security import (
     generate_password_hash,
 )  # For new user creation in one test
 
-from io import BytesIO # Added for file uploads
-from flask import url_for # Added for url_for in tests
+from io import BytesIO  # Added for file uploads
+from flask import url_for  # Added for url_for in tests
 from app import app, db, socketio
-from models import User, UserActivity, Friendship, Post # User is already here
+from models import User, UserActivity, Friendship, Post  # User is already here
 from tests.test_base import AppTestCase
 
 
@@ -39,7 +39,7 @@ def _create_db_user_activity(
         target_user_id=target_user_id,
         content_preview=content_preview,
         link=link,
-        timestamp=timestamp or datetime.now(timezone.utc)
+        timestamp=timestamp or datetime.now(timezone.utc),
     )
     db.session.add(activity)
     db.session.commit()
@@ -52,45 +52,78 @@ class TestLiveActivityFeed(AppTestCase):
         super().setUp()
         # self.user1, self.user2, self.user3 are created by AppTestCase
         # These helpers require live db and models. Commented out for now.
-        self._create_friendship(self.user2.id, self.user1.id, status='accepted')
-        self._create_friendship(self.user2.id, self.user3.id, status='accepted')
+        self._create_friendship(self.user2.id, self.user1.id, status="accepted")
+        self._create_friendship(self.user2.id, self.user3.id, status="accepted")
 
     @patch("app.socketio.emit")
-    @patch("app.check_and_award_achievements") # Mock achievements function
-    def test_new_follow_activity_logging_and_socketio(self, mock_check_achievements, mock_socketio_emit):
+    @patch("app.check_and_award_achievements")  # Mock achievements function
+    def test_new_follow_activity_logging_and_socketio(
+        self, mock_check_achievements, mock_socketio_emit
+    ):
         # User1 sends a friend request to User2
         # Ensure no pre-existing friendship that would interfere with the specific pending request for this test
         # This is important if other tests or setUp might create a direct friendship between user1 and user2
         with self.app.app_context():
             existing_friendship = Friendship.query.filter(
-                ((Friendship.user_id == self.user1.id) & (Friendship.friend_id == self.user2.id)) |
-                ((Friendship.user_id == self.user2.id) & (Friendship.friend_id == self.user1.id))
+                (
+                    (Friendship.user_id == self.user1.id)
+                    & (Friendship.friend_id == self.user2.id)
+                )
+                | (
+                    (Friendship.user_id == self.user2.id)
+                    & (Friendship.friend_id == self.user1.id)
+                )
             ).first()
             if existing_friendship:
                 db.session.delete(existing_friendship)
                 db.session.commit()
 
             # _create_friendship now returns an ID
-            friend_request_id = self._create_friendship(self.user1.id, self.user2.id, status='pending')
-            self.assertIsNotNone(friend_request_id, "Failed to create pending friend request")
+            friend_request_id = self._create_friendship(
+                self.user1.id, self.user2.id, status="pending"
+            )
+            self.assertIsNotNone(
+                friend_request_id, "Failed to create pending friend request"
+            )
 
         # User2 logs in and accepts the friend request from User1
         self.login(self.user2.username, "password")
-        response = self.client.post(f'/friend_request/{friend_request_id}/accept', follow_redirects=True)
+        response = self.client.post(
+            f"/friend_request/{friend_request_id}/accept", follow_redirects=True
+        )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Friend request accepted successfully!", response.get_data(as_text=True))
+        self.assertIn(
+            "Friend request accepted successfully!", response.get_data(as_text=True)
+        )
 
         # Verify UserActivity creation
         # User2 (acceptor) is the one performing the 'new_follow' activity
         # User1 (requester) is the target_user
         with self.app.app_context():
-            activity = UserActivity.query.filter_by(user_id=self.user2.id, activity_type='new_follow').order_by(UserActivity.timestamp.desc()).first()
-            self.assertIsNotNone(activity, "UserActivity for 'new_follow' was not created.")
+            activity = (
+                UserActivity.query.filter_by(
+                    user_id=self.user2.id, activity_type="new_follow"
+                )
+                .order_by(UserActivity.timestamp.desc())
+                .first()
+            )
+            self.assertIsNotNone(
+                activity, "UserActivity for 'new_follow' was not created."
+            )
             # related_id for 'new_follow' is not explicitly set to the friendship or user in current app.py logic, so it would be None.
-            self.assertEqual(activity.related_id, None, "related_id should be None for new_follow activity type.")
-            self.assertEqual(activity.target_user_id, self.user1.id, "target_user_id is incorrect.")
+            self.assertEqual(
+                activity.related_id,
+                None,
+                "related_id should be None for new_follow activity type.",
+            )
+            self.assertEqual(
+                activity.target_user_id, self.user1.id, "target_user_id is incorrect."
+            )
             self.assertIsNotNone(activity.link, "Activity link should be set.")
-            self.assertTrue(self.user1.username in activity.link, "Activity link should point to the followed user's profile.")
+            self.assertTrue(
+                self.user1.username in activity.link,
+                "Activity link should point to the followed user's profile.",
+            )
 
             # Verify emit_new_activity_event was called correctly by socketio.emit
             # emit_new_activity_event is called with the 'activity' object.
@@ -103,24 +136,28 @@ class TestLiveActivityFeed(AppTestCase):
             # Expected payload structure (based on emit_new_activity_event in app.py)
             # Profile picture URL might vary based on actual user object or default.
             # Assuming default if no picture is set for self.user2
-            user2_profile_pic = self.user2.profile_picture if self.user2.profile_picture else '/static/profile_pics/default.png'
+            user2_profile_pic = (
+                self.user2.profile_picture
+                if self.user2.profile_picture
+                else "/static/profile_pics/default.png"
+            )
             # If url_for is used with _external=True, it might include server name. For testing, often relative is fine or ANY for the domain.
             # For simplicity, we'll check the path part if it's default. If profile_picture is set, it's used as is.
             if not self.user2.profile_picture:
-                 # In test context, url_for might behave differently. Let's use ANY for profile_picture if default.
-                 # Or, more robustly, ensure user2 has a known profile_picture or mock url_for within emit_new_activity_event for this part.
-                 # For now, let's assume it resolves to the default path or is ANY.
-                 # To make it more predictable without complex mocking of url_for, let's check if it ends with the default path.
-                 pass # We will use ANY for profile_picture path if it's default path
+                # In test context, url_for might behave differently. Let's use ANY for profile_picture if default.
+                # Or, more robustly, ensure user2 has a known profile_picture or mock url_for within emit_new_activity_event for this part.
+                # For now, let's assume it resolves to the default path or is ANY.
+                # To make it more predictable without complex mocking of url_for, let's check if it ends with the default path.
+                pass  # We will use ANY for profile_picture path if it's default path
 
             expected_payload = {
                 "activity_id": activity.id,
                 "user_id": self.user2.id,
                 "username": self.user2.username,
-                "profile_picture": ANY, # Using ANY as exact URL can be tricky with _external=True and test context
+                "profile_picture": ANY,  # Using ANY as exact URL can be tricky with _external=True and test context
                 "activity_type": "new_follow",
                 "related_id": None,
-                "content_preview": activity.content_preview, # Should be None or empty for 'new_follow' as per current app logic
+                "content_preview": activity.content_preview,  # Should be None or empty for 'new_follow' as per current app logic
                 "link": activity.link,
                 "timestamp": ANY,
                 "target_user_id": self.user1.id,
@@ -133,10 +170,16 @@ class TestLiveActivityFeed(AppTestCase):
 
             emit_calls = []
             for friend_of_user2 in friends_of_user2:
-                if friend_of_user2.id != self.user2.id: # Don't send to self
+                if friend_of_user2.id != self.user2.id:  # Don't send to self
                     # Check if this friend is user3 (from setUp)
                     if friend_of_user2.id == self.user3.id:
-                         emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user3.id}'))
+                        emit_calls.append(
+                            call(
+                                "new_activity_event",
+                                expected_payload,
+                                room=f"user_{self.user3.id}",
+                            )
+                        )
 
             if not emit_calls:
                 # This case means user2 (the actor) had no other friends to notify.
@@ -145,12 +188,15 @@ class TestLiveActivityFeed(AppTestCase):
                 # Let's check if user3 is indeed a friend.
                 is_user3_friend = any(f.id == self.user3.id for f in friends_of_user2)
                 if not is_user3_friend:
-                    print(f"Warning: User3 (ID: {self.user3.id}) was expected to be a friend of User2 (ID: {self.user2.id}) but is not.")
+                    print(
+                        f"Warning: User3 (ID: {self.user3.id}) was expected to be a friend of User2 (ID: {self.user2.id}) but is not."
+                    )
                     # This might indicate an issue with setUp or how get_friends() works.
                 # If there are no *other* friends, then no calls are expected to 'new_activity_event' for them.
                 # For this specific test, we expect user3 to be a friend from setUp.
-                self.fail("Expected socketio.emit calls to user3 but no such calls were prepared.")
-
+                self.fail(
+                    "Expected socketio.emit calls to user3 but no such calls were prepared."
+                )
 
             mock_socketio_emit.assert_has_calls(emit_calls, any_order=True)
             # Verify that the mock_check_achievements was called (due to friendship acceptance)
@@ -177,10 +223,14 @@ class TestLiveActivityFeed(AppTestCase):
             # Activity 1: user2 creates a post
             post_by_user2_title = "User2's Exciting Post"
             post_by_user2_content = "Content by User2 for live feed."
-            post_by_user2 = Post(user_id=self.user2.id, title=post_by_user2_title, content=post_by_user2_content)
+            post_by_user2 = Post(
+                user_id=self.user2.id,
+                title=post_by_user2_title,
+                content=post_by_user2_content,
+            )
             db.session.add(post_by_user2)
             db.session.commit()
-            post_by_user2_id_val = post_by_user2.id # Store ID before detaching
+            post_by_user2_id_val = post_by_user2.id  # Store ID before detaching
             post_by_user2_content_preview = post_by_user2_content[:100]
 
             activity1 = _create_db_user_activity(
@@ -189,26 +239,30 @@ class TestLiveActivityFeed(AppTestCase):
                 related_id=post_by_user2_id_val,
                 content_preview=post_by_user2_content_preview,
                 link=f"/blog/post/{post_by_user2_id_val}",
-                timestamp=datetime.now(timezone.utc) - timedelta(minutes=10)
+                timestamp=datetime.now(timezone.utc) - timedelta(minutes=10),
             )
 
             # Activity 2: user2 comments on a post (let's say user3's post for variety)
             post_by_user3_title = "User3's Post"
             post_by_user3_content = "A post by user3."
-            post_by_user3 = Post(user_id=self.user3.id, title=post_by_user3_title, content=post_by_user3_content)
+            post_by_user3 = Post(
+                user_id=self.user3.id,
+                title=post_by_user3_title,
+                content=post_by_user3_content,
+            )
             db.session.add(post_by_user3)
             db.session.commit()
-            post_by_user3_id_val = post_by_user3.id # Store ID before detaching
+            post_by_user3_id_val = post_by_user3.id  # Store ID before detaching
             comment_by_user2_content = "User2 commenting on User3's post"
             # We don't need to create a Comment model instance here for UserActivity,
             # as UserActivity for 'new_comment' primarily stores the preview and link to the post.
             activity2 = _create_db_user_activity(
                 user_id=self.user2.id,
                 activity_type="new_comment",
-                related_id=post_by_user3_id_val, # related_id is the post commented on
+                related_id=post_by_user3_id_val,  # related_id is the post commented on
                 content_preview=comment_by_user2_content[:100],
                 link=f"/blog/post/{post_by_user3_id_val}",
-                timestamp=datetime.now(timezone.utc) - timedelta(minutes=5)
+                timestamp=datetime.now(timezone.utc) - timedelta(minutes=5),
             )
 
             # Activity 3: user2 follows user3 (new_follow)
@@ -218,9 +272,9 @@ class TestLiveActivityFeed(AppTestCase):
             activity3 = _create_db_user_activity(
                 user_id=self.user2.id,
                 activity_type="new_follow",
-                target_user_id=self.user3.id, # user2 followed user3
-                link=f"/user/{self.user3.username}", # Link to target user's profile
-                timestamp=datetime.now(timezone.utc) - timedelta(minutes=2)
+                target_user_id=self.user3.id,  # user2 followed user3
+                link=f"/user/{self.user3.username}",  # Link to target user's profile
+                timestamp=datetime.now(timezone.utc) - timedelta(minutes=2),
             )
 
         self.login(self.user1.username, "password")
@@ -243,7 +297,9 @@ class TestLiveActivityFeed(AppTestCase):
         # Ensure to check for HTML-escaped content if applicable
         escaped_comment_content = comment_by_user2_content[:100].replace("'", "&#39;")
         self.assertIn(escaped_comment_content, response_data)
-        self.assertIn(f"/blog/post/{post_by_user3_id_val}", response_data) # Link to the commented post
+        self.assertIn(
+            f"/blog/post/{post_by_user3_id_val}", response_data
+        )  # Link to the commented post
 
         # Activity 3 (new_follow)
         self.assertIn("started following", response_data)
@@ -256,31 +312,40 @@ class TestLiveActivityFeed(AppTestCase):
         # A simple check for target username is good.
         self.assertIn(self.user3.username, response_data)
 
-
         # Check that an activity by user1 (self) is NOT present (unless user1 is friends with self, which is not typical)
         self_activity_post = "A post by user1 just for this check"
         with self.app.app_context():
-             _create_db_user_activity(
+            _create_db_user_activity(
                 user_id=self.user1.id,
                 activity_type="new_post",
-                content_preview=self_activity_post
+                content_preview=self_activity_post,
             )
 
         # Re-fetch the page after adding self-activity to ensure it's not included
         response_after_self_activity = self.client.get("/live_feed")
-        response_data_after_self_activity = response_after_self_activity.get_data(as_text=True)
-        self.assertNotIn(self_activity_post, response_data_after_self_activity, "User's own activities should not appear in their live feed of friends' activities.")
+        response_data_after_self_activity = response_after_self_activity.get_data(
+            as_text=True
+        )
+        self.assertNotIn(
+            self_activity_post,
+            response_data_after_self_activity,
+            "User's own activities should not appear in their live feed of friends' activities.",
+        )
 
         self.logout()
 
     @patch("app.socketio.emit")
     def test_emit_new_activity_event_helper_direct(self, mock_socketio_emit):
-        from app import emit_new_activity_event # Import the helper directly
+        from app import emit_new_activity_event  # Import the helper directly
 
         with self.app.app_context():
             # user2 is friends with user1 and user3 from TestLiveActivityFeed.setUp()
             # Create a sample activity performed by user2
-            sample_post = Post(user_id=self.user2.id, title="Direct Emit Test Post", content="Content for direct emit test.")
+            sample_post = Post(
+                user_id=self.user2.id,
+                title="Direct Emit Test Post",
+                content="Content for direct emit test.",
+            )
             db.session.add(sample_post)
             db.session.commit()
 
@@ -289,7 +354,7 @@ class TestLiveActivityFeed(AppTestCase):
                 activity_type="new_post",
                 related_id=sample_post.id,
                 content_preview=sample_post.content[:100],
-                link=f"/blog/post/{sample_post.id}"
+                link=f"/blog/post/{sample_post.id}",
             )
 
             # Call the helper function directly
@@ -303,12 +368,12 @@ class TestLiveActivityFeed(AppTestCase):
                 "activity_id": activity_by_user2.id,
                 "user_id": self.user2.id,
                 "username": self.user2.username,
-                "profile_picture": ANY, # self.user2.profile_picture or default, handled by ANY
+                "profile_picture": ANY,  # self.user2.profile_picture or default, handled by ANY
                 "activity_type": "new_post",
                 "related_id": sample_post.id,
                 "content_preview": sample_post.content[:100],
                 "link": activity_by_user2.link,
-                "timestamp": ANY, # activity_by_user2.timestamp.isoformat(),
+                "timestamp": ANY,  # activity_by_user2.timestamp.isoformat(),
                 "target_user_id": None,
                 "target_username": None,
             }
@@ -316,40 +381,75 @@ class TestLiveActivityFeed(AppTestCase):
             emit_calls = []
             # user1 and user3 are friends of user2 from setUp
             if self.user1:
-                 emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user1.id}'))
+                emit_calls.append(
+                    call(
+                        "new_activity_event",
+                        expected_payload,
+                        room=f"user_{self.user1.id}",
+                    )
+                )
             if self.user3:
-                 emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user3.id}'))
+                emit_calls.append(
+                    call(
+                        "new_activity_event",
+                        expected_payload,
+                        room=f"user_{self.user3.id}",
+                    )
+                )
 
-            self.assertTrue(len(emit_calls) > 0, "No emit calls were prepared. Check friend setup for user2.")
+            self.assertTrue(
+                len(emit_calls) > 0,
+                "No emit calls were prepared. Check friend setup for user2.",
+            )
             mock_socketio_emit.assert_has_calls(emit_calls, any_order=True)
 
             # Ensure it wasn't emitted to user2 (the actor)
             for actual_call_args in mock_socketio_emit.call_args_list:
                 # actual_call_args is a tuple: (args_tuple, kwargs_dict)
-                kwargs_dict = actual_call_args[1] # Get the kwargs dictionary
-                room_arg = kwargs_dict.get('room')
-                self.assertNotEqual(room_arg, f'user_{self.user2.id}', "Activity event should not be emitted to the actor's own room.")
+                kwargs_dict = actual_call_args[1]  # Get the kwargs dictionary
+                room_arg = kwargs_dict.get("room")
+                self.assertNotEqual(
+                    room_arg,
+                    f"user_{self.user2.id}",
+                    "Activity event should not be emitted to the actor's own room.",
+                )
 
     @patch("app.socketio.emit")
-    @patch("app.check_and_award_achievements") # Mock achievements function
-    def test_new_post_activity_logging_and_socketio(self, mock_check_achievements, mock_socketio_emit):
+    @patch("app.check_and_award_achievements")  # Mock achievements function
+    def test_new_post_activity_logging_and_socketio(
+        self, mock_check_achievements, mock_socketio_emit
+    ):
         self.login(self.user2.username, "password")
         post_title = "My Test Post for Activity"
         post_content = "This is the content of the test post."
         post_hashtags = "test,activity"
 
-        response = self.client.post('/blog/create', data={
-            'title': post_title,
-            'content': post_content,
-            'hashtags': post_hashtags
-        }, follow_redirects=True)
+        response = self.client.post(
+            "/blog/create",
+            data={
+                "title": post_title,
+                "content": post_content,
+                "hashtags": post_hashtags,
+            },
+            follow_redirects=True,
+        )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Blog post created successfully!", response.get_data(as_text=True))
+        self.assertIn(
+            "Blog post created successfully!", response.get_data(as_text=True)
+        )
 
         with self.app.app_context():
             # Verify UserActivity creation
-            activity = UserActivity.query.filter_by(user_id=self.user2.id, activity_type='new_post').order_by(UserActivity.timestamp.desc()).first()
-            self.assertIsNotNone(activity, "UserActivity for 'new_post' was not created.")
+            activity = (
+                UserActivity.query.filter_by(
+                    user_id=self.user2.id, activity_type="new_post"
+                )
+                .order_by(UserActivity.timestamp.desc())
+                .first()
+            )
+            self.assertIsNotNone(
+                activity, "UserActivity for 'new_post' was not created."
+            )
 
             created_post = self.db.session.get(Post, activity.related_id)
             self.assertIsNotNone(created_post, "Post referred in activity not found.")
@@ -378,12 +478,26 @@ class TestLiveActivityFeed(AppTestCase):
             emit_calls = []
             # Friends of user2 are user1 and user3 (established in TestLiveActivityFeed.setUp)
             # self.user1 and self.user3 objects are available from AppTestCase
-            if self.user1: # Check if user1 exists
-                 emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user1.id}'))
-            if self.user3: # Check if user3 exists
-                 emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user3.id}'))
+            if self.user1:  # Check if user1 exists
+                emit_calls.append(
+                    call(
+                        "new_activity_event",
+                        expected_payload,
+                        room=f"user_{self.user1.id}",
+                    )
+                )
+            if self.user3:  # Check if user3 exists
+                emit_calls.append(
+                    call(
+                        "new_activity_event",
+                        expected_payload,
+                        room=f"user_{self.user3.id}",
+                    )
+                )
 
-            self.assertTrue(len(emit_calls) > 0, "No emit calls were prepared. Check friend setup.")
+            self.assertTrue(
+                len(emit_calls) > 0, "No emit calls were prepared. Check friend setup."
+            )
             mock_socketio_emit.assert_has_calls(emit_calls, any_order=True)
 
             # Verify achievements call
@@ -393,27 +507,45 @@ class TestLiveActivityFeed(AppTestCase):
 
     @patch("app.socketio.emit")
     @patch("app.check_and_award_achievements")
-    def test_new_comment_activity_logging_and_socketio(self, mock_check_achievements, mock_socketio_emit):
+    def test_new_comment_activity_logging_and_socketio(
+        self, mock_check_achievements, mock_socketio_emit
+    ):
         # user1 creates a post
         with self.app.app_context():
-            post_by_user1_obj = self._create_db_post(user_id=self.user1.id, title="Post to be commented on")
+            post_by_user1_obj = self._create_db_post(
+                user_id=self.user1.id, title="Post to be commented on"
+            )
             # post_by_user1 = Post.query.get(post_by_user1_obj.id) # Not needed if post_by_user1_obj is used directly
-            self.assertIsNotNone(post_by_user1_obj, "Post object by User1 should not be None.")
+            self.assertIsNotNone(
+                post_by_user1_obj, "Post object by User1 should not be None."
+            )
 
         # user2 logs in and comments on user1's post
         self.login(self.user2.username, "password")
         comment_content = "This is a test comment on user1's post."
-        response = self.client.post(f'/blog/post/{post_by_user1_obj.id}/comment', data={
-            'comment_content': comment_content
-        }, follow_redirects=True)
+        response = self.client.post(
+            f"/blog/post/{post_by_user1_obj.id}/comment",
+            data={"comment_content": comment_content},
+            follow_redirects=True,
+        )
         self.assertEqual(response.status_code, 200)
         self.assertIn("Comment added successfully!", response.get_data(as_text=True))
 
         with self.app.app_context():
             # Verify UserActivity creation by user2
-            activity = UserActivity.query.filter_by(user_id=self.user2.id, activity_type='new_comment').order_by(UserActivity.timestamp.desc()).first()
-            self.assertIsNotNone(activity, "UserActivity for 'new_comment' was not created.")
-            self.assertEqual(activity.related_id, post_by_user1_obj.id) # related_id is the post_id
+            activity = (
+                UserActivity.query.filter_by(
+                    user_id=self.user2.id, activity_type="new_comment"
+                )
+                .order_by(UserActivity.timestamp.desc())
+                .first()
+            )
+            self.assertIsNotNone(
+                activity, "UserActivity for 'new_comment' was not created."
+            )
+            self.assertEqual(
+                activity.related_id, post_by_user1_obj.id
+            )  # related_id is the post_id
             self.assertEqual(activity.user_id, self.user2.id)
             self.assertEqual(activity.content_preview, comment_content[:100])
             self.assertTrue(f"/blog/post/{post_by_user1_obj.id}" in activity.link)
@@ -430,16 +562,31 @@ class TestLiveActivityFeed(AppTestCase):
                 "content_preview": comment_content[:100],
                 "link": activity.link,
                 "timestamp": ANY,
-                "target_user_id": None, # No specific target user for a comment activity in this context
+                "target_user_id": None,  # No specific target user for a comment activity in this context
                 "target_username": None,
             }
             emit_calls = []
             if self.user1:
-                 emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user1.id}'))
+                emit_calls.append(
+                    call(
+                        "new_activity_event",
+                        expected_payload,
+                        room=f"user_{self.user1.id}",
+                    )
+                )
             if self.user3:
-                 emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user3.id}'))
+                emit_calls.append(
+                    call(
+                        "new_activity_event",
+                        expected_payload,
+                        room=f"user_{self.user3.id}",
+                    )
+                )
 
-            self.assertTrue(len(emit_calls) > 0, "No emit calls were prepared for new_comment. Check friend setup.")
+            self.assertTrue(
+                len(emit_calls) > 0,
+                "No emit calls were prepared for new_comment. Check friend setup.",
+            )
             mock_socketio_emit.assert_has_calls(emit_calls, any_order=True)
 
             # Verify achievements call for commenter (user2)
@@ -448,28 +595,51 @@ class TestLiveActivityFeed(AppTestCase):
         self.logout()
 
     @patch("app.socketio.emit")
-    @patch("app.check_and_award_achievements") # Mock achievements, though liking doesn't trigger one by default
-    def test_new_like_activity_logging_and_socketio(self, mock_check_achievements, mock_socketio_emit):
+    @patch(
+        "app.check_and_award_achievements"
+    )  # Mock achievements, though liking doesn't trigger one by default
+    def test_new_like_activity_logging_and_socketio(
+        self, mock_check_achievements, mock_socketio_emit
+    ):
         # user1 creates a post
         with self.app.app_context():
-            post_by_user1_obj = self._create_db_post(user_id=self.user1.id, title="Post to be liked by user2")
+            post_by_user1_obj = self._create_db_post(
+                user_id=self.user1.id, title="Post to be liked by user2"
+            )
             # post_by_user1 = Post.query.get(post_by_user1_obj.id) # Not needed if post_by_user1_obj is used directly
-            self.assertIsNotNone(post_by_user1_obj, "Post object by User1 should not be None.")
+            self.assertIsNotNone(
+                post_by_user1_obj, "Post object by User1 should not be None."
+            )
 
         # user2 logs in and likes user1's post
         self.login(self.user2.username, "password")
-        response = self.client.post(f'/blog/post/{post_by_user1_obj.id}/like', follow_redirects=True)
+        response = self.client.post(
+            f"/blog/post/{post_by_user1_obj.id}/like", follow_redirects=True
+        )
         self.assertEqual(response.status_code, 200)
         self.assertIn("Post liked!", response.get_data(as_text=True))
 
         with self.app.app_context():
             # Verify UserActivity creation by user2
-            activity = UserActivity.query.filter_by(user_id=self.user2.id, activity_type='new_like').order_by(UserActivity.timestamp.desc()).first()
-            self.assertIsNotNone(activity, "UserActivity for 'new_like' was not created.")
-            self.assertEqual(activity.related_id, post_by_user1_obj.id) # related_id is the post_id
+            activity = (
+                UserActivity.query.filter_by(
+                    user_id=self.user2.id, activity_type="new_like"
+                )
+                .order_by(UserActivity.timestamp.desc())
+                .first()
+            )
+            self.assertIsNotNone(
+                activity, "UserActivity for 'new_like' was not created."
+            )
+            self.assertEqual(
+                activity.related_id, post_by_user1_obj.id
+            )  # related_id is the post_id
             self.assertEqual(activity.user_id, self.user2.id)
             # Content preview for 'new_like' is the post's content preview
-            self.assertEqual(activity.content_preview, post_by_user1_obj.content[:100] if post_by_user1_obj.content else "")
+            self.assertEqual(
+                activity.content_preview,
+                post_by_user1_obj.content[:100] if post_by_user1_obj.content else "",
+            )
             self.assertTrue(f"/blog/post/{post_by_user1_obj.id}" in activity.link)
 
             # Verify socketio.emit for user2's activity
@@ -489,11 +659,26 @@ class TestLiveActivityFeed(AppTestCase):
             }
             emit_calls = []
             if self.user1:
-                 emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user1.id}'))
+                emit_calls.append(
+                    call(
+                        "new_activity_event",
+                        expected_payload,
+                        room=f"user_{self.user1.id}",
+                    )
+                )
             if self.user3:
-                 emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user3.id}'))
+                emit_calls.append(
+                    call(
+                        "new_activity_event",
+                        expected_payload,
+                        room=f"user_{self.user3.id}",
+                    )
+                )
 
-            self.assertTrue(len(emit_calls) > 0, "No emit calls were prepared for new_like. Check friend setup.")
+            self.assertTrue(
+                len(emit_calls) > 0,
+                "No emit calls were prepared for new_like. Check friend setup.",
+            )
             mock_socketio_emit.assert_has_calls(emit_calls, any_order=True)
 
             # Verify achievements call - Liking a post does NOT award achievements by default in current app logic.
@@ -504,7 +689,6 @@ class TestLiveActivityFeed(AppTestCase):
             # then this assertion needs refinement or the mock needs to be more specific.
             # Based on app.py, the like route itself doesn't call check_and_award_achievements.
             mock_check_achievements.assert_not_called()
-
 
         self.logout()
 
@@ -539,7 +723,6 @@ class TestLiveActivityFeed(AppTestCase):
         self.assertNotIn(f"{self.user2.username} commented on a post", html_content)
         self.assertNotIn(f"{self.user2.username} started following", html_content)
 
-
         # 3. Ensure no activities from self.user3 are shown.
         #    self.user1 is friends with self.user2.
         #    self.user2 is friends with self.user3.
@@ -558,7 +741,9 @@ class TestLiveActivityFeed(AppTestCase):
 
     @patch("app.socketio.emit")
     @patch("app.check_and_award_achievements")
-    def test_new_share_activity_logging_and_socketio(self, mock_check_achievements, mock_socketio_emit):
+    def test_new_share_activity_logging_and_socketio(
+        self, mock_check_achievements, mock_socketio_emit
+    ):
         # Log in as user2 (the one who will share the post)
         self.login(self.user2.username, "password")
 
@@ -573,21 +758,23 @@ class TestLiveActivityFeed(AppTestCase):
             post_by_user1_id = self._create_db_post(
                 user_id=self.user1.id,
                 title=original_post_title,
-                content=original_post_content
+                content=original_post_content,
             )
-            self.assertIsNotNone(post_by_user1_id, "Failed to create original post by user1")
+            self.assertIsNotNone(
+                post_by_user1_id, "Failed to create original post by user1"
+            )
 
             # Store original post details for assertions later
-            self.original_post_object = post_by_user1_id # Store the object
-            self.original_post_id = post_by_user1_id.id # Store the ID
+            self.original_post_object = post_by_user1_id  # Store the object
+            self.original_post_id = post_by_user1_id.id  # Store the ID
             self.original_post_content_preview = original_post_content[:100]
 
         # Simulate the share action by user2
         sharing_comment_text = "Check out this cool post I found!"
         response = self.client.post(
-            f'/post/{self.original_post_id}/share', # Use the ID
-            data={'sharing_comment': sharing_comment_text},
-            follow_redirects=True
+            f"/post/{self.original_post_id}/share",  # Use the ID
+            data={"sharing_comment": sharing_comment_text},
+            follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("Post shared successfully!", response.get_data(as_text=True))
@@ -597,22 +784,44 @@ class TestLiveActivityFeed(AppTestCase):
 
         # Verify UserActivity creation
         with self.app.app_context():
-            from flask import url_for # Ensure url_for is available for direct use if needed, or rely on app context
-            activity = UserActivity.query.filter_by(
-                user_id=self.user2.id,
-                activity_type='shared_a_post'
-            ).order_by(UserActivity.timestamp.desc()).first()
+            from flask import (
+                url_for,
+            )  # Ensure url_for is available for direct use if needed, or rely on app context
 
-            self.assertIsNotNone(activity, "UserActivity for 'shared_a_post' was not created.")
-            self.assertEqual(activity.user_id, self.user2.id, "Activity user_id is incorrect.")
-            self.assertEqual(activity.related_id, self.original_post_id, "Activity related_id (original post ID) is incorrect.")
+            activity = (
+                UserActivity.query.filter_by(
+                    user_id=self.user2.id, activity_type="shared_a_post"
+                )
+                .order_by(UserActivity.timestamp.desc())
+                .first()
+            )
+
+            self.assertIsNotNone(
+                activity, "UserActivity for 'shared_a_post' was not created."
+            )
+            self.assertEqual(
+                activity.user_id, self.user2.id, "Activity user_id is incorrect."
+            )
+            self.assertEqual(
+                activity.related_id,
+                self.original_post_id,
+                "Activity related_id (original post ID) is incorrect.",
+            )
             # The content_preview in app.py for 'shared_a_post' uses the sharing comment.
-            self.assertEqual(activity.content_preview, self.sharing_comment_text[:100], "Activity content_preview is incorrect.")
+            self.assertEqual(
+                activity.content_preview,
+                self.sharing_comment_text[:100],
+                "Activity content_preview is incorrect.",
+            )
 
             # Construct expected link using url_for, similar to how it's done in app.py
             # This requires the app context, which is already active here.
-            expected_link = url_for('view_post', post_id=self.original_post_id, _external=True)
-            self.assertEqual(activity.link, expected_link, "Activity link is incorrect.")
+            expected_link = url_for(
+                "view_post", post_id=self.original_post_id, _external=True
+            )
+            self.assertEqual(
+                activity.link, expected_link, "Activity link is incorrect."
+            )
 
             # Store activity_id for SocketIO verification if needed
             self.activity_id = activity.id
@@ -624,38 +833,57 @@ class TestLiveActivityFeed(AppTestCase):
         # We use ANY for profile_picture and timestamp due to potential variations.
 
         # Ensure self.activity_id was set in the UserActivity verification step
-        self.assertTrue(hasattr(self, 'activity_id'), "activity_id was not set from UserActivity verification.")
+        self.assertTrue(
+            hasattr(self, "activity_id"),
+            "activity_id was not set from UserActivity verification.",
+        )
 
         # Construct expected link again, or retrieve if stored on self from previous step.
         # For safety, let's reconstruct or ensure it's available.
         # Assuming self.original_post_id is correctly set.
-        with self.app.app_context(): # url_for needs app context
-            from flask import url_for # Ensure url_for is available
-            expected_activity_link = url_for('view_post', post_id=self.original_post_id, _external=True)
+        with self.app.app_context():  # url_for needs app context
+            from flask import url_for  # Ensure url_for is available
+
+            expected_activity_link = url_for(
+                "view_post", post_id=self.original_post_id, _external=True
+            )
 
         expected_payload = {
-            "activity_id": self.activity_id, # From previous verification step
+            "activity_id": self.activity_id,  # From previous verification step
             "user_id": self.user2.id,
             "username": self.user2.username,
             "profile_picture": ANY,  # Using ANY as exact URL can be tricky with _external=True and test context
             "activity_type": "shared_a_post",
-            "related_id": self.original_post_id, # ID of the original post
-            "content_preview": self.sharing_comment_text[:100], # The comment made during sharing
+            "related_id": self.original_post_id,  # ID of the original post
+            "content_preview": self.sharing_comment_text[
+                :100
+            ],  # The comment made during sharing
             "link": expected_activity_link,
             "timestamp": ANY,
-            "target_user_id": None, # No specific target user for 'shared_a_post' in this context
+            "target_user_id": None,  # No specific target user for 'shared_a_post' in this context
             "target_username": None,
         }
 
         # user1 and user3 are friends of user2 from TestLiveActivityFeed.setUp()
         # The AppTestCase creates self.user1, self.user2, self.user3
         emit_calls = []
-        if self.user1: # Friend 1
-            emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user1.id}'))
-        if self.user3: # Friend 2
-            emit_calls.append(call('new_activity_event', expected_payload, room=f'user_{self.user3.id}'))
+        if self.user1:  # Friend 1
+            emit_calls.append(
+                call(
+                    "new_activity_event", expected_payload, room=f"user_{self.user1.id}"
+                )
+            )
+        if self.user3:  # Friend 2
+            emit_calls.append(
+                call(
+                    "new_activity_event", expected_payload, room=f"user_{self.user3.id}"
+                )
+            )
 
-        self.assertTrue(len(emit_calls) > 0, "No emit calls were prepared. Check friend setup for user2.")
+        self.assertTrue(
+            len(emit_calls) > 0,
+            "No emit calls were prepared. Check friend setup for user2.",
+        )
 
         # Check if mock_socketio_emit was called
         # print(f"DEBUG: mock_socketio_emit.call_args_list: {mock_socketio_emit.call_args_list}")
@@ -665,20 +893,27 @@ class TestLiveActivityFeed(AppTestCase):
 
         # Ensure it wasn't emitted to self.user2 (the actor)
         for actual_call_args in mock_socketio_emit.call_args_list:
-            kwargs_dict = actual_call_args[1] # Get the kwargs dictionary
-            room_arg = kwargs_dict.get('room')
+            kwargs_dict = actual_call_args[1]  # Get the kwargs dictionary
+            room_arg = kwargs_dict.get("room")
             # Check that the room is not the actor's room, AND that the event is 'new_activity_event'
             # (to avoid issues if other socket events are emitted for other reasons)
-            if actual_call_args[0][0] == 'new_activity_event': # Check if the event name is 'new_activity_event'
-                self.assertNotEqual(room_arg, f'user_{self.user2.id}',
-                                    "Activity event should not be emitted to the actor's own room.")
+            if (
+                actual_call_args[0][0] == "new_activity_event"
+            ):  # Check if the event name is 'new_activity_event'
+                self.assertNotEqual(
+                    room_arg,
+                    f"user_{self.user2.id}",
+                    "Activity event should not be emitted to the actor's own room.",
+                )
         # TODO: Verify achievement checks (if applicable)
 
-        self.logout() # Ensure logout at the end
+        self.logout()  # Ensure logout at the end
 
     @patch("app.socketio.emit")
     @patch("app.check_and_award_achievements")
-    def test_updated_profile_picture_activity_logging_and_socketio(self, mock_check_achievements, mock_socketio_emit):
+    def test_updated_profile_picture_activity_logging_and_socketio(
+        self, mock_check_achievements, mock_socketio_emit
+    ):
         # 1. Login as self.user1
         self.login(self.user1.username, "password")
 
@@ -691,45 +926,87 @@ class TestLiveActivityFeed(AppTestCase):
         image_content = b"dummy_image_content_for_test_profile_pic_update"
         image_file = BytesIO(image_content)
         # Field name for the file in the form is 'profile_pic' as per upload_profile_picture.html
-        data = {'profile_pic': (image_file, 'test_profile.png')}
+        data = {"profile_pic": (image_file, "test_profile.png")}
 
         # 3. Make the POST request to /upload_profile_picture
         response = self.client.post(
-            '/upload_profile_picture', # Route defined in app.py
+            "/upload_profile_picture",  # Route defined in app.py
             data=data,
-            content_type='multipart/form-data', # Necessary for file uploads
-            follow_redirects=True
+            content_type="multipart/form-data",  # Necessary for file uploads
+            follow_redirects=True,
         )
-        self.assertEqual(response.status_code, 200, "Response status code should be 200 after successful upload.")
-        self.assertIn("Profile picture uploaded successfully!", response.get_data(as_text=True), "Success flash message not found in response.")
+        self.assertEqual(
+            response.status_code,
+            200,
+            "Response status code should be 200 after successful upload.",
+        )
+        self.assertIn(
+            "Profile picture uploaded successfully!",
+            response.get_data(as_text=True),
+            "Success flash message not found in response.",
+        )
 
         # Verify that user1's profile picture path has changed in DB
         with self.app.app_context():
             user1_after_update = self.db.session.get(User, self.user1.id)
-            self.assertIsNotNone(user1_after_update.profile_picture, "User profile picture path should be set in the database.")
-            self.assertNotEqual(original_profile_pic, user1_after_update.profile_picture, "User profile picture path should have changed from the original.")
-            self.assertTrue(user1_after_update.profile_picture.startswith('/static/profile_pics/'), "Profile picture path should start with /static/profile_pics/.")
-            self.assertTrue('test_profile.png' in user1_after_update.profile_picture, "Filename 'test_profile.png' should be part of the new profile picture path.")
+            self.assertIsNotNone(
+                user1_after_update.profile_picture,
+                "User profile picture path should be set in the database.",
+            )
+            self.assertNotEqual(
+                original_profile_pic,
+                user1_after_update.profile_picture,
+                "User profile picture path should have changed from the original.",
+            )
+            self.assertTrue(
+                user1_after_update.profile_picture.startswith("/static/profile_pics/"),
+                "Profile picture path should start with /static/profile_pics/.",
+            )
+            self.assertTrue(
+                "test_profile.png" in user1_after_update.profile_picture,
+                "Filename 'test_profile.png' should be part of the new profile picture path.",
+            )
 
         # 4. Verify UserActivity creation
         with self.app.app_context():
-            activity = UserActivity.query.filter_by(
-                user_id=self.user1.id,
-                activity_type='updated_profile_picture' # This is the new activity type
-            ).order_by(UserActivity.timestamp.desc()).first()
+            activity = (
+                UserActivity.query.filter_by(
+                    user_id=self.user1.id,
+                    activity_type="updated_profile_picture",  # This is the new activity type
+                )
+                .order_by(UserActivity.timestamp.desc())
+                .first()
+            )
 
-            self.assertIsNotNone(activity, "UserActivity for 'updated_profile_picture' was not created.")
-            self.assertEqual(activity.user_id, self.user1.id, "Activity user_id is incorrect.")
-            self.assertIsNone(activity.related_id, "related_id should be None for 'updated_profile_picture' activity type.")
-            self.assertEqual(activity.content_preview, "Updated their profile picture.", "Activity content_preview is incorrect.")
+            self.assertIsNotNone(
+                activity, "UserActivity for 'updated_profile_picture' was not created."
+            )
+            self.assertEqual(
+                activity.user_id, self.user1.id, "Activity user_id is incorrect."
+            )
+            self.assertIsNone(
+                activity.related_id,
+                "related_id should be None for 'updated_profile_picture' activity type.",
+            )
+            self.assertEqual(
+                activity.content_preview,
+                "Updated their profile picture.",
+                "Activity content_preview is incorrect.",
+            )
 
-            expected_link = url_for('user_profile', username=self.user1.username, _external=True)
-            self.assertEqual(activity.link, expected_link, "Activity link is incorrect.")
+            expected_link = url_for(
+                "user_profile", username=self.user1.username, _external=True
+            )
+            self.assertEqual(
+                activity.link, expected_link, "Activity link is incorrect."
+            )
 
             # 5. Verify socketio.emit call
             # self.user1 is friends with self.user2 (established in TestLiveActivityFeed.setUp via AppTestCase helper)
             # The profile_picture in the payload is the new one, taken from user1_after_update.profile_picture
-            user1_after_update = self.db.session.get(User, self.user1.id) # Re-fetch to ensure we have the latest state for payload
+            user1_after_update = self.db.session.get(
+                User, self.user1.id
+            )  # Re-fetch to ensure we have the latest state for payload
 
             expected_payload = {
                 "activity_id": activity.id,
@@ -740,7 +1017,7 @@ class TestLiveActivityFeed(AppTestCase):
                 "related_id": None,
                 "content_preview": "Updated their profile picture.",
                 "link": expected_link,
-                "timestamp": ANY, # Using ANY for timestamp as exact match can be tricky
+                "timestamp": ANY,  # Using ANY for timestamp as exact match can be tricky
                 "target_user_id": None,
                 "target_username": None,
             }
@@ -748,9 +1025,7 @@ class TestLiveActivityFeed(AppTestCase):
             # Based on TestLiveActivityFeed.setUp, self.user1's only friend is self.user2.
             # self._create_friendship(self.user2.id, self.user1.id, status='accepted')
             mock_socketio_emit.assert_called_once_with(
-                'new_activity_event',
-                expected_payload,
-                room=f'user_{self.user2.id}'
+                "new_activity_event", expected_payload, room=f"user_{self.user2.id}"
             )
 
         # 6. Verify check_and_award_achievements is NOT called

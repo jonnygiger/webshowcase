@@ -24,7 +24,11 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_  # Added for inbox query
 from flask_migrate import Migrate
 from flask_restful import Api
-from flask_jwt_extended import JWTManager, create_access_token, decode_token # Added decode_token
+from flask_jwt_extended import (
+    JWTManager,
+    create_access_token,
+    decode_token,
+)  # Added decode_token
 import uuid  # For generating unique filenames
 import random
 import queue
@@ -63,7 +67,7 @@ from models import (
     Achievement,
     Series,
     SeriesPost,
-    UserBlock, # Added UserBlock
+    UserBlock,  # Added UserBlock
     ChatRoom,
     ChatMessage,
 )
@@ -93,9 +97,9 @@ from api import (
     PollVoteResource,
     PostLockResource,  # Added Poll resources
     SharedFileResource,
-    UserFeedResource, # Added UserFeedResource
-    ChatRoomListResource, # Added ChatRoomListResource
-    ChatRoomMessagesResource, # Added ChatRoomMessagesResource
+    UserFeedResource,  # Added UserFeedResource
+    ChatRoomListResource,  # Added ChatRoomListResource
+    ChatRoomMessagesResource,  # Added ChatRoomMessagesResource
 )
 from recommendations import (
     suggest_users_to_follow,
@@ -122,7 +126,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///site.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 migrate.init_app(app, db)
-app.config["SECRET_KEY"] = "supersecretkey" # Moved Up
+app.config["SECRET_KEY"] = "supersecretkey"  # Moved Up
 app.config["JWT_SECRET_KEY"] = "your-jwt-secret-key"  # Moved Up
 
 socketio = SocketIO(app)
@@ -227,8 +231,12 @@ api.add_resource(PollVoteResource, "/api/polls/<int:poll_id>/vote")
 api.add_resource(
     PostLockResource, "/api/posts/<int:post_id>/lock"
 )  # Route for locking/unlocking posts
-api.add_resource(SharedFileResource, '/api/files/<int:file_id>') # Route for deleting shared files
-api.add_resource(UserFeedResource, "/api/users/<int:user_id>/feed") # Added route for UserFeedResource
+api.add_resource(
+    SharedFileResource, "/api/files/<int:file_id>"
+)  # Route for deleting shared files
+api.add_resource(
+    UserFeedResource, "/api/users/<int:user_id>/feed"
+)  # Added route for UserFeedResource
 
 # Chat API routes
 api.add_resource(ChatRoomListResource, "/api/chat/rooms")
@@ -271,7 +279,9 @@ app.config["SHARED_FILES_ALLOWED_EXTENSIONS"] = {
 }
 app.config["SHARED_FILES_MAX_SIZE"] = 16 * 1024 * 1024  # 16MB limit
 
-app.last_activity_check_time = datetime.now(timezone.utc)  # Changed to utcnow for consistency
+app.last_activity_check_time = datetime.now(
+    timezone.utc
+)  # Changed to utcnow for consistency
 
 # Ensure the upload folder exists
 # Note: In-memory data structures (users, blog_posts, comments, post_likes, private_messages,
@@ -825,8 +835,8 @@ def upload_profile_picture():
                 file.save(file_path)
 
                 # Update user's profile picture path in DB
-                user = db.session.get(User,
-                    session["user_id"]
+                user = db.session.get(
+                    User, session["user_id"]
                 )  # or current_user from context
                 if user:
                     user.profile_picture = url_for(
@@ -841,14 +851,18 @@ def upload_profile_picture():
                             activity_type="updated_profile_picture",
                             related_id=None,
                             content_preview="Updated their profile picture.",
-                            link=url_for('user_profile', username=user.username, _external=True)
+                            link=url_for(
+                                "user_profile", username=user.username, _external=True
+                            ),
                         )
                         db.session.add(activity)
                         db.session.commit()
                         emit_new_activity_event(activity)
                     except Exception as e:
                         db.session.rollback()
-                        app.logger.error(f"Error creating UserActivity for profile picture update or emitting event: {e}")
+                        app.logger.error(
+                            f"Error creating UserActivity for profile picture update or emitting event: {e}"
+                        )
                         # Not flashing an error to the user here, as the main action (profile picture update) was successful.
                         # The error is logged for admin/dev attention.
                     # ==== End UserActivity ====
@@ -1081,7 +1095,9 @@ def create_post():
                         blocker_id=friend.id, blocked_id=post_author.id
                     ).first()
                     if is_blocked:
-                        app.logger.info(f"Skipping notification for friend {friend.id} (blocked by them) for post {new_post_db.id} by user {post_author.id}")
+                        app.logger.info(
+                            f"Skipping notification for friend {friend.id} (blocked by them) for post {new_post_db.id} by user {post_author.id}"
+                        )
                         continue  # Skip to the next friend
 
                     new_friend_notification = FriendPostNotification(
@@ -1732,107 +1748,135 @@ def post_stream(post_id):
     return Response(event_stream(), mimetype="text/event-stream")
 
 
-@app.route('/chat')
+@app.route("/chat")
 @login_required
 def chat_page():
     # User object is injected into templates via context_processor (inject_user)
     # No specific data needs to be passed here unless chat rooms are pre-loaded server-side,
     # but the current JS fetches them dynamically.
-    return render_template('chat.html')
+    return render_template("chat.html")
 
 
 # Chat SocketIO Handlers
-@socketio.on('join_chat_room')
+@socketio.on("join_chat_room")
 def handle_join_chat_room_event(data):
-    print(f"SOCKETIO DEBUG (direct print): session in handle_join_chat_room_event: {dict(session)}", flush=True)
-    room_name = data.get('room_name') # e.g., "chat_room_1"
-    user_id = session.get('user_id')
-    username = session.get('username', 'Anonymous')
+    print(
+        f"SOCKETIO DEBUG (direct print): session in handle_join_chat_room_event: {dict(session)}",
+        flush=True,
+    )
+    room_name = data.get("room_name")  # e.g., "chat_room_1"
+    user_id = session.get("user_id")
+    username = session.get("username", "Anonymous")
 
     if not room_name or not user_id:
-        app.logger.error(f"Join chat room event failed: room_name='{room_name}', user_id='{user_id}'")
+        app.logger.error(
+            f"Join chat room event failed: room_name='{room_name}', user_id='{user_id}'"
+        )
         # Optionally emit an error back to the client
         # emit('chat_error', {'message': 'Room name and user authentication are required.'})
         return
 
     join_room(room_name)
-    app.logger.info(f"User '{username}' (ID: {user_id}) joined chat room: '{room_name}'")
+    app.logger.info(
+        f"User '{username}' (ID: {user_id}) joined chat room: '{room_name}'"
+    )
     # Notify others in the room that a user has joined
-    socketio.emit('user_joined_chat', {'username': username, 'room': room_name}, room=room_name)
+    socketio.emit(
+        "user_joined_chat", {"username": username, "room": room_name}, room=room_name
+    )
 
-@socketio.on('leave_chat_room')
+
+@socketio.on("leave_chat_room")
 def handle_leave_chat_room_event(data):
-    room_name = data.get('room_name')
-    user_id = session.get('user_id')
-    username = session.get('username', 'Anonymous')
+    room_name = data.get("room_name")
+    user_id = session.get("user_id")
+    username = session.get("username", "Anonymous")
 
     if not room_name or not user_id:
-        app.logger.error(f"Leave chat room event failed: room_name='{room_name}', user_id='{user_id}'")
+        app.logger.error(
+            f"Leave chat room event failed: room_name='{room_name}', user_id='{user_id}'"
+        )
         return
 
     # Flask-SocketIO's leave_room is not explicitly called here as per typical patterns.
     # Client simply stops listening or disconnects from this "logical" room.
     # We can, however, notify others.
-    app.logger.info(f"User '{username}' (ID: {user_id}) left chat room: '{room_name}' (notified others)")
-    socketio.emit('user_left_chat', {'username': username, 'room': room_name}, room=room_name)
+    app.logger.info(
+        f"User '{username}' (ID: {user_id}) left chat room: '{room_name}' (notified others)"
+    )
+    socketio.emit(
+        "user_left_chat", {"username": username, "room": room_name}, room=room_name
+    )
     # Note: Actual `leave_room(room_name)` from Flask-SocketIO might be used if managing server-side room membership strictly.
     # For broadcasting, just not sending to them or them disconnecting is often enough.
 
-@socketio.on('send_chat_message')
+
+@socketio.on("send_chat_message")
 def handle_send_chat_message_event(data):
-    room_name = data.get('room_name') # e.g., "chat_room_1"
-    message_text = data.get('message')
-    user_id = session.get('user_id')
-    username = session.get('username')
+    room_name = data.get("room_name")  # e.g., "chat_room_1"
+    message_text = data.get("message")
+    user_id = session.get("user_id")
+    username = session.get("username")
 
     if not room_name or not message_text or not user_id:
-        app.logger.error(f"Send chat message event failed: room_name='{room_name}', message='{message_text}', user_id='{user_id}'")
-        emit('chat_error', {'message': 'Room, message, and user authentication are required.'})
+        app.logger.error(
+            f"Send chat message event failed: room_name='{room_name}', message='{message_text}', user_id='{user_id}'"
+        )
+        emit(
+            "chat_error",
+            {"message": "Room, message, and user authentication are required."},
+        )
         return
 
     # Attempt to parse room_id from room_name (e.g., "chat_room_5" -> 5)
     try:
-        room_id_str = room_name.split('_')[-1]
+        room_id_str = room_name.split("_")[-1]
         chat_room_id = int(room_id_str)
     except (IndexError, ValueError) as e:
-        app.logger.error(f"Could not parse chat_room_id from room_name '{room_name}': {e}")
-        emit('chat_error', {'message': 'Invalid room name format.'})
+        app.logger.error(
+            f"Could not parse chat_room_id from room_name '{room_name}': {e}"
+        )
+        emit("chat_error", {"message": "Invalid room name format."})
         return
 
     # Validate room_id actually exists
     chat_room = db.session.get(ChatRoom, chat_room_id)
     if not chat_room:
-        app.logger.error(f"ChatRoom with id {chat_room_id} not found for message from user {user_id}.")
-        emit('chat_error', {'message': f'Chat room {chat_room_id} not found.'})
+        app.logger.error(
+            f"ChatRoom with id {chat_room_id} not found for message from user {user_id}."
+        )
+        emit("chat_error", {"message": f"Chat room {chat_room_id} not found."})
         return
 
     # Save the message to the database
     try:
         new_chat_message = ChatMessage(
-            room_id=chat_room_id,
-            user_id=user_id,
-            message=message_text
+            room_id=chat_room_id, user_id=user_id, message=message_text
         )
         db.session.add(new_chat_message)
         db.session.commit()
-        app.logger.info(f"User '{username}' sent message to room '{room_name}': '{message_text}' (ID: {new_chat_message.id})")
+        app.logger.info(
+            f"User '{username}' sent message to room '{room_name}': '{message_text}' (ID: {new_chat_message.id})"
+        )
 
         # Prepare payload for broadcasting
         message_payload = {
-            'id': new_chat_message.id,
-            'room_id': new_chat_message.room_id, # or room_name
-            'room_name': room_name,
-            'user_id': new_chat_message.user_id,
-            'username': username, # Sender's username from session
-            'message': new_chat_message.message,
-            'timestamp': new_chat_message.timestamp.isoformat()
+            "id": new_chat_message.id,
+            "room_id": new_chat_message.room_id,  # or room_name
+            "room_name": room_name,
+            "user_id": new_chat_message.user_id,
+            "username": username,  # Sender's username from session
+            "message": new_chat_message.message,
+            "timestamp": new_chat_message.timestamp.isoformat(),
         }
-        socketio.emit('new_chat_message', message_payload, room=room_name)
+        socketio.emit("new_chat_message", message_payload, room=room_name)
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error saving/sending chat message for room {room_name} by user {user_id}: {e}")
-        emit('chat_error', {'message': 'An error occurred while sending your message.'})
+        app.logger.error(
+            f"Error saving/sending chat message for room {room_name} by user {user_id}: {e}"
+        )
+        emit("chat_error", {"message": "An error occurred while sending your message."})
 
 
 @app.route("/post/<int:post_id>/react", methods=["POST"])
@@ -1842,7 +1886,9 @@ def react_to_post(post_id):
     if not post:
         # Decide on error handling, e.g., flash message and redirect, or abort(404)
         flash("Post not found.", "danger")
-        return redirect(request.referrer or url_for("hello_world")) # Redirect to previous page or home
+        return redirect(
+            request.referrer or url_for("hello_world")
+        )  # Redirect to previous page or home
     user_id = session.get("user_id")  # Assuming current_user.id from session
     emoji = request.form.get("emoji")
 
@@ -1869,8 +1915,8 @@ def react_to_post(post_id):
         if existing_reaction_any_emoji:
             # User is changing their reaction
             existing_reaction_any_emoji.emoji = emoji
-            existing_reaction_any_emoji.timestamp = (
-                datetime.now(timezone.utc)
+            existing_reaction_any_emoji.timestamp = datetime.now(
+                timezone.utc
             )  # Update timestamp
             flash("Reaction updated.", "success")
         else:
@@ -1957,16 +2003,22 @@ def share_post(post_id):
     try:
         activity = UserActivity(
             user_id=user_id,  # User who shared the post
-            activity_type='shared_a_post',
+            activity_type="shared_a_post",
             related_id=post.id,  # ID of the original post that was shared
-            content_preview=new_share.sharing_user_comment[:100] if new_share.sharing_user_comment else (post.title[:100] if post.title else "Shared a post"), # Use sharing comment, fallback to post title
-            link=url_for('view_post', post_id=post.id, _external=True)
+            content_preview=(
+                new_share.sharing_user_comment[:100]
+                if new_share.sharing_user_comment
+                else (post.title[:100] if post.title else "Shared a post")
+            ),  # Use sharing comment, fallback to post title
+            link=url_for("view_post", post_id=post.id, _external=True),
         )
         db.session.add(activity)
         db.session.commit()
         emit_new_activity_event(activity)  # Emit SocketIO event
     except Exception as e:
-        app.logger.error(f"Error creating UserActivity for shared_a_post or emitting event: {e}")
+        app.logger.error(
+            f"Error creating UserActivity for shared_a_post or emitting event: {e}"
+        )
         db.session.rollback()  # Rollback activity commit if it fails
 
     flash("Post shared successfully!", "success")
@@ -2301,7 +2353,9 @@ def handle_send_group_message_event(data):
             "group_id": group_id,
             "user_id": user_id,  # Include user_id for client-side logic if needed
             "message_id": "temp_id_"
-            + datetime.now(timezone.utc).isoformat(),  # Temporary ID, as message is not saved
+            + datetime.now(
+                timezone.utc
+            ).isoformat(),  # Temporary ID, as message is not saved
         }
         socketio.emit("receive_group_message", message_payload, room=room_name)
         app.logger.info(
@@ -2349,47 +2403,59 @@ def handle_send_group_message_event(data):
 @socketio.on("edit_post_content")
 def handle_edit_post_content(data):
     user_id = None
-    token = data.get('token')
+    token = data.get("token")
 
     if token:
         try:
             # Assuming token is passed in data when session might not be available (e.g., pure WebSocket client or test client)
-            decoded_token = decode_token(token) # Decodes and verifies signature, expiry, etc.
-            identity = decoded_token['sub'] # 'sub' is standard claim for identity in JWT
+            decoded_token = decode_token(
+                token
+            )  # Decodes and verifies signature, expiry, etc.
+            identity = decoded_token[
+                "sub"
+            ]  # 'sub' is standard claim for identity in JWT
             # Ensure user_id is int if your DB expects it and JWT stores it as string
             if isinstance(identity, str) and identity.isdigit():
                 user_id = int(identity)
             elif isinstance(identity, int):
                 user_id = identity
             else:
-                app.logger.warning(f"Token for edit_post_content yielded non-integer, non-numeric-string sub: {identity}")
-                user_id = None # Treat as invalid user_id
-        except Exception as e: # Catches expired, invalid signature, etc.
+                app.logger.warning(
+                    f"Token for edit_post_content yielded non-integer, non-numeric-string sub: {identity}"
+                )
+                user_id = None  # Treat as invalid user_id
+        except Exception as e:  # Catches expired, invalid signature, etc.
             app.logger.error(f"Token validation failed for edit_post_content: {e}")
             app.logger.debug(f"Token validation failed: {e}")
-            emit('edit_error', {'message': f'Token error: {str(e)}'}, room=request.sid)
+            emit("edit_error", {"message": f"Token error: {str(e)}"}, room=request.sid)
             return
     app.logger.debug(f"User ID from token: {user_id}")
 
-    if not user_id: # If token auth failed or no token was provided
-        user_id = session.get("user_id") # Fallback to session
+    if not user_id:  # If token auth failed or no token was provided
+        user_id = session.get("user_id")  # Fallback to session
         app.logger.debug(f"User ID from session: {user_id}")
 
     if not user_id:
         app.logger.debug("Authentication failed (no token or session user_id).")
         emit(
             "edit_error",
-            {"message": "Authentication required. Please log in or provide a valid token."},
+            {
+                "message": "Authentication required. Please log in or provide a valid token."
+            },
             room=request.sid,
         )
         return
-    app.logger.debug(f"Authenticated user_id for edit: {user_id}, type: {type(user_id)}")
+    app.logger.debug(
+        f"Authenticated user_id for edit: {user_id}, type: {type(user_id)}"
+    )
 
     post_id = data.get("post_id")
     new_content = data.get("new_content")  # Frontend should send this
 
     if not post_id or new_content is None:  # new_content can be an empty string
-        app.logger.debug(f"Invalid data: post_id={post_id}, new_content is None: {new_content is None}")
+        app.logger.debug(
+            f"Invalid data: post_id={post_id}, new_content is None: {new_content is None}"
+        )
         emit(
             "edit_error",
             {"message": "Invalid data: Post ID and new content are required."},
@@ -2407,18 +2473,24 @@ def handle_edit_post_content(data):
     # Verify lock status
     lock = post.lock_info
     if not lock:
-        app.logger.debug(f"No lock found for post_id={post_id}. Post lock_info: {post.lock_info}")
+        app.logger.debug(
+            f"No lock found for post_id={post_id}. Post lock_info: {post.lock_info}"
+        )
         emit(
             "edit_error",
             {"message": "Post is not locked for editing. Please acquire a lock first."},
-            room=request.sid, # Emit to the sender
+            room=request.sid,  # Emit to the sender
         )
         return
 
-    app.logger.debug(f"Lock details: lock.user_id={lock.user_id} (type: {type(lock.user_id)}), lock.expires_at={lock.expires_at}")
+    app.logger.debug(
+        f"Lock details: lock.user_id={lock.user_id} (type: {type(lock.user_id)}), lock.expires_at={lock.expires_at}"
+    )
 
     if lock.user_id != user_id:
-        app.logger.debug(f"Lock user_id ({lock.user_id}) does not match authenticated user_id ({user_id}).")
+        app.logger.debug(
+            f"Lock user_id ({lock.user_id}) does not match authenticated user_id ({user_id})."
+        )
         # Check if lock is expired. If so, another user might be able to take it.
         if lock.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
             app.logger.debug("Lock is expired.")
@@ -2438,7 +2510,9 @@ def handle_edit_post_content(data):
             )
         return
 
-    if lock.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc): # This line was already fixed, no change needed
+    if lock.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(
+        timezone.utc
+    ):  # This line was already fixed, no change needed
         app.logger.debug("User's own lock has expired.")
         # Though the current user holds the lock, it has expired.
         db.session.delete(lock)
@@ -2481,8 +2555,8 @@ def handle_edit_post_content(data):
             "new_content": post.content,
             "last_edited": post.last_edited.isoformat(),
             "edited_by_user_id": user_id,  # Optionally send who edited
-            "edited_by_username": db.session.get(User,
-                user_id
+            "edited_by_username": db.session.get(
+                User, user_id
             ).username,  # Optionally send who edited
         }
         socketio.emit("post_content_updated", update_payload, room=f"post_{post.id}")
@@ -2522,7 +2596,9 @@ def api_login():
     user = User.query.filter_by(username=username).first()
 
     if user and check_password_hash(user.password_hash, password):
-        access_token = create_access_token(identity=str(user.id))  # Use str(user.id) as identity
+        access_token = create_access_token(
+            identity=str(user.id)
+        )  # Use str(user.id) as identity
         return {"access_token": access_token}, 200
     else:
         return {"message": "Invalid credentials"}, 401
@@ -2747,7 +2823,9 @@ def create_event():
         title = request.form.get("title")
         description = request.form.get("description")
         event_date_str = request.form.get("event_date")
-        event_time_str = request.form.get("event_time") # Default to midnight if not provided or handle error
+        event_time_str = request.form.get(
+            "event_time"
+        )  # Default to midnight if not provided or handle error
         location = request.form.get("location")
 
         if not title or not title.strip():
@@ -2759,13 +2837,18 @@ def create_event():
 
         # Ensure time is provided, default to 00:00 if necessary or raise error
         if not event_time_str:
-            event_time_str = "00:00" # Default to midnight
+            event_time_str = "00:00"  # Default to midnight
 
         try:
             # Combine date and time strings and parse into a datetime object
-            event_datetime_obj = datetime.strptime(f"{event_date_str} {event_time_str}", "%Y-%m-%d %H:%M")
+            event_datetime_obj = datetime.strptime(
+                f"{event_date_str} {event_time_str}", "%Y-%m-%d %H:%M"
+            )
         except ValueError:
-            flash("Invalid date or time format. Please use YYYY-MM-DD for date and HH:MM for time.", "danger")
+            flash(
+                "Invalid date or time format. Please use YYYY-MM-DD for date and HH:MM for time.",
+                "danger",
+            )
             return render_template("create_event.html")
 
         user_id = session.get("user_id")
@@ -2776,7 +2859,7 @@ def create_event():
         new_event_db = Event(
             title=title.strip(),
             description=description.strip() if description else "",
-            date=event_datetime_obj, # Store combined datetime object
+            date=event_datetime_obj,  # Store combined datetime object
             location=location.strip() if location else "",
             user_id=user_id,
         )
@@ -3742,17 +3825,38 @@ def reorder_series_posts(series_id):
     current_post_ids_in_series = {sp.post_id for sp in current_series_posts_assoc}
 
     if set(new_post_ids_order) != current_post_ids_in_series:
-        return jsonify({"status": "error", "message": "The set of post IDs does not match the posts currently in the series."}), 400
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "The set of post IDs does not match the posts currently in the series.",
+                }
+            ),
+            400,
+        )
 
     # Check if all posts belong to the series author (redundant if they are already in SeriesPost and SeriesPost implies authorship, but good for safety)
     for post_id in new_post_ids_order:
         post = db.session.get(Post, post_id)
         if not post:
             # This case should ideally be caught by the set comparison above if SeriesPost entries are consistent
-            return jsonify({"status": "error", "message": f"Post with ID {post_id} not found."}), 404
+            return (
+                jsonify(
+                    {"status": "error", "message": f"Post with ID {post_id} not found."}
+                ),
+                404,
+            )
         if post.user_id != current_user_id:
             # This is a critical check if somehow a post from another user was associated with the series
-            return jsonify({"status": "error", "message": f"Post with ID {post_id} does not belong to you."}), 403
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": f"Post with ID {post_id} does not belong to you.",
+                    }
+                ),
+                403,
+            )
 
     try:
         # Start a transaction (Flask-SQLAlchemy handles this implicitly with db.session.commit/rollback)
@@ -3763,22 +3867,35 @@ def reorder_series_posts(series_id):
 
         for index, post_id in enumerate(new_post_ids_order):
             series_post_entry = series_posts_map.get(post_id)
-            if series_post_entry: # Should always be true due to earlier checks
+            if series_post_entry:  # Should always be true due to earlier checks
                 series_post_entry.order = index
             else:
                 # This should not be reached if the set comparison was correct.
                 # If it is, it indicates an inconsistency or a bug in the logic.
                 db.session.rollback()
-                return jsonify({"status": "error", "message": f"Error finding SeriesPost entry for post ID {post_id}."}), 500
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": f"Error finding SeriesPost entry for post ID {post_id}.",
+                        }
+                    ),
+                    500,
+                )
 
-        series.updated_at = datetime.now(timezone.utc) # Update series timestamp
+        series.updated_at = datetime.now(timezone.utc)  # Update series timestamp
         db.session.add(series)
         db.session.commit()
-        return jsonify({"status": "success", "message": "Posts reordered successfully."})
+        return jsonify(
+            {"status": "success", "message": "Posts reordered successfully."}
+        )
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error reordering posts for series {series_id}: {e}")
-        return jsonify({"status": "error", "message": "An internal error occurred."}), 500
+        return (
+            jsonify({"status": "error", "message": "An internal error occurred."}),
+            500,
+        )
 
 
 @app.route("/live_feed")
@@ -3903,7 +4020,7 @@ def flag_post(post_id):
 def flag_comment(comment_id):
     comment = db.session.get(Comment, comment_id)
     if not comment:
-        return {"message": "Comment not found"}, 404 # Or appropriate error handling
+        return {"message": "Comment not found"}, 404  # Or appropriate error handling
     user_id = session.get("user_id")
 
     if not user_id:  # Should be caught by @login_required
@@ -4193,19 +4310,28 @@ def share_file_route(receiver_username):
 
             # Default extension to empty string if no dot is found or part after dot is empty
             extension = ""
-            if '.' in secured_filename_for_extension_derivation:
+            if "." in secured_filename_for_extension_derivation:
                 parts = secured_filename_for_extension_derivation.rsplit(".", 1)
-                if len(parts) > 1 and parts[1]: # Check if there is something after the dot
+                if (
+                    len(parts) > 1 and parts[1]
+                ):  # Check if there is something after the dot
                     extension = parts[1].lower()
 
             # If after securing and splitting, extension is empty, and original had one, try original.
             # This part needs to be careful not to introduce insecurity.
             # For now, keeping it simple: if allowed_shared_file passed, the type is acceptable.
             # The primary goal is to ensure the extension is not empty for saved_filename construction if possible.
-            if not extension and '.' in true_original_filename: # Fallback if secured name lost ext
-                 _original_ext_candidate = true_original_filename.rsplit(".",1)[1].lower()
-                 if _original_ext_candidate in app.config["SHARED_FILES_ALLOWED_EXTENSIONS"]:
-                     extension = _original_ext_candidate
+            if (
+                not extension and "." in true_original_filename
+            ):  # Fallback if secured name lost ext
+                _original_ext_candidate = true_original_filename.rsplit(".", 1)[
+                    1
+                ].lower()
+                if (
+                    _original_ext_candidate
+                    in app.config["SHARED_FILES_ALLOWED_EXTENSIONS"]
+                ):
+                    extension = _original_ext_candidate
 
             # If extension is still empty, it means original filename had no recognizable extension
             # or it wasn't in allowed list (though allowed_shared_file should catch this).
@@ -4215,7 +4341,7 @@ def share_file_route(receiver_username):
             if extension:
                 saved_filename_on_disk = f"{uuid.uuid4().hex}.{extension}"
             else:
-                saved_filename_on_disk = f"{uuid.uuid4().hex}" # No extension if none could be safely determined
+                saved_filename_on_disk = f"{uuid.uuid4().hex}"  # No extension if none could be safely determined
 
             file_path = os.path.join(
                 app.config["SHARED_FILES_UPLOAD_FOLDER"], saved_filename_on_disk
@@ -4229,7 +4355,7 @@ def share_file_route(receiver_username):
                     sender_id=session["user_id"],
                     receiver_id=receiver_user.id,
                     original_filename=true_original_filename,  # Use the true original filename here
-                    saved_filename=saved_filename_on_disk,    # Use the UUID-based name for disk storage
+                    saved_filename=saved_filename_on_disk,  # Use the UUID-based name for disk storage
                     message=message_text,
                 )
                 db.session.add(new_shared_file)

@@ -1,9 +1,12 @@
 import unittest
 from unittest.mock import patch, ANY, MagicMock
-from datetime import datetime, timezone # Removed timedelta
+from datetime import datetime, timezone  # Removed timedelta
 
 # from app import app, db, socketio # COMMENTED OUT
-from models import User, Post # COMMENTED OUT (add other models if this class uses them)
+from models import (
+    User,
+    Post,
+)  # COMMENTED OUT (add other models if this class uses them)
 from tests.test_base import AppTestCase
 
 
@@ -25,7 +28,7 @@ class TestDiscoverPageViews(AppTestCase):
         with self.app.app_context():
             # Create a mock author object
             mock_author = MagicMock()
-            mock_author.username = "author_username" # Reverted username
+            mock_author.username = "author_username"  # Reverted username
 
             # Create a mock post object
             mock_post = MagicMock()
@@ -39,7 +42,9 @@ class TestDiscoverPageViews(AppTestCase):
         mock_post.timestamp = datetime.now(timezone.utc)
         mock_post.comments = []  # For len(post.comments) if used
         mock_post.likes = []  # For len(post.likes) if used
-        mock_post.reviews = []  # For len(post.reviews) if used # Assuming reviews is not used or part of Post spec
+        mock_post.reviews = (
+            []
+        )  # For len(post.reviews) if used # Assuming reviews is not used or part of Post spec
         mock_post.hashtags = ""  # Assuming hashtags is an attribute
         # mock_post.is_featured = False # Assuming is_featured is an attribute
         # mock_post.featured_at = None # Assuming featured_at is an attribute
@@ -97,9 +102,11 @@ class TestDiscoverPageViews(AppTestCase):
             mock_post.comments = []
             mock_post.likes = []
             mock_post.hashtags = ""
-            mock_post.user_id = self.user2_id # Assuming user2 might be an author
+            mock_post.user_id = self.user2_id  # Assuming user2 might be an author
             mock_post.reviews = []
-            mock_post.image_url = "http://example.com/image.jpg"  # Image URL for the test
+            mock_post.image_url = (
+                "http://example.com/image.jpg"  # Image URL for the test
+            )
 
         mock_reason = "Reason: post with image."
         # The function is expected to return a list of (Post, reason_string) tuples
@@ -114,14 +121,15 @@ class TestDiscoverPageViews(AppTestCase):
 
         # Check for the image tag
         # This assertion might need adjustment based on how images are rendered in the template
-        self.assertIn('<img src="http://example.com/image.jpg"', response_data) # Made assertion more flexible
+        self.assertIn(
+            '<img src="http://example.com/image.jpg"', response_data
+        )  # Made assertion more flexible
 
         # Check for other post details
         self.assertIn(mock_post.title, response_data)
         self.assertIn(mock_post.author.username, response_data)
-        self.assertIn(mock_post.content[:50], response_data) # Check for a snippet
+        self.assertIn(mock_post.content[:50], response_data)  # Check for a snippet
         self.assertIn(f"Recommended because: {mock_reason}", response_data)
-
 
         # Assert that the mock was called correctly
         mock_get_personalized_feed_posts.assert_called_once_with(
@@ -146,8 +154,10 @@ class TestDiscoverPageViews(AppTestCase):
             # Create a mock post object
             mock_post = MagicMock()
             mock_post.id = 456
-            mock_post.title = "Test Post with <Special> & \"Chars\""
-            mock_post.content = "This content has 'single' & \"double\" quotes, plus <tags>."
+            mock_post.title = 'Test Post with <Special> & "Chars"'
+            mock_post.content = (
+                "This content has 'single' & \"double\" quotes, plus <tags>."
+            )
             mock_post.author = mock_author
             mock_post.timestamp = datetime.now(timezone.utc)
             mock_post.comments = []
@@ -174,8 +184,13 @@ class TestDiscoverPageViews(AppTestCase):
 
         # Assertions for post's title and content
         # Note: These assertions might need adjustment based on how Jinja2 escapes characters
-        self.assertIn("Test Post with &lt;Special&gt; &amp; &#34;Chars&#34;", response_data)
-        self.assertIn("This content has &#39;single&#39; &amp; &#34;double&#34; quotes, plus &lt;tags&gt;.", response_data)
+        self.assertIn(
+            "Test Post with &lt;Special&gt; &amp; &#34;Chars&#34;", response_data
+        )
+        self.assertIn(
+            "This content has &#39;single&#39; &amp; &#34;double&#34; quotes, plus &lt;tags&gt;.",
+            response_data,
+        )
 
         # Assert that the recommendation reason is in the response data
         self.assertIn(f"Recommended because: {mock_reason}", response_data)
@@ -203,14 +218,13 @@ class TestDiscoverPageViews(AppTestCase):
             # Optional data missing
             mock_post.comments = []
             mock_post.likes = []
-            mock_post.hashtags = None # Or ""
+            mock_post.hashtags = None  # Or ""
             # Ensure other attributes that might be accessed are present
-            mock_post.user_id = self.user1_id # Or some other relevant user_id
+            mock_post.user_id = self.user1_id  # Or some other relevant user_id
             mock_post.reviews = []
             # mock_post.is_featured = False
             # mock_post.featured_at = None
             # mock_post.last_edited = None
-
 
         # The function is expected to return a list of (Post, reason_string) tuples
         # For this test, the reason string is not critical but should be present
@@ -227,7 +241,7 @@ class TestDiscoverPageViews(AppTestCase):
         # Check for essential post details
         self.assertIn(mock_post.title, response_data)
         self.assertIn(mock_post.author.username, response_data)
-        self.assertIn(mock_post.content[:50], response_data) # Check for a snippet
+        self.assertIn(mock_post.content[:50], response_data)  # Check for a snippet
 
         # Assert that the mock was called correctly
         mock_get_personalized_feed_posts.assert_called_once_with(
@@ -237,8 +251,8 @@ class TestDiscoverPageViews(AppTestCase):
         # Assert that elements related to optional data are NOT present
         # This depends on how the template renders missing data.
         # For example, if comments count is only shown if > 0
-        self.assertNotIn("Comments: 0", response_data) # Assuming "Comments: X" format
-        self.assertNotIn("Likes: 0", response_data) # Assuming "Likes: X" format
+        self.assertNotIn("Comments: 0", response_data)  # Assuming "Comments: X" format
+        self.assertNotIn("Likes: 0", response_data)  # Assuming "Likes: X" format
         # If hashtags are displayed in a specific way, check they are not there
         # e.g., self.assertNotIn("#", response_data) if hashtags always start with #
 
@@ -261,7 +275,10 @@ class TestDiscoverPageViews(AppTestCase):
 
         # Check for a message indicating no recommendations
         # This message will depend on the actual implementation in the template
-        self.assertIn("No new post recommendations for you at the moment. Explore existing content or check back later!", response_data)
+        self.assertIn(
+            "No new post recommendations for you at the moment. Explore existing content or check back later!",
+            response_data,
+        )
         # Or, if there's a more generic message or a specific HTML structure:
         # self.assertIn("No posts to display.", response_data)
 

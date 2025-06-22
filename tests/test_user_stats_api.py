@@ -78,4 +78,4 @@ class TestUserStatsAPI(AppTestCase):
         data_forbidden = json.loads(response_forbidden.data)
         self.assertEqual(
             data_forbidden.get("message"), "You are not authorized to view these stats."
-        ) # Corrected variable name
+        )  # Corrected variable name

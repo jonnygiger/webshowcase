@@ -6,8 +6,23 @@ from datetime import datetime, timedelta, timezone
 import os
 
 # import app as main_app  # Removed to break circular dependency
-from notifications import broadcast_new_post # Import the moved function
-from models import User, Post, Comment, Like, Friendship, Event, EventRSVP, Poll, PollOption, PollVote, db, PostLock, SharedFile, UserBlock
+from notifications import broadcast_new_post  # Import the moved function
+from models import (
+    User,
+    Post,
+    Comment,
+    Like,
+    Friendship,
+    Event,
+    EventRSVP,
+    Poll,
+    PollOption,
+    PollVote,
+    db,
+    PostLock,
+    SharedFile,
+    UserBlock,
+)
 
 
 # Placeholder for UserListResource
@@ -69,8 +84,12 @@ class CommentListResource(Resource):
         # This will be replaced with actual logic once UserBlock model and relationships are implemented.
         # Example: if post.author.has_blocked(user):
         # Check if the post author has blocked the current user
-        if UserBlock.query.filter_by(blocker_id=post.user_id, blocked_id=user.id).first():
-            return {"message": "You are blocked by the post author and cannot comment."}, 403
+        if UserBlock.query.filter_by(
+            blocker_id=post.user_id, blocked_id=user.id
+        ).first():
+            return {
+                "message": "You are blocked by the post author and cannot comment."
+            }, 403
 
         parser = reqparse.RequestParser()
         parser.add_argument(
@@ -90,7 +109,7 @@ class CommentListResource(Resource):
             "content": new_comment.content,
             "timestamp": new_comment.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         }
-        current_app.extensions['socketio'].emit(
+        current_app.extensions["socketio"].emit(
             "new_comment_event", new_comment_data_for_post_room, room=f"post_{post_id}"
         )  # Use current_app
 
@@ -191,8 +210,8 @@ class PollVoteResource(Resource):
         self, poll_id
     ):  # The option_id was in the original plan, but typically it's in the request body.
         current_user_id = int(get_jwt_identity())
-        user = db.session.get(User,
-            current_user_id
+        user = db.session.get(
+            User, current_user_id
         )  # Query user to ensure they exist, though jwt implies it.
         if not user:
             return {"message": "User not found"}, 404
@@ -246,19 +265,22 @@ class PostLockResource(Resource):
         if existing_lock:
             if (
                 existing_lock.user_id != current_user_id
-                and existing_lock.expires_at.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)
+                and existing_lock.expires_at.replace(tzinfo=timezone.utc)
+                > datetime.now(timezone.utc)
             ):
                 return {
                     "message": "Post is currently locked by another user.",
                     "locked_by_username": existing_lock.user.username,
                     "expires_at": existing_lock.expires_at.isoformat(),
                 }, 409
-            else: # If same user OR (other user AND expired lock)
+            else:  # If same user OR (other user AND expired lock)
                 db.session.delete(existing_lock)
-                db.session.flush() # Ensure DELETE is processed before potential INSERT
+                db.session.flush()  # Ensure DELETE is processed before potential INSERT
 
         lock_duration_minutes = 15
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=lock_duration_minutes)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            minutes=lock_duration_minutes
+        )
 
         new_lock = PostLock(
             post_id=post.id, user_id=current_user_id, expires_at=expires_at
@@ -273,7 +295,7 @@ class PostLockResource(Resource):
             return {"message": f"Error creating lock: {str(e)}"}, 500
 
         # Emit SocketIO event for lock acquired
-        current_app.extensions['socketio'].emit(
+        current_app.extensions["socketio"].emit(
             "post_lock_acquired",
             {
                 "post_id": new_lock.post_id,
@@ -327,7 +349,7 @@ class PostLockResource(Resource):
             return {"message": f"Error unlocking post: {str(e)}"}, 500
 
         # Emit SocketIO event for lock released
-        current_app.extensions['socketio'].emit(
+        current_app.extensions["socketio"].emit(
             "post_lock_released",
             {
                 "post_id": post_id,
@@ -396,18 +418,24 @@ class RecommendationResource(Resource):
         # Serialize results
         suggested_posts_data = []
         for post_obj, reason_str in raw_posts:
-            suggested_posts_data.append({
-                "id": post_obj.id,
-                "title": post_obj.title,
-                "author_username": post_obj.author.username if post_obj.author else "Unknown",
-                "reason": reason_str,
-            })
+            suggested_posts_data.append(
+                {
+                    "id": post_obj.id,
+                    "title": post_obj.title,
+                    "author_username": (
+                        post_obj.author.username if post_obj.author else "Unknown"
+                    ),
+                    "reason": reason_str,
+                }
+            )
 
         suggested_groups_data = [
             {
                 "id": group_obj.id,
                 "name": group_obj.name,
-                "creator_username": group_obj.creator.username if group_obj.creator else "Unknown",
+                "creator_username": (
+                    group_obj.creator.username if group_obj.creator else "Unknown"
+                ),
             }
             for group_obj in raw_groups
         ]
@@ -416,14 +444,15 @@ class RecommendationResource(Resource):
             {
                 "id": event_obj.id,
                 "title": event_obj.title,
-                "organizer_username": event_obj.organizer.username if event_obj.organizer else "Unknown",
+                "organizer_username": (
+                    event_obj.organizer.username if event_obj.organizer else "Unknown"
+                ),
             }
             for event_obj in raw_events
         ]
 
         suggested_users_data = [
-            {"id": user_obj.id, "username": user_obj.username}
-            for user_obj in raw_users
+            {"id": user_obj.id, "username": user_obj.username} for user_obj in raw_users
         ]
 
         suggested_polls_data = []
@@ -432,16 +461,22 @@ class RecommendationResource(Resource):
                 {
                     "id": option.id,
                     "text": option.text,
-                    "vote_count": len(option.votes),  # PollOption.votes is a list of PollVote objects
+                    "vote_count": len(
+                        option.votes
+                    ),  # PollOption.votes is a list of PollVote objects
                 }
                 for option in poll_obj.options
             ]
-            suggested_polls_data.append({
-                "id": poll_obj.id,
-                "question": poll_obj.question,
-                "author_username": poll_obj.author.username if poll_obj.author else "Unknown",
-                "options": options_data,
-            })
+            suggested_polls_data.append(
+                {
+                    "id": poll_obj.id,
+                    "question": poll_obj.question,
+                    "author_username": (
+                        poll_obj.author.username if poll_obj.author else "Unknown"
+                    ),
+                    "options": options_data,
+                }
+            )
 
         return {
             "user_id": user_id,
@@ -452,9 +487,11 @@ class RecommendationResource(Resource):
             "suggested_polls_to_vote": suggested_polls_data,
         }, 200
 
+
 # Need User model for UserFeedResource, already imported at the top
 # from models import User
-from recommendations import get_personalized_feed_posts # Import for UserFeedResource
+from recommendations import get_personalized_feed_posts  # Import for UserFeedResource
+
 
 class UserFeedResource(Resource):
     @jwt_required()
@@ -465,19 +502,27 @@ class UserFeedResource(Resource):
         if not target_user:
             return {"message": "User not found"}, 404
 
-        limit = request.args.get('limit', 20, type=int)
+        limit = request.args.get("limit", 20, type=int)
 
         posts_with_reasons = get_personalized_feed_posts(user_id, limit=limit)
 
         feed_data = []
         for post, reason in posts_with_reasons:
             post_dict = post.to_dict()
-            post_dict['reason_for_recommendation'] = reason
+            post_dict["reason_for_recommendation"] = reason
             # Ensure timestamp is serialized
-            if 'timestamp' in post_dict and isinstance(post_dict['timestamp'], datetime):
-                post_dict['timestamp'] = post_dict['timestamp'].isoformat() + "Z" # Assume UTC
-            if 'last_edited' in post_dict and post_dict['last_edited'] and isinstance(post_dict['last_edited'], datetime):
-                post_dict['last_edited'] = post_dict['last_edited'].isoformat() + "Z"
+            if "timestamp" in post_dict and isinstance(
+                post_dict["timestamp"], datetime
+            ):
+                post_dict["timestamp"] = (
+                    post_dict["timestamp"].isoformat() + "Z"
+                )  # Assume UTC
+            if (
+                "last_edited" in post_dict
+                and post_dict["last_edited"]
+                and isinstance(post_dict["last_edited"], datetime)
+            ):
+                post_dict["last_edited"] = post_dict["last_edited"].isoformat() + "Z"
             feed_data.append(post_dict)
 
         return {"feed_posts": feed_data}, 200
@@ -493,130 +538,229 @@ class PersonalizedFeedResource(Resource):
         if not current_user:
             return {"message": "User not found"}, 404
 
-        processed_items = {} # Using dict to handle duplicates (type, id) -> item
+        processed_items = {}  # Using dict to handle duplicates (type, id) -> item
 
         # Get friend IDs
         friend_ids = set()
         # Friendships initiated by the current user
-        initiated_friendships = Friendship.query.filter_by(user_id=current_user_id, status='accepted').all()
+        initiated_friendships = Friendship.query.filter_by(
+            user_id=current_user_id, status="accepted"
+        ).all()
         for f in initiated_friendships:
             friend_ids.add(f.friend_id)
         # Friendships accepted by the current user
-        accepted_friendships = Friendship.query.filter_by(friend_id=current_user_id, status='accepted').all()
+        accepted_friendships = Friendship.query.filter_by(
+            friend_id=current_user_id, status="accepted"
+        ).all()
         for f in accepted_friendships:
             friend_ids.add(f.user_id)
 
-        if friend_ids: # Only proceed if the user has friends
+        if friend_ids:  # Only proceed if the user has friends
             # 1. Posts from Friends
-            friend_posts = Post.query.filter(Post.user_id.in_(friend_ids)).order_by(Post.timestamp.desc()).limit(20).all()
+            friend_posts = (
+                Post.query.filter(Post.user_id.in_(friend_ids))
+                .order_by(Post.timestamp.desc())
+                .limit(20)
+                .all()
+            )
             for post in friend_posts:
                 item = {
-                    "type": "post", "id": post.id, "title": post.title, "content": post.content,
-                    "timestamp": post.timestamp, "author_username": post.author.username,
-                    "reason": f"Posted by your friend {post.author.username}"
+                    "type": "post",
+                    "id": post.id,
+                    "title": post.title,
+                    "content": post.content,
+                    "timestamp": post.timestamp,
+                    "author_username": post.author.username,
+                    "reason": f"Posted by your friend {post.author.username}",
                 }
                 key = ("post", post.id)
-                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                if (
+                    key not in processed_items
+                    or item["timestamp"] > processed_items[key]["timestamp"]
+                ):
                     processed_items[key] = item
 
             # 2. Posts Liked by Friends
-            friend_likes = Like.query.filter(Like.user_id.in_(friend_ids)).order_by(Like.timestamp.desc()).limit(20).all()
+            friend_likes = (
+                Like.query.filter(Like.user_id.in_(friend_ids))
+                .order_by(Like.timestamp.desc())
+                .limit(20)
+                .all()
+            )
             for like in friend_likes:
                 if like.post.user_id == current_user_id:
                     continue
                 item = {
-                    "type": "post", "id": like.post.id, "title": like.post.title, "content": like.post.content,
-                    "timestamp": like.timestamp, "author_username": like.post.author.username,
-                    "reason": f"Liked by your friend {like.user.username}"
+                    "type": "post",
+                    "id": like.post.id,
+                    "title": like.post.title,
+                    "content": like.post.content,
+                    "timestamp": like.timestamp,
+                    "author_username": like.post.author.username,
+                    "reason": f"Liked by your friend {like.user.username}",
                 }
                 key = ("post", like.post.id)
-                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                if (
+                    key not in processed_items
+                    or item["timestamp"] > processed_items[key]["timestamp"]
+                ):
                     processed_items[key] = item
 
             # 3. Posts Commented on by Friends
-            friend_comments = Comment.query.filter(Comment.user_id.in_(friend_ids)).order_by(Comment.timestamp.desc()).limit(20).all()
+            friend_comments = (
+                Comment.query.filter(Comment.user_id.in_(friend_ids))
+                .order_by(Comment.timestamp.desc())
+                .limit(20)
+                .all()
+            )
             for comment in friend_comments:
                 if comment.post.user_id == current_user_id:
                     continue
                 item = {
-                    "type": "post", "id": comment.post.id, "title": comment.post.title, "content": comment.post.content,
-                    "timestamp": comment.timestamp, "author_username": comment.post.author.username,
-                    "reason": f"Commented on by your friend {comment.author.username}"
+                    "type": "post",
+                    "id": comment.post.id,
+                    "title": comment.post.title,
+                    "content": comment.post.content,
+                    "timestamp": comment.timestamp,
+                    "author_username": comment.post.author.username,
+                    "reason": f"Commented on by your friend {comment.author.username}",
                 }
                 key = ("post", comment.post.id)
-                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                if (
+                    key not in processed_items
+                    or item["timestamp"] > processed_items[key]["timestamp"]
+                ):
                     processed_items[key] = item
 
             # 4. Events by Friends or Friends Attending
-            friend_events = Event.query.filter(Event.user_id.in_(friend_ids)).order_by(Event.created_at.desc()).limit(10).all()
+            friend_events = (
+                Event.query.filter(Event.user_id.in_(friend_ids))
+                .order_by(Event.created_at.desc())
+                .limit(10)
+                .all()
+            )
             for event in friend_events:
                 item = {
-                    "type": "event", "id": event.id, "title": event.title, "description": event.description,
-                    "date": event.date.isoformat() if event.date else None, # Serialize event.date
-                    "timestamp": event.created_at, # This will be serialized later
+                    "type": "event",
+                    "id": event.id,
+                    "title": event.title,
+                    "description": event.description,
+                    "date": (
+                        event.date.isoformat() if event.date else None
+                    ),  # Serialize event.date
+                    "timestamp": event.created_at,  # This will be serialized later
                     "organizer_username": event.organizer.username,
-                    "reason": f"Organized by your friend {event.organizer.username}"
+                    "reason": f"Organized by your friend {event.organizer.username}",
                 }
                 key = ("event", event.id)
-                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                if (
+                    key not in processed_items
+                    or item["timestamp"] > processed_items[key]["timestamp"]
+                ):
                     processed_items[key] = item
 
-            friend_rsvps = EventRSVP.query.filter(EventRSVP.user_id.in_(friend_ids), EventRSVP.status == 'Attending').order_by(EventRSVP.timestamp.desc()).limit(10).all()
+            friend_rsvps = (
+                EventRSVP.query.filter(
+                    EventRSVP.user_id.in_(friend_ids), EventRSVP.status == "Attending"
+                )
+                .order_by(EventRSVP.timestamp.desc())
+                .limit(10)
+                .all()
+            )
             for rsvp in friend_rsvps:
                 if rsvp.event.user_id == current_user_id:
                     continue
                 item = {
-                    "type": "event", "id": rsvp.event.id, "title": rsvp.event.title, "description": rsvp.event.description,
-                    "date": rsvp.event.date.isoformat() if rsvp.event.date else None, # Serialize event.date
-                    "timestamp": rsvp.timestamp, # This will be serialized later
+                    "type": "event",
+                    "id": rsvp.event.id,
+                    "title": rsvp.event.title,
+                    "description": rsvp.event.description,
+                    "date": (
+                        rsvp.event.date.isoformat() if rsvp.event.date else None
+                    ),  # Serialize event.date
+                    "timestamp": rsvp.timestamp,  # This will be serialized later
                     "organizer_username": rsvp.event.organizer.username,
-                    "reason": f"{rsvp.attendee.username} is attending"
+                    "reason": f"{rsvp.attendee.username} is attending",
                 }
                 key = ("event", rsvp.event.id)
-                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                if (
+                    key not in processed_items
+                    or item["timestamp"] > processed_items[key]["timestamp"]
+                ):
                     processed_items[key] = item
 
             # 5. Polls by Friends or Friends Voted On
-            friend_polls = Poll.query.filter(Poll.user_id.in_(friend_ids)).order_by(Poll.created_at.desc()).limit(10).all()
+            friend_polls = (
+                Poll.query.filter(Poll.user_id.in_(friend_ids))
+                .order_by(Poll.created_at.desc())
+                .limit(10)
+                .all()
+            )
             for poll in friend_polls:
                 item = {
-                    "type": "poll", "id": poll.id, "question": poll.question,
-                    "options": [{"id": o.id, "text": o.text, "vote_count": len(o.votes)} for o in poll.options],
-                    "timestamp": poll.created_at, "creator_username": poll.author.username,
-                    "reason": f"Created by your friend {poll.author.username}"
+                    "type": "poll",
+                    "id": poll.id,
+                    "question": poll.question,
+                    "options": [
+                        {"id": o.id, "text": o.text, "vote_count": len(o.votes)}
+                        for o in poll.options
+                    ],
+                    "timestamp": poll.created_at,
+                    "creator_username": poll.author.username,
+                    "reason": f"Created by your friend {poll.author.username}",
                 }
                 key = ("poll", poll.id)
-                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                if (
+                    key not in processed_items
+                    or item["timestamp"] > processed_items[key]["timestamp"]
+                ):
                     processed_items[key] = item
 
-            friend_poll_votes = PollVote.query.filter(PollVote.user_id.in_(friend_ids)).order_by(PollVote.created_at.desc()).limit(10).all()
+            friend_poll_votes = (
+                PollVote.query.filter(PollVote.user_id.in_(friend_ids))
+                .order_by(PollVote.created_at.desc())
+                .limit(10)
+                .all()
+            )
             for vote in friend_poll_votes:
                 # Access poll through vote.option.poll
-                if not vote.option or not vote.option.poll: # Add check for safety
+                if not vote.option or not vote.option.poll:  # Add check for safety
                     continue
                 current_poll = vote.option.poll
                 if current_poll.user_id == current_user_id:
                     continue
 
                 item = {
-                    "type": "poll", "id": current_poll.id, "question": current_poll.question,
-                    "options": [{"id": o.id, "text": o.text, "vote_count": len(o.votes)} for o in current_poll.options],
-                    "timestamp": vote.created_at, "creator_username": current_poll.author.username,
-                    "reason": f"Voted on by your friend {vote.voter.username}" # Changed vote.user to vote.voter based on model
+                    "type": "poll",
+                    "id": current_poll.id,
+                    "question": current_poll.question,
+                    "options": [
+                        {"id": o.id, "text": o.text, "vote_count": len(o.votes)}
+                        for o in current_poll.options
+                    ],
+                    "timestamp": vote.created_at,
+                    "creator_username": current_poll.author.username,
+                    "reason": f"Voted on by your friend {vote.voter.username}",  # Changed vote.user to vote.voter based on model
                 }
                 key = ("poll", current_poll.id)
-                if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
+                if (
+                    key not in processed_items
+                    or item["timestamp"] > processed_items[key]["timestamp"]
+                ):
                     processed_items[key] = item
 
-        feed_items_list = sorted(list(processed_items.values()), key=lambda x: x["timestamp"], reverse=True)
+        feed_items_list = sorted(
+            list(processed_items.values()), key=lambda x: x["timestamp"], reverse=True
+        )
 
         for item in feed_items_list:
             if item["timestamp"].tzinfo is None:
-                 item["timestamp"] = item["timestamp"].isoformat() + "Z"
+                item["timestamp"] = item["timestamp"].isoformat() + "Z"
             else:
-                 item["timestamp"] = item["timestamp"].isoformat()
+                item["timestamp"] = item["timestamp"].isoformat()
 
         return {"feed_items": feed_items_list}, 200
+
 
 # Placeholder for TrendingHashtagsResource
 class TrendingHashtagsResource(Resource):
@@ -624,7 +768,8 @@ class TrendingHashtagsResource(Resource):
         return {"message": "Trending hashtags resource placeholder"}, 200
 
 
-from recommendations import get_on_this_day_content # Import the function
+from recommendations import get_on_this_day_content  # Import the function
+
 
 # OnThisDayResource Implementation
 class OnThisDayResource(Resource):
@@ -646,12 +791,16 @@ class OnThisDayResource(Resource):
         posts_data = []
         if content.get("posts"):
             for post_obj in content["posts"]:
-                posts_data.append(post_obj.to_dict()) # Assuming Post model has to_dict()
+                posts_data.append(
+                    post_obj.to_dict()
+                )  # Assuming Post model has to_dict()
 
         events_data = []
         if content.get("events"):
             for event_obj in content["events"]:
-                events_data.append(event_obj.to_dict()) # Assuming Event model has to_dict()
+                events_data.append(
+                    event_obj.to_dict()
+                )  # Assuming Event model has to_dict()
 
         return {
             "on_this_day_posts": posts_data,
@@ -661,9 +810,9 @@ class OnThisDayResource(Resource):
 
 # UserStatsResource Implementation
 class UserStatsResource(Resource):
-    @jwt_required() # Ensure this is uncommented and active
+    @jwt_required()  # Ensure this is uncommented and active
     def get(self, user_id):
-        current_jwt_user_id = int(get_jwt_identity()) # ID of the logged-in user
+        current_jwt_user_id = int(get_jwt_identity())  # ID of the logged-in user
 
         if current_jwt_user_id != user_id:
             # Future: Add admin role check here to allow admins access
@@ -675,10 +824,10 @@ class UserStatsResource(Resource):
         if not user:
             return {"message": "User not found"}, 404
 
-        stats = user.get_stats() # Assumes User model has get_stats() method
+        stats = user.get_stats()  # Assumes User model has get_stats() method
         # Ensure all datetime objects in stats are serialized if any
         if stats.get("join_date") and isinstance(stats["join_date"], datetime):
-            stats["join_date"] = stats["join_date"].isoformat() + "Z" # Assume UTC
+            stats["join_date"] = stats["join_date"].isoformat() + "Z"  # Assume UTC
 
         return stats, 200
 
@@ -704,7 +853,9 @@ class SharedFileResource(Resource):
         try:
             current_user_id = int(current_user_id_str)
         except ValueError:
-            current_app.logger.error(f"Invalid user identity format in JWT: {current_user_id_str}")
+            current_app.logger.error(
+                f"Invalid user identity format in JWT: {current_user_id_str}"
+            )
             return {"message": "Invalid user identity format."}, 400
 
         shared_file = db.session.get(SharedFile, file_id)
@@ -716,23 +867,36 @@ class SharedFileResource(Resource):
         db.session.refresh(shared_file)
 
         # Authorization check: Current user must be sender or receiver
-        if not (shared_file.sender_id == current_user_id or shared_file.receiver_id == current_user_id):
+        if not (
+            shared_file.sender_id == current_user_id
+            or shared_file.receiver_id == current_user_id
+        ):
             return {"message": "You are not authorized to delete this file"}, 403
 
         try:
             # Check if the essential saved_filename attribute is present
             if not shared_file.saved_filename:
-                 current_app.logger.error(f"File record is incomplete (missing saved_filename) for SharedFile ID: {file_id}")
-                 return {"message": "File record is incomplete, cannot delete physical file"}, 500
+                current_app.logger.error(
+                    f"File record is incomplete (missing saved_filename) for SharedFile ID: {file_id}"
+                )
+                return {
+                    "message": "File record is incomplete, cannot delete physical file"
+                }, 500
 
-            upload_folder = current_app.config.get('SHARED_FILES_UPLOAD_FOLDER', 'shared_files_uploads')
-            file_path = os.path.join(upload_folder, shared_file.saved_filename) # Use saved_filename
+            upload_folder = current_app.config.get(
+                "SHARED_FILES_UPLOAD_FOLDER", "shared_files_uploads"
+            )
+            file_path = os.path.join(
+                upload_folder, shared_file.saved_filename
+            )  # Use saved_filename
 
             if os.path.exists(file_path):
                 os.remove(file_path)
             else:
                 # Log this inconsistency but proceed to delete DB record
-                current_app.logger.warning(f"Warning: File {file_path} not found on filesystem for SharedFile ID {file_id} but DB record exists.")
+                current_app.logger.warning(
+                    f"Warning: File {file_path} not found on filesystem for SharedFile ID {file_id} but DB record exists."
+                )
 
             db.session.delete(shared_file)
             db.session.commit()
@@ -742,11 +906,14 @@ class SharedFileResource(Resource):
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error deleting file ID {file_id}: {str(e)}")
-            return {"message": f"An error occurred while deleting the file: {str(e)}"}, 500
+            return {
+                "message": f"An error occurred while deleting the file: {str(e)}"
+            }, 500
 
 
 # Chat API Resources
-from models import ChatRoom, ChatMessage # Ensure models are imported
+from models import ChatRoom, ChatMessage  # Ensure models are imported
+
 
 class ChatRoomListResource(Resource):
     @jwt_required()
@@ -762,7 +929,9 @@ class ChatRoomListResource(Resource):
             return {"message": "User not found for provided token"}, 404
 
         parser = reqparse.RequestParser()
-        parser.add_argument("name", type=str, required=True, help="Chat room name cannot be blank.")
+        parser.add_argument(
+            "name", type=str, required=True, help="Chat room name cannot be blank."
+        )
         data = parser.parse_args()
 
         room_name = data["name"].strip()
@@ -771,7 +940,9 @@ class ChatRoomListResource(Resource):
 
         existing_room = ChatRoom.query.filter_by(name=room_name).first()
         if existing_room:
-            return {"message": f"Chat room with name '{room_name}' already exists."}, 409
+            return {
+                "message": f"Chat room with name '{room_name}' already exists."
+            }, 409
 
         new_chat_room = ChatRoom(name=room_name, creator_id=current_user_id)
         db.session.add(new_chat_room)
@@ -779,11 +950,19 @@ class ChatRoomListResource(Resource):
             db.session.commit()
             # Optionally, emit a socketio event if other parts of the app should react to new rooms
             # current_app.extensions['socketio'].emit('new_chat_room_created', new_chat_room.to_dict(), broadcast=True)
-            return {"message": "Chat room created successfully.", "chat_room": new_chat_room.to_dict()}, 201
+            return {
+                "message": "Chat room created successfully.",
+                "chat_room": new_chat_room.to_dict(),
+            }, 201
         except Exception as e:
             db.session.rollback()
-            current_app.logger.error(f"Error creating chat room '{room_name}': {str(e)}")
-            return {"message": "Failed to create chat room due to an internal error."}, 500
+            current_app.logger.error(
+                f"Error creating chat room '{room_name}': {str(e)}"
+            )
+            return {
+                "message": "Failed to create chat room due to an internal error."
+            }, 500
+
 
 class ChatRoomMessagesResource(Resource):
     @jwt_required()
@@ -793,11 +972,17 @@ class ChatRoomMessagesResource(Resource):
             return {"message": "Chat room not found"}, 404
 
         # Implement pagination for messages
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int) # Default 20 messages per page
+        page = request.args.get("page", 1, type=int)
+        per_page = request.args.get(
+            "per_page", 20, type=int
+        )  # Default 20 messages per page
 
-        messages_query = ChatMessage.query.filter_by(room_id=room_id).order_by(ChatMessage.timestamp.desc())
-        paginated_messages = messages_query.paginate(page=page, per_page=per_page, error_out=False)
+        messages_query = ChatMessage.query.filter_by(room_id=room_id).order_by(
+            ChatMessage.timestamp.desc()
+        )
+        paginated_messages = messages_query.paginate(
+            page=page, per_page=per_page, error_out=False
+        )
 
         messages_data = [message.to_dict() for message in paginated_messages.items]
         # Reverse for chronological order in display if needed by frontend, or handle in frontend
@@ -810,7 +995,7 @@ class ChatRoomMessagesResource(Resource):
             "page": paginated_messages.page,
             "per_page": paginated_messages.per_page,
             "total_pages": paginated_messages.pages,
-            "total_messages": paginated_messages.total
+            "total_messages": paginated_messages.total,
         }, 200
 
     # POST to this resource (i.e., sending a message to a room) is typically handled via SocketIO

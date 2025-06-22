@@ -267,8 +267,8 @@ class AchievementLogicTests(AppTestCase):
             # a general "No achievements earned" or similar is also acceptable.
             # Using a less strict check:
             self.assertIn(
-                "has not earned any achievements yet", # More flexible check
-                html_content.lower(), # Convert to lowercase for case-insensitive matching
+                "has not earned any achievements yet",  # More flexible check
+                html_content.lower(),  # Convert to lowercase for case-insensitive matching
                 "Should display message for no earned achievements.",
             )
 

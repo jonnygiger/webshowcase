@@ -194,7 +194,7 @@ class TestRecommendationAPI(AppTestCase):
         post_by_user2 = self._create_db_post(user_id=self.user2_id, title="Post Commented On Test", content="Content for comment test")
 
         # 4. Create a comment on this post by self.user3
-        self._create_db_comment(user_id=self.user3_id, post_id=post_by_user2.id, text="A insightful comment")
+        self._create_db_comment(user_id=self.user3_id, post_id=post_by_user2.id, content="A insightful comment") # Changed 'text' to 'content'
 
         # 5. Make API call and assertions
         response = self.client.get(f"/api/recommendations?user_id={self.user1_id}")
@@ -245,21 +245,23 @@ class TestRecommendationAPI(AppTestCase):
 
         # 3. user2 joins this group
         # Need to fetch user2 and group_by_user3 as ORM objects to append to relationship
-        user2 = User.query.get(self.user2_id)
-        # group_obj = Group.query.get(group_by_user3.id) # _create_db_group should return the object
+        with self.app.app_context(): # Add app context here
+            user2 = User.query.get(self.user2_id)
+            # group_obj = Group.query.get(group_by_user3.id) # _create_db_group should return the object
+            group_by_user3_merged = self.db.session.merge(group_by_user3) # Ensure group is in session
 
-        if user2 and group_by_user3:
-            # Assuming User model has 'joined_groups' relationship (e.g., backref from Group.members)
-            # or Group model has 'members' relationship.
-            # Based on recommendations.py (suggest_groups_to_join):
-            # `user_groups_ids = {group.id for group in current_user.joined_groups.all()}`
-            # `friend.joined_groups.all()`
-            # This implies User.joined_groups is the correct relationship.
-            user2.joined_groups.append(group_by_user3)
-            self.db.session.add(user2) # Add user2 to session if relationship change doesn't auto-add
-            self.db.session.commit()
-        else:
-            self.fail("Failed to fetch user2 or group_by_user3 for test setup")
+            if user2 and group_by_user3_merged:
+                # Assuming User model has 'joined_groups' relationship (e.g., backref from Group.members)
+                # or Group model has 'members' relationship.
+                # Based on recommendations.py (suggest_groups_to_join):
+                # `user_groups_ids = {group.id for group in current_user.joined_groups.all()}`
+                # `friend.joined_groups.all()`
+                # This implies User.joined_groups is the correct relationship.
+                user2.joined_groups.append(group_by_user3_merged)
+                self.db.session.add(user2) # Add user2 to session if relationship change doesn't auto-add
+                self.db.session.commit()
+            else:
+                self.fail("Failed to fetch user2 or group_by_user3 for test setup")
 
         # 4. Call the recommendation API for user1
         response = self.client.get(f"/api/recommendations?user_id={self.user1_id}")

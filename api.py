@@ -253,8 +253,9 @@ class PostLockResource(Resource):
                     "locked_by_username": existing_lock.user.username,
                     "expires_at": existing_lock.expires_at.isoformat(),
                 }, 409
-            else:
+            else: # If same user OR (other user AND expired lock)
                 db.session.delete(existing_lock)
+                db.session.flush() # Ensure DELETE is processed before potential INSERT
 
         lock_duration_minutes = 15
         expires_at = datetime.utcnow() + timedelta(minutes=lock_duration_minutes)
@@ -451,6 +452,36 @@ class RecommendationResource(Resource):
             "suggested_polls_to_vote": suggested_polls_data,
         }, 200
 
+# Need User model for UserFeedResource, already imported at the top
+# from models import User
+from recommendations import get_personalized_feed_posts # Import for UserFeedResource
+
+class UserFeedResource(Resource):
+    @jwt_required()
+    def get(self, user_id):
+        # current_user_id = int(get_jwt_identity()) # Not strictly needed unless for auth checks
+
+        target_user = User.query.get(user_id)
+        if not target_user:
+            return {"message": "User not found"}, 404
+
+        limit = request.args.get('limit', 20, type=int)
+
+        posts_with_reasons = get_personalized_feed_posts(user_id, limit=limit)
+
+        feed_data = []
+        for post, reason in posts_with_reasons:
+            post_dict = post.to_dict()
+            post_dict['reason_for_recommendation'] = reason
+            # Ensure timestamp is serialized
+            if 'timestamp' in post_dict and isinstance(post_dict['timestamp'], datetime):
+                post_dict['timestamp'] = post_dict['timestamp'].isoformat() + "Z" # Assume UTC
+            if 'last_edited' in post_dict and post_dict['last_edited'] and isinstance(post_dict['last_edited'], datetime):
+                post_dict['last_edited'] = post_dict['last_edited'].isoformat() + "Z"
+            feed_data.append(post_dict)
+
+        return {"feed_posts": feed_data}, 200
+
 
 # PersonalizedFeedResource Implementation
 class PersonalizedFeedResource(Resource):
@@ -521,7 +552,8 @@ class PersonalizedFeedResource(Resource):
             for event in friend_events:
                 item = {
                     "type": "event", "id": event.id, "title": event.title, "description": event.description,
-                    "date": event.date, "timestamp": event.created_at,
+                    "date": event.date.isoformat() if event.date else None, # Serialize event.date
+                    "timestamp": event.created_at, # This will be serialized later
                     "organizer_username": event.organizer.username,
                     "reason": f"Organized by your friend {event.organizer.username}"
                 }
@@ -535,7 +567,8 @@ class PersonalizedFeedResource(Resource):
                     continue
                 item = {
                     "type": "event", "id": rsvp.event.id, "title": rsvp.event.title, "description": rsvp.event.description,
-                    "date": rsvp.event.date, "timestamp": rsvp.timestamp,
+                    "date": rsvp.event.date.isoformat() if rsvp.event.date else None, # Serialize event.date
+                    "timestamp": rsvp.timestamp, # This will be serialized later
                     "organizer_username": rsvp.event.organizer.username,
                     "reason": f"{rsvp.attendee.username} is attending"
                 }
@@ -558,17 +591,20 @@ class PersonalizedFeedResource(Resource):
 
             friend_poll_votes = PollVote.query.filter(PollVote.user_id.in_(friend_ids)).order_by(PollVote.created_at.desc()).limit(10).all()
             for vote in friend_poll_votes:
-                if vote.poll.user_id == current_user_id:
+                # Access poll through vote.option.poll
+                if not vote.option or not vote.option.poll: # Add check for safety
                     continue
-                # Assuming PollVote has a 'voter' relationship to User model. If it's 'user', use vote.user.username
-                # For now, using vote.user.username as 'voter' is not standard. Models usually use 'user'.
+                current_poll = vote.option.poll
+                if current_poll.user_id == current_user_id:
+                    continue
+
                 item = {
-                    "type": "poll", "id": vote.poll.id, "question": vote.poll.question,
-                    "options": [{"id": o.id, "text": o.text, "vote_count": len(o.votes)} for o in vote.poll.options],
-                    "timestamp": vote.created_at, "creator_username": vote.poll.author.username,
-                    "reason": f"Voted on by your friend {vote.user.username}"
+                    "type": "poll", "id": current_poll.id, "question": current_poll.question,
+                    "options": [{"id": o.id, "text": o.text, "vote_count": len(o.votes)} for o in current_poll.options],
+                    "timestamp": vote.created_at, "creator_username": current_poll.author.username,
+                    "reason": f"Voted on by your friend {vote.voter.username}" # Changed vote.user to vote.voter based on model
                 }
-                key = ("poll", vote.poll.id)
+                key = ("poll", current_poll.id)
                 if key not in processed_items or item["timestamp"] > processed_items[key]["timestamp"]:
                     processed_items[key] = item
 
@@ -623,12 +659,28 @@ class OnThisDayResource(Resource):
         }, 200
 
 
-# Placeholder for UserStatsResource
+# UserStatsResource Implementation
 class UserStatsResource(Resource):
+    @jwt_required() # Ensure this is uncommented and active
     def get(self, user_id):
-        return {
-            "message": f"User stats resource placeholder for user_id {user_id}"
-        }, 200
+        current_jwt_user_id = int(get_jwt_identity()) # ID of the logged-in user
+
+        if current_jwt_user_id != user_id:
+            # Future: Add admin role check here to allow admins access
+            # requesting_user = User.query.get(current_jwt_user_id)
+            # if not (requesting_user and requesting_user.role == 'admin'):
+            return {"message": "You are not authorized to view these stats."}, 403
+
+        user = User.query.get(user_id)
+        if not user:
+            return {"message": "User not found"}, 404
+
+        stats = user.get_stats() # Assumes User model has get_stats() method
+        # Ensure all datetime objects in stats are serialized if any
+        if stats.get("join_date") and isinstance(stats["join_date"], datetime):
+            stats["join_date"] = stats["join_date"].isoformat() + "Z" # Assume UTC
+
+        return stats, 200
 
 
 # Placeholder for SeriesListResource

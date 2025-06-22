@@ -83,14 +83,17 @@ class TestPersonalizedFeedAPI(AppTestCase):
         # poll1_by_user2.created_at = datetime.utcnow() - timedelta(days=2) # Set created_at - _create_db_poll in AppTestCase should handle this
         # db.session.commit() # commit is in _create_db_poll
         # Add a vote from user3 to make it seem active
-        option_for_poll1 = poll1_by_user2.options[
-            0
-        ]  # Assumes options are created by _create_db_poll
-        self._create_db_poll_vote(
-            user_id=self.user3_id,
-            poll_id=poll1_by_user2.id,
-            poll_option_id=option_for_poll1.id,
-        )
+        with self.app.app_context(): # Add app context for accessing .options
+            poll_for_options = self.db.session.merge(poll1_by_user2)
+            self.assertTrue(len(poll_for_options.options) > 0, "Poll should have options.")
+            option_for_poll1 = poll_for_options.options[0]
+
+            self._create_db_poll_vote(
+                user_id=self.user3_id,
+                poll_id=poll_for_options.id, # Use ID from merged object
+                poll_option_id=option_for_poll1.id,
+            )
+            poll1_by_user2 = poll_for_options # Update poll1_by_user2 to the merged instance
 
         # 2. Login as user1 and get token
         token = self._get_jwt_token(self.user1.username, "password")
@@ -212,15 +215,22 @@ class TestPersonalizedFeedAPI(AppTestCase):
             date_str=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
         )
         # Explicitly set older creation for the event itself
-        event_by_user1.created_at = datetime.utcnow() - timedelta(hours=3)
-        self.db.session.commit()
+        with self.app.app_context(): # Add app context here
+            event_by_user1_merged = self.db.session.merge(event_by_user1)
+            event_by_user1_merged.created_at = datetime.utcnow() - timedelta(hours=3)
+            self.db.session.commit()
+            event_by_user1 = event_by_user1_merged # Use the merged object
 
-        self._create_db_event_rsvp(
-            user_id=self.user2_id,
-            event_id=event_by_user1.id,
-            status="Attending",
-            timestamp=datetime.utcnow() - timedelta(hours=2) # Older interaction
-        )
+        # Ensure event_by_user1 is session-bound before accessing its ID for RSVP
+        with self.app.app_context():
+            event_for_rsvp = self.db.session.merge(event_by_user1)
+            self._create_db_event_rsvp(
+                user_id=self.user2_id,
+                event_id=event_for_rsvp.id, # Use ID from merged object
+                status="Attending",
+                timestamp=datetime.utcnow() - timedelta(hours=2) # Older interaction
+            )
+            event_by_user1 = event_for_rsvp # Update event_by_user1 to the merged instance
 
         # 4. User1 creates a poll, User2 votes
         poll_by_user1 = self._create_db_poll(
@@ -228,18 +238,25 @@ class TestPersonalizedFeedAPI(AppTestCase):
             question="User1 Own Poll?"
         )
         # Explicitly set older creation for the poll itself
-        poll_by_user1.created_at = datetime.utcnow() - timedelta(hours=1)
-        self.db.session.commit()
+        with self.app.app_context(): # Add app context here
+            poll_by_user1_merged = self.db.session.merge(poll_by_user1)
+            poll_by_user1_merged.created_at = datetime.utcnow() - timedelta(hours=1)
+            self.db.session.commit()
+            poll_by_user1 = poll_by_user1_merged # Use the merged object
 
         # Assuming _create_db_poll helper creates at least one option.
-        option_for_poll1 = poll_by_user1.options[0]
+        with self.app.app_context(): # Add app context for accessing .options
+            poll_for_vote_options = self.db.session.merge(poll_by_user1)
+            self.assertTrue(len(poll_for_vote_options.options) > 0, "Poll (for excluding own content) should have options.")
+            option_for_poll1 = poll_for_vote_options.options[0]
 
-        self._create_db_poll_vote(
-            user_id=self.user2_id,
-            poll_id=poll_by_user1.id,
-            poll_option_id=option_for_poll1.id,
-            timestamp=datetime.utcnow() - timedelta(minutes=45) # Older interaction
-        )
+            self._create_db_poll_vote(
+                user_id=self.user2_id,
+                poll_id=poll_for_vote_options.id, # Use ID from merged object
+                poll_option_id=option_for_poll1.id,
+                created_at=datetime.utcnow() - timedelta(minutes=45) # Changed 'timestamp' to 'created_at'
+            )
+            poll_by_user1 = poll_for_vote_options # Update reference
 
         # --- Control Item: Post by User3, Liked by User2 (friend of User1) ---
         # This SHOULD APPEAR in user1's feed
@@ -341,17 +358,18 @@ class TestPersonalizedFeedAPI(AppTestCase):
 
         # 3. Remove friendship between user1 and user2
         # Friendships might be stored in one direction or both, query flexibly.
-        friendship_record = Friendship.query.filter(
-            ((Friendship.user_id == self.user1_id) & (Friendship.friend_id == self.user2_id)) |
-            ((Friendship.user_id == self.user2_id) & (Friendship.friend_id == self.user1_id)),
-            Friendship.status == "accepted" # Ensure we are targeting the accepted friendship
-        ).first()
+        with self.app.app_context(): # Add app context here
+            friendship_record = Friendship.query.filter(
+                ((Friendship.user_id == self.user1_id) & (Friendship.friend_id == self.user2_id)) |
+                ((Friendship.user_id == self.user2_id) & (Friendship.friend_id == self.user1_id)),
+                Friendship.status == "accepted" # Ensure we are targeting the accepted friendship
+            ).first()
 
-        self.assertIsNotNone(friendship_record, "Friendship record not found before attempting to remove.")
+            self.assertIsNotNone(friendship_record, "Friendship record not found before attempting to remove.")
 
-        if friendship_record:
-            self.db.session.delete(friendship_record)
-            self.db.session.commit()
+            if friendship_record:
+                self.db.session.delete(friendship_record)
+                self.db.session.commit()
 
         # 4. Verify post no longer appears in user1's feed
         # Use the same token and headers for user1
@@ -417,19 +435,20 @@ class TestPersonalizedFeedAPI(AppTestCase):
         # 1. Remove the friendship
         # Query for the friendship record. _create_friendship might create one or two records.
         # We need to ensure the 'accepted' status is targeted.
-        friendship_record = Friendship.query.filter(
-            ((Friendship.user_id == self.user1_id) & (Friendship.friend_id == self.user2_id) & (Friendship.status == "accepted")) |
-            ((Friendship.user_id == self.user2_id) & (Friendship.friend_id == self.user1_id) & (Friendship.status == "accepted"))
-        ).first()
+        with self.app.app_context(): # Add app context here
+            friendship_record = Friendship.query.filter(
+                ((Friendship.user_id == self.user1_id) & (Friendship.friend_id == self.user2_id) & (Friendship.status == "accepted")) |
+                ((Friendship.user_id == self.user2_id) & (Friendship.friend_id == self.user1_id) & (Friendship.status == "accepted"))
+            ).first()
 
-        self.assertIsNotNone(friendship_record, "Friendship record not found before attempting to remove.")
+            self.assertIsNotNone(friendship_record, "Friendship record not found before attempting to remove.")
 
-        if friendship_record:
-            self.db.session.delete(friendship_record)
-            # If _create_friendship creates two records (one for each direction), delete the other one too.
-            # This depends on the implementation of _create_friendship. Assuming it creates one for now.
-            # If issues arise, this part might need adjustment.
-            self.db.session.commit()
+            if friendship_record:
+                self.db.session.delete(friendship_record)
+                # If _create_friendship creates two records (one for each direction), delete the other one too.
+                # This depends on the implementation of _create_friendship. Assuming it creates one for now.
+                # If issues arise, this part might need adjustment.
+                self.db.session.commit()
 
         # 2. Fetch user1's personalized feed again (using the same token)
         response_after_unfriend = self.client.get("/api/personalized-feed", headers=headers_user1)

@@ -396,14 +396,14 @@ class TestLiveActivityFeed(AppTestCase):
     def test_new_comment_activity_logging_and_socketio(self, mock_check_achievements, mock_socketio_emit):
         # user1 creates a post
         with self.app.app_context():
-            post_by_user1_id = self._create_db_post(user_id=self.user1.id, title="Post to be commented on")
-            post_by_user1 = Post.query.get(post_by_user1_id)
-            self.assertIsNotNone(post_by_user1)
+            post_by_user1_obj = self._create_db_post(user_id=self.user1.id, title="Post to be commented on")
+            # post_by_user1 = Post.query.get(post_by_user1_obj.id) # Not needed if post_by_user1_obj is used directly
+            self.assertIsNotNone(post_by_user1_obj, "Post object by User1 should not be None.")
 
         # user2 logs in and comments on user1's post
         self.login(self.user2.username, "password")
         comment_content = "This is a test comment on user1's post."
-        response = self.client.post(f'/blog/post/{post_by_user1.id}/comment', data={
+        response = self.client.post(f'/blog/post/{post_by_user1_obj.id}/comment', data={
             'comment_content': comment_content
         }, follow_redirects=True)
         self.assertEqual(response.status_code, 200)
@@ -413,10 +413,10 @@ class TestLiveActivityFeed(AppTestCase):
             # Verify UserActivity creation by user2
             activity = UserActivity.query.filter_by(user_id=self.user2.id, activity_type='new_comment').order_by(UserActivity.timestamp.desc()).first()
             self.assertIsNotNone(activity, "UserActivity for 'new_comment' was not created.")
-            self.assertEqual(activity.related_id, post_by_user1.id) # related_id is the post_id
+            self.assertEqual(activity.related_id, post_by_user1_obj.id) # related_id is the post_id
             self.assertEqual(activity.user_id, self.user2.id)
             self.assertEqual(activity.content_preview, comment_content[:100])
-            self.assertTrue(f"/blog/post/{post_by_user1.id}" in activity.link)
+            self.assertTrue(f"/blog/post/{post_by_user1_obj.id}" in activity.link)
 
             # Verify socketio.emit for user2's activity
             # Activity by user2, emitted to friends of user2 (user1 and user3)
@@ -426,7 +426,7 @@ class TestLiveActivityFeed(AppTestCase):
                 "username": self.user2.username,
                 "profile_picture": ANY,
                 "activity_type": "new_comment",
-                "related_id": post_by_user1.id,
+                "related_id": post_by_user1_obj.id,
                 "content_preview": comment_content[:100],
                 "link": activity.link,
                 "timestamp": ANY,
@@ -452,13 +452,13 @@ class TestLiveActivityFeed(AppTestCase):
     def test_new_like_activity_logging_and_socketio(self, mock_check_achievements, mock_socketio_emit):
         # user1 creates a post
         with self.app.app_context():
-            post_by_user1_id = self._create_db_post(user_id=self.user1.id, title="Post to be liked by user2")
-            post_by_user1 = Post.query.get(post_by_user1_id)
-            self.assertIsNotNone(post_by_user1)
+            post_by_user1_obj = self._create_db_post(user_id=self.user1.id, title="Post to be liked by user2")
+            # post_by_user1 = Post.query.get(post_by_user1_obj.id) # Not needed if post_by_user1_obj is used directly
+            self.assertIsNotNone(post_by_user1_obj, "Post object by User1 should not be None.")
 
         # user2 logs in and likes user1's post
         self.login(self.user2.username, "password")
-        response = self.client.post(f'/blog/post/{post_by_user1.id}/like', follow_redirects=True)
+        response = self.client.post(f'/blog/post/{post_by_user1_obj.id}/like', follow_redirects=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn("Post liked!", response.get_data(as_text=True))
 
@@ -466,11 +466,11 @@ class TestLiveActivityFeed(AppTestCase):
             # Verify UserActivity creation by user2
             activity = UserActivity.query.filter_by(user_id=self.user2.id, activity_type='new_like').order_by(UserActivity.timestamp.desc()).first()
             self.assertIsNotNone(activity, "UserActivity for 'new_like' was not created.")
-            self.assertEqual(activity.related_id, post_by_user1.id) # related_id is the post_id
+            self.assertEqual(activity.related_id, post_by_user1_obj.id) # related_id is the post_id
             self.assertEqual(activity.user_id, self.user2.id)
             # Content preview for 'new_like' is the post's content preview
-            self.assertEqual(activity.content_preview, post_by_user1.content[:100] if post_by_user1.content else "")
-            self.assertTrue(f"/blog/post/{post_by_user1.id}" in activity.link)
+            self.assertEqual(activity.content_preview, post_by_user1_obj.content[:100] if post_by_user1_obj.content else "")
+            self.assertTrue(f"/blog/post/{post_by_user1_obj.id}" in activity.link)
 
             # Verify socketio.emit for user2's activity
             # Activity by user2, emitted to friends of user2 (user1 and user3)
@@ -480,7 +480,7 @@ class TestLiveActivityFeed(AppTestCase):
                 "username": self.user2.username,
                 "profile_picture": ANY,
                 "activity_type": "new_like",
-                "related_id": post_by_user1.id,
+                "related_id": post_by_user1_obj.id,
                 "content_preview": activity.content_preview,
                 "link": activity.link,
                 "timestamp": ANY,
@@ -578,13 +578,14 @@ class TestLiveActivityFeed(AppTestCase):
             self.assertIsNotNone(post_by_user1_id, "Failed to create original post by user1")
 
             # Store original post details for assertions later
-            self.original_post_id = post_by_user1_id
+            self.original_post_object = post_by_user1_id # Store the object
+            self.original_post_id = post_by_user1_id.id # Store the ID
             self.original_post_content_preview = original_post_content[:100]
 
         # Simulate the share action by user2
         sharing_comment_text = "Check out this cool post I found!"
         response = self.client.post(
-            f'/post/{self.original_post_id}/share',
+            f'/post/{self.original_post_id}/share', # Use the ID
             data={'sharing_comment': sharing_comment_text},
             follow_redirects=True
         )

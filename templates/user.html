@@ -235,11 +235,7 @@ Awarded: {{ ua.awarded_at.strftime('%Y-%m-%d') }}">
         {% endfor %}
       </div>
     {% else %}
-      {% if current_user and current_user.id == user.id %}
-        <p>You haven't earned any achievements yet. Keep exploring and contributing!</p>
-      {% else %}
-        <p>{{ user.username }} hasn't earned any achievements yet.</p>
-      {% endif %}
+        <p>No achievements yet.</p> {# Simplified message for no achievements #}
     {% endif %}
     {# Link to all achievements page, visible whether achievements are displayed or not #}
     <div class="mt-2 text-center"> {# Centered the link for better appearance #}

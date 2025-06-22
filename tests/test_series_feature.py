@@ -183,8 +183,17 @@ class TestSeriesFeature(AppTestCase):
 
     def test_view_existing_series_page(self):
         self.login(self.user1.username, "password")
-        series = self._create_series(user_id=self.user1_id, title="My Test Series", description="This is a test series.")
-        response = self.client.get(f'/series/{series.id}')
+        series_obj = self._create_series(user_id=self.user1_id, title="My Test Series", description="This is a test series.")
+        # Ensure series_obj.id is loaded before using it in client.get if it's deferred.
+        # Accessing it should load it if it's a deferred attribute.
+        # Also, ensure series_obj is from the current session or re-fetch.
+        with self.app.app_context():
+            # Re-fetch or merge to be safe, though _create_series should return a session-bound object.
+            series_in_session = self.db.session.merge(series_obj) # Or self.db.session.get(Series, series_obj.id)
+            series_id_val = series_in_session.id
+            self.assertIsNotNone(series_id_val, "Series ID should be available.")
+
+        response = self.client.get(f'/series/{series_id_val}')
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"My Test Series", response.data)
         self.assertIn(b"This is a test series.", response.data)
@@ -238,35 +247,39 @@ class TestSeriesFeature(AppTestCase):
         series = self._create_series(user_id=self.user1_id, title="Reorder Test Series")
 
         # Create posts
-        post1_id = self._create_db_post(user_id=self.user1_id, title="Post Alpha")
-        post2_id = self._create_db_post(user_id=self.user1_id, title="Post Beta")
-        post3_id = self._create_db_post(user_id=self.user1_id, title="Post Gamma")
+        # _create_db_post returns post objects, no need to query them again immediately
+        with self.app.app_context(): # Add app context for DB operations
+            post1 = self._create_db_post(user_id=self.user1_id, title="Post Alpha")
+            post2 = self._create_db_post(user_id=self.user1_id, title="Post Beta")
+            post3 = self._create_db_post(user_id=self.user1_id, title="Post Gamma")
 
-        post1 = Post.query.get(post1_id)
-        post2 = Post.query.get(post2_id)
-        post3 = Post.query.get(post3_id)
+            # post1 = Post.query.get(post1_id) # Not needed if helpers return objects
+            # post2 = Post.query.get(post2_id)
+            # post3 = Post.query.get(post3_id)
 
-        self.assertIsNotNone(post1, "Post1 not found after creation")
-        self.assertIsNotNone(post2, "Post2 not found after creation")
-        self.assertIsNotNone(post3, "Post3 not found after creation")
+            self.assertIsNotNone(post1, "Post1 not found after creation")
+            self.assertIsNotNone(post2, "Post2 not found after creation")
+            self.assertIsNotNone(post3, "Post3 not found after creation")
 
-        # Add posts to series with initial order (0-indexed)
-        sp1 = SeriesPost(series_id=series.id, post_id=post1.id, order=0)
-        sp2 = SeriesPost(series_id=series.id, post_id=post2.id, order=1)
-        sp3 = SeriesPost(series_id=series.id, post_id=post3.id, order=2)
-        db.session.add_all([sp1, sp2, sp3])
-        db.session.commit()
+            series_merged = db.session.merge(series) # Ensure series is in current session
 
-        # Verify initial order from series.posts property
-        db.session.refresh(series) # Refresh to load series_post_entries relationship
-        initial_ordered_posts = series.posts
-        self.assertEqual(len(initial_ordered_posts), 3)
-        self.assertEqual(initial_ordered_posts[0].id, post1.id)
-        self.assertEqual(initial_ordered_posts[1].id, post2.id)
-        self.assertEqual(initial_ordered_posts[2].id, post3.id)
+            # Add posts to series with initial order (0-indexed)
+            sp1 = SeriesPost(series_id=series_merged.id, post_id=post1.id, order=0)
+            sp2 = SeriesPost(series_id=series_merged.id, post_id=post2.id, order=1)
+            sp3 = SeriesPost(series_id=series_merged.id, post_id=post3.id, order=2)
+            db.session.add_all([sp1, sp2, sp3])
+            db.session.commit()
+
+            # Verify initial order from series.posts property
+            db.session.refresh(series_merged) # Refresh to load series_post_entries relationship
+            initial_ordered_posts = series_merged.posts
+            self.assertEqual(len(initial_ordered_posts), 3)
+            self.assertEqual(initial_ordered_posts[0].id, post1.id)
+            self.assertEqual(initial_ordered_posts[1].id, post2.id)
+            self.assertEqual(initial_ordered_posts[2].id, post3.id)
 
         # 2. Perform Reordering
-        new_order_ids = [post3.id, post1.id, post2.id]
+        new_order_ids = [post3.id, post1.id, post2.id] # These are IDs from objects fetched/created in context
         response = self.client.post(
             f'/series/{series.id}/reorder_posts',
             data=json.dumps({'post_ids': new_order_ids}),
@@ -279,28 +292,33 @@ class TestSeriesFeature(AppTestCase):
         self.assertEqual(response.json.get('status'), 'success')
 
         # 4. Assert Database State
-        db.session.refresh(series) # Refresh series to get updated relationships
-        # Or fetch again: updated_series = Series.query.get(series.id)
+        with self.app.app_context(): # Add app context for DB operations
+            # series object might be stale from previous context, re-fetch or merge
+            series_after_reorder = db.session.merge(series) # Use the series object from the setup
+            db.session.refresh(series_after_reorder) # Refresh series to get updated relationships
+            # Or fetch again: updated_series = Series.query.get(series.id)
 
-        ordered_posts_after_reorder = series.posts # series.posts should be ordered by SeriesPost.order
+            ordered_posts_after_reorder = series_after_reorder.posts # series.posts should be ordered by SeriesPost.order
 
-        self.assertEqual(len(ordered_posts_after_reorder), 3)
-        self.assertEqual(ordered_posts_after_reorder[0].id, post3.id, "Post 3 should be first")
-        self.assertEqual(ordered_posts_after_reorder[1].id, post1.id, "Post 1 should be second")
-        self.assertEqual(ordered_posts_after_reorder[2].id, post2.id, "Post 2 should be third")
+            self.assertEqual(len(ordered_posts_after_reorder), 3)
+            self.assertEqual(ordered_posts_after_reorder[0].id, post3.id, "Post 3 should be first")
+            self.assertEqual(ordered_posts_after_reorder[1].id, post1.id, "Post 1 should be second")
+            self.assertEqual(ordered_posts_after_reorder[2].id, post2.id, "Post 2 should be third")
 
-        # Directly check SeriesPost entries for 0-indexed order
-        sp_post1_updated = SeriesPost.query.filter_by(series_id=series.id, post_id=post1.id).first()
-        sp_post2_updated = SeriesPost.query.filter_by(series_id=series.id, post_id=post2.id).first()
-        sp_post3_updated = SeriesPost.query.filter_by(series_id=series.id, post_id=post3.id).first()
+            # Directly check SeriesPost entries for 0-indexed order
+            # Ensure post1, post2, post3 are accessible here (they were defined in the outer scope from a previous context)
+            # It's safer to use their IDs if the objects themselves might be stale.
+            sp_post1_updated = SeriesPost.query.filter_by(series_id=series_after_reorder.id, post_id=post1.id).first()
+            sp_post2_updated = SeriesPost.query.filter_by(series_id=series_after_reorder.id, post_id=post2.id).first()
+            sp_post3_updated = SeriesPost.query.filter_by(series_id=series_after_reorder.id, post_id=post3.id).first()
 
-        self.assertIsNotNone(sp_post1_updated)
-        self.assertIsNotNone(sp_post2_updated)
-        self.assertIsNotNone(sp_post3_updated)
+            self.assertIsNotNone(sp_post1_updated)
+            self.assertIsNotNone(sp_post2_updated)
+            self.assertIsNotNone(sp_post3_updated)
 
-        self.assertEqual(sp_post3_updated.order, 0, "Post3 (new first) should have order 0")
-        self.assertEqual(sp_post1_updated.order, 1, "Post1 (new second) should have order 1")
-        self.assertEqual(sp_post2_updated.order, 2, "Post2 (new third) should have order 2")
+            self.assertEqual(sp_post3_updated.order, 0, "Post3 (new first) should have order 0")
+            self.assertEqual(sp_post1_updated.order, 1, "Post1 (new second) should have order 1")
+            self.assertEqual(sp_post2_updated.order, 2, "Post2 (new third) should have order 2")
 
         # 5. Logout
         self.logout()

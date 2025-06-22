@@ -557,7 +557,7 @@ class AppTestCase(unittest.TestCase):
             )
             self.db.session.add(rsvp)  # Use class's db
             self.db.session.commit()  # Use class's db
-            return rsvp
+            return rsvp.id # Return ID
 
     def _create_db_poll_vote(self, user_id, poll_id, poll_option_id, created_at=None):
         from models import PollVote
@@ -571,7 +571,7 @@ class AppTestCase(unittest.TestCase):
             )
             self.db.session.add(vote)  # Use class's db
             self.db.session.commit()  # Use class's db
-            return vote
+            return vote.id # Return ID
 
     def _create_series(
         self,

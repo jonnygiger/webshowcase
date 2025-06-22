@@ -169,20 +169,28 @@ class TestViewRoutes(AppTestCase):
             series_author = self._create_db_user("series_owner_auth", "pass_so", "so@example.com")
             post_author_other = self._create_db_user("post_owner_other", "pass_po", "po@example.com")
 
-            series_by_author = self._create_db_series(user_id=series_author.id, title="Owner Auth Series")
-            post_by_other = self._create_db_post(user_id=post_author_other.id, title="Other Author Post")
+            # Get IDs from helpers first
+            temp_series_obj = self._create_db_series(user_id=series_author.id, title="Owner Auth Series")
+            series_id = temp_series_obj.id
+
+            temp_post_obj = self._create_db_post(user_id=post_author_other.id, title="Other Author Post")
+            post_id = temp_post_obj.id
 
             self.login(series_author.username, "pass_so")
             response = self.client.post(
-                f"/series/{series_by_author.id}/add_post/{post_by_other.id}",
+                f"/series/{series_id}/add_post/{post_id}", # Use IDs
                 follow_redirects=True
             )
-            self.assertEqual(response.status_code, 200) # After redirect
+            self.assertEqual(response.status_code, 200)
             self.assertIn("You can only add your own posts to your series.", response.data.decode())
 
             # Verify post was not added to series
-            db.session.refresh(series_by_author)
-            self.assertEqual(len(series_by_author.posts), 0)
+            # Fetch the series object within the current session before accessing relationships
+            series_in_current_session = db.session.get(Series, series_id)
+            self.assertIsNotNone(series_in_current_session, "Series could not be fetched in current session.")
+
+            # Accessing .posts will trigger the load if lazy.
+            self.assertEqual(len(series_in_current_session.posts), 0)
             self.logout()
 
     def test_user_blocking_effects_on_profile_and_posts(self):

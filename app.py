@@ -580,6 +580,25 @@ def user_profile(username):
     )
 
     # Pass the whole user object to the template, which includes user.profile_picture
+
+    # Check for blocking status
+    is_viewing_own_profile = current_user_id == user.id
+    viewer_has_blocked_profile_owner = False
+    profile_owner_has_blocked_viewer = False
+    effective_block = False
+
+    if not is_viewing_own_profile and current_user_id:
+        viewer_has_blocked_profile_owner = UserBlock.query.filter_by(blocker_id=current_user_id, blocked_id=user.id).first() is not None
+        profile_owner_has_blocked_viewer = UserBlock.query.filter_by(blocker_id=user.id, blocked_id=current_user_id).first() is not None
+
+    effective_block = viewer_has_blocked_profile_owner or profile_owner_has_blocked_viewer
+
+    # If there's an effective block, don't show posts, etc.
+    if effective_block:
+        user_posts = []
+        shared_posts_by_user = []
+        # Potentially clear other sensitive info too
+
     return render_template(
         "user.html",
         user=user,
@@ -593,7 +612,11 @@ def user_profile(username):
         pending_request_id=pending_request_id,
         user_achievements=user_achievements,
         user_series=user_series,
-    )  # Add user_series
+        is_viewing_own_profile=is_viewing_own_profile,
+        viewer_has_blocked_profile_owner=viewer_has_blocked_profile_owner,
+        profile_owner_has_blocked_viewer=profile_owner_has_blocked_viewer,
+        effective_block=effective_block
+    )
 
 
 @app.route("/todo", methods=["GET", "POST"])
@@ -3314,6 +3337,16 @@ def send_friend_request(target_user_id):
         flash("You cannot send a friend request to yourself.", "warning")
         return redirect(url_for("user_profile", username=target_user.username))
 
+    # Check for existing blocks
+    # 1. Has current_user blocked target_user?
+    # 2. Has target_user blocked current_user?
+    is_blocked_by_current_user = UserBlock.query.filter_by(blocker_id=current_user_id, blocked_id=target_user_id).first()
+    is_blocked_by_target_user = UserBlock.query.filter_by(blocker_id=target_user_id, blocked_id=current_user_id).first()
+
+    if is_blocked_by_current_user or is_blocked_by_target_user:
+        flash("You cannot send a friend request to this user as they have blocked you or you have blocked them.", "warning")
+        return redirect(url_for("user_profile", username=target_user.username))
+
     # Check if a friendship request already exists or they are already friends
     existing_friendship = Friendship.query.filter(
         or_(
@@ -3608,6 +3641,75 @@ def remove_friend(friend_user_id):
         flash(f"You are not currently friends with {friend_user.username}.", "info")
 
     return redirect(url_for("user_profile", username=friend_user.username))
+
+
+@app.route("/user/<string:username_to_unblock>/unblock", methods=["POST"])
+@login_required
+def unblock_user(username_to_unblock):
+    current_user_id = session.get("user_id")
+    user_to_unblock = User.query.filter_by(username=username_to_unblock).first()
+
+    if not user_to_unblock:
+        flash("User not found.", "danger")
+        return redirect(request.referrer or url_for("hello_world"))
+
+    if current_user_id == user_to_unblock.id:
+        flash("You cannot unblock yourself.", "warning")
+        return redirect(url_for("user_profile", username=username_to_unblock))
+
+    block_instance = UserBlock.query.filter_by(
+        blocker_id=current_user_id, blocked_id=user_to_unblock.id
+    ).first()
+
+    if block_instance:
+        db.session.delete(block_instance)
+        db.session.commit()
+        flash(f"You have unblocked {username_to_unblock}.", "success")
+    else:
+        flash(f"You had not blocked {username_to_unblock}.", "info")
+
+    return redirect(url_for("user_profile", username=username_to_unblock))
+
+
+@app.route("/user/<string:username_to_block>/block", methods=["POST"])
+@login_required
+def block_user_route(username_to_block): # Renamed to avoid conflict with model name
+    current_user_id = session.get("user_id")
+    user_to_block = User.query.filter_by(username=username_to_block).first()
+
+    if not user_to_block:
+        flash("User not found.", "danger")
+        return redirect(request.referrer or url_for("hello_world"))
+
+    if current_user_id == user_to_block.id:
+        flash("You cannot block yourself.", "warning")
+        return redirect(url_for("user_profile", username=username_to_block))
+
+    # Check if already blocked
+    existing_block = UserBlock.query.filter_by(
+        blocker_id=current_user_id, blocked_id=user_to_block.id
+    ).first()
+
+    if existing_block:
+        flash(f"You have already blocked {username_to_block}.", "info")
+    else:
+        # Remove any existing friendship before blocking
+        friendship_to_remove = Friendship.query.filter(
+            db.or_(
+                (Friendship.user_id == current_user_id) & (Friendship.friend_id == user_to_block.id),
+                (Friendship.user_id == user_to_block.id) & (Friendship.friend_id == current_user_id)
+            )
+        ).first()
+        if friendship_to_remove:
+            db.session.delete(friendship_to_remove)
+            # flash(f"Friendship with {username_to_block} removed due to blocking.", "info") # Optional: too noisy?
+
+        new_block = UserBlock(blocker_id=current_user_id, blocked_id=user_to_block.id)
+        db.session.add(new_block)
+        db.session.commit()
+        flash(f"You have blocked {username_to_block}. They will not be able to see your profile or interact with you, and vice-versa. Any existing friendship has been removed.", "success")
+
+    return redirect(url_for("user_profile", username=username_to_block))
 
 
 @app.route("/user/<username>/activity")

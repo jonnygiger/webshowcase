@@ -4,7 +4,8 @@ from unittest.mock import patch, ANY
 from datetime import datetime
 from werkzeug.security import generate_password_hash
 from app import app, db, socketio
-from models import User, Post, Comment, Achievement, UserAchievement
+# Ensure all necessary models are imported here
+from models import User, Post, Comment, Achievement, UserAchievement, Poll, PollVote, Friendship, Bookmark
 from achievements_logic import check_and_award_achievements, get_user_stat
 from tests.test_base import AppTestCase
 
@@ -321,3 +322,117 @@ class AchievementLogicTests(AppTestCase):
             ).first()
             self.assertIsNotNone(user_ach_check2, "Bookworm achievement should be awarded after 5 bookmarks.")
             self.assertEqual(user_ach_check2.achievement.name, "Bookworm")
+
+            # Check for duplicates if called again
+            check_and_award_achievements(bookmarker_user.id)
+            count_after_second_call = UserAchievement.query.filter_by(
+                user_id=bookmarker_user.id, achievement_id=bookworm_achievement_id
+            ).count()
+            self.assertEqual(count_after_second_call, 1, "Bookworm achievement should not be awarded again.")
+
+
+    def test_well_connected_achievement_awarded(self):
+        with self.app.app_context():
+            # Ensure the "Well-Connected" achievement exists
+            wc_ach_data = {
+                "name": "Well-Connected",
+                "description": "Built a network of 5 friends.",
+                "icon_url": "[NETWORK_ICON]",
+                "criteria_type": "num_friends",
+                "criteria_value": 5,
+            }
+            if not Achievement.query.filter_by(name="Well-Connected").first():
+                db.session.add(Achievement(**wc_ach_data))
+                db.session.commit()
+            wc_achievement_id = Achievement.query.filter_by(name="Well-Connected").first().id
+
+            main_user = self._create_db_user("main_networker", "pass", "mn@example.com")
+            friends_to_add = [self._create_db_user(f"friend_for_wc{i}", "pass", f"fwc{i}@example.com") for i in range(5)]
+
+            # Add 4 friends
+            for i in range(4):
+                self._create_db_friendship(main_user, friends_to_add[i], status="accepted")
+
+            check_and_award_achievements(main_user.id)
+            user_ach_check1 = UserAchievement.query.filter_by(
+                user_id=main_user.id, achievement_id=wc_achievement_id
+            ).first()
+            self.assertIsNone(user_ach_check1, "Well-Connected achievement should not be awarded after 4 friends.")
+
+            # Add the 5th friend
+            self._create_db_friendship(main_user, friends_to_add[4], status="accepted")
+            check_and_award_achievements(main_user.id)
+
+            user_ach_check2 = UserAchievement.query.filter_by(
+                user_id=main_user.id, achievement_id=wc_achievement_id
+            ).first()
+            self.assertIsNotNone(user_ach_check2, "Well-Connected achievement should be awarded after 5 friends.")
+            self.assertEqual(user_ach_check2.achievement.name, "Well-Connected")
+
+            # Check for duplicates
+            check_and_award_achievements(main_user.id)
+            count_after_second_call = UserAchievement.query.filter_by(
+                user_id=main_user.id, achievement_id=wc_achievement_id
+            ).count()
+            self.assertEqual(count_after_second_call, 1, "Well-Connected achievement should not be awarded again.")
+
+    def test_opinion_leader_achievement_awarded(self):
+        with self.app.app_context():
+            # Ensure the "Opinion Leader" achievement exists
+            ol_ach_data = {
+                "name": "Opinion Leader",
+                "description": "Voted in 5 different polls.",
+                "icon_url": "[VOTER_ICON]",
+                "criteria_type": "num_polls_voted",
+                "criteria_value": 5,
+            }
+            if not Achievement.query.filter_by(name="Opinion Leader").first():
+                db.session.add(Achievement(**ol_ach_data))
+                db.session.commit()
+            ol_achievement_id = Achievement.query.filter_by(name="Opinion Leader").first().id
+
+            poll_voter = self._create_db_user("poll_voter_user", "pass", "pv@example.com")
+            poll_creator = self.user1 # Can be any user
+
+            # Create 5 polls, each with at least one option
+            polls_to_vote_in_ids = []
+            for i in range(5):
+                poll_initial = self._create_db_poll(user_id=poll_creator.id, question=f"Poll {i+1} for Opinion Leader?", options_texts=["Yes", "No"])
+                polls_to_vote_in_ids.append(poll_initial.id)
+
+            # User votes in 4 polls
+            for i in range(4):
+                # Re-fetch poll to ensure options are loaded
+                current_poll = db.session.get(Poll, polls_to_vote_in_ids[i])
+                self.assertIsNotNone(current_poll)
+                self.assertTrue(len(current_poll.options) > 0)
+                option_to_vote = current_poll.options[0]
+                self._create_db_poll_vote(user_id=poll_voter.id, poll_id=current_poll.id, poll_option_id=option_to_vote.id)
+
+            check_and_award_achievements(poll_voter.id)
+            user_ach_check1 = UserAchievement.query.filter_by(
+                user_id=poll_voter.id, achievement_id=ol_achievement_id
+            ).first()
+            self.assertIsNone(user_ach_check1, "Opinion Leader achievement should not be awarded after voting in 4 polls.")
+
+            # User votes in the 5th poll
+            fifth_poll_id = polls_to_vote_in_ids[4]
+            fifth_poll_obj = db.session.get(Poll, fifth_poll_id)
+            self.assertIsNotNone(fifth_poll_obj, f"Fifth poll with id {fifth_poll_id} not found for Opinion Leader test.")
+            self.assertTrue(len(fifth_poll_obj.options) > 0, f"Fifth poll {fifth_poll_obj.id} has no options.")
+            option_to_vote_5 = fifth_poll_obj.options[0]
+            self._create_db_poll_vote(user_id=poll_voter.id, poll_id=fifth_poll_obj.id, poll_option_id=option_to_vote_5.id)
+            check_and_award_achievements(poll_voter.id)
+
+            user_ach_check2 = UserAchievement.query.filter_by(
+                user_id=poll_voter.id, achievement_id=ol_achievement_id
+            ).first()
+            self.assertIsNotNone(user_ach_check2, "Opinion Leader achievement should be awarded after voting in 5 polls.")
+            self.assertEqual(user_ach_check2.achievement.name, "Opinion Leader")
+
+            # Check for duplicates
+            check_and_award_achievements(poll_voter.id)
+            count_after_second_call = UserAchievement.query.filter_by(
+                user_id=poll_voter.id, achievement_id=ol_achievement_id
+            ).count()
+            self.assertEqual(count_after_second_call, 1, "Opinion Leader achievement should not be awarded again.")

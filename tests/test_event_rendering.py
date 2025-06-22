@@ -26,6 +26,7 @@ class TestEventRendering(AppTestCase):
             )
             db.session.add(event)
             db.session.commit()
+            event_id = event.id # Store event_id while in context
 
         # 3. Log in as a user (can be the organizer or another user)
         #    For simplicity, we'll access the page as an unauthenticated user if possible,
@@ -33,7 +34,7 @@ class TestEventRendering(AppTestCase):
         #    to see the event, only for RSVP status etc.
 
         # 4. Make a GET request to the event view page
-        response = self.client.get(f"/event/{event.id}")
+        response = self.client.get(f"/event/{event_id}") # Use stored event_id
 
         # 5. Assert that the response status code is 200
         self.assertEqual(response.status_code, 200)

@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timezone, timedelta
 
 from app import db
-from models import User, Post, PostLock, Friendship, UserBlock, Series, SeriesPost, UserStatus, Comment, Like
+from models import User, Post, PostLock, Friendship, UserBlock, Series, SeriesPost, UserStatus, Comment, Like, EventRSVP, PollVote # Added EventRSVP, PollVote
 from tests.test_base import AppTestCase # Assuming this sets up app context and db
 
 class TestUserModel(AppTestCase):
@@ -363,11 +363,13 @@ class TestEventRSVPModel(AppTestCase):
             event = self._create_db_event(user_id=event_organizer.id, title="RSVP Test Event")
 
             # First RSVP should be fine
-            rsvp1 = self._create_db_event_rsvp(user_id=user.id, event_id=event.id, status="Attending")
-            self.assertIsNotNone(rsvp1.id)
+            rsvp1_initial = self._create_db_event_rsvp(user_id=user.id, event_id=event.id, status="Attending")
+            rsvp1 = db.session.get(EventRSVP, rsvp1_initial.id) # Re-fetch
+            self.assertIsNotNone(rsvp1, "RSVP1 object could not be re-fetched from DB.")
+            self.assertIsNotNone(rsvp1, "RSVP1 object could not be re-fetched from DB.")
+            self.assertIsNotNone(rsvp1.id, "RSVP1 ID is None after re-fetch.")
 
             # Second RSVP for the same user and event should fail
-            from models import EventRSVP # Local import for clarity
             rsvp2 = EventRSVP(user_id=user.id, event_id=event.id, status="Maybe")
             db.session.add(rsvp2)
             with self.assertRaises(Exception) as context: # sqlalchemy.exc.IntegrityError
@@ -389,11 +391,13 @@ class TestPollVoteModel(AppTestCase):
             option1 = poll.options[0]
 
             # First vote should be fine
-            vote1 = self._create_db_poll_vote(user_id=voter.id, poll_id=poll.id, poll_option_id=option1.id)
-            self.assertIsNotNone(vote1.id)
+            vote1_initial = self._create_db_poll_vote(user_id=voter.id, poll_id=poll.id, poll_option_id=option1.id)
+            vote1 = db.session.get(PollVote, vote1_initial.id) # Re-fetch
+            self.assertIsNotNone(vote1, "Vote1 object could not be re-fetched from DB.")
+            self.assertIsNotNone(vote1.id, "Vote1 ID is None after re-fetch.")
+
 
             # Second vote by the same user in the same poll (even if for a different option) should fail
-            from models import PollVote # Local import for clarity
 
             # Attempt to vote for the same option again (or different, constraint is on user_id, poll_id)
             # Need to ensure there's another option if we want to test voting for a different one.

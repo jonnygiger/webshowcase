@@ -99,12 +99,43 @@
 
     {# Actions for other users' profiles #}
     {% if current_user and current_user.id != user.id %}
+        {# Block/Unblock and Message/Share File Section #}
         <div class="mb-3 text-center profile-actions-others">
-            <a href="{{ url_for('send_message', receiver_username=user.username) }}" class="btn btn-primary btn-sm">Send Message to {{ user.username }}</a>
-            <a href="{{ url_for('share_file_route', receiver_username=user.username) }}" class="btn btn-info btn-sm ms-2">Share File with {{ user.username }}</a>
+            {% if not effective_block %}
+                {# Show message/share if no block is in effect #}
+                <a href="{{ url_for('send_message', receiver_username=user.username) }}" class="btn btn-primary btn-sm">Send Message to {{ user.username }}</a>
+                <a href="{{ url_for('share_file_route', receiver_username=user.username) }}" class="btn btn-info btn-sm ms-2">Share File with {{ user.username }}</a>
+            {% endif %}
+
+            {# Block/Unblock controls #}
+            <div class="block-status-container mt-2">
+                {% if viewer_has_blocked_profile_owner %}
+                    <p class="text-warning small mt-1">You have blocked this user.</p>
+                    <form action="{{ url_for('unblock_user', username_to_unblock=user.username) }}" method="POST" style="display: inline;">
+                        <button type="submit" class="btn btn-sm btn-outline-warning">Unblock {{ user.username }}</button>
+                    </form>
+                {% elif profile_owner_has_blocked_viewer %}
+                    {# Viewer is blocked by profile owner - no action for viewer here, message shown below #}
+                    <p class="text-danger small mt-1">This user has blocked you.</p>
+                {% else %}
+                    {# No active block by viewer, and viewer is not blocked by owner: show Block button #}
+                    <form action="{{ url_for('block_user_route', username_to_block=user.username) }}" method="POST" style="display: inline;">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">Block {{ user.username }}</button>
+                    </form>
+                {% endif %}
+            </div>
         </div>
     {% endif %}
 
+    {# Display blocking message if applicable #}
+    {% if not is_viewing_own_profile and effective_block %}
+        <div class="alert alert-warning mt-3 text-center" role="alert">
+            You have blocked this user or this user has blocked you. Some content may be hidden.
+        </div>
+    {% endif %}
+
+    {# Only show these sections if there's no effective block, or if viewing own profile #}
+    {% if is_viewing_own_profile or not effective_block %}
     <div class="content-box user-creations">
         <h3>Created Posts</h3>
         {% if posts %}
@@ -242,4 +273,5 @@ Awarded: {{ ua.awarded_at.strftime('%Y-%m-%d') }}">
         <a href="{{ url_for('view_user_achievements', username=user.username) }}" class="btn btn-sm btn-outline-info">View All Achievements Details</a>
     </div>
     </div>
+{% endif %}
 {% endblock %}

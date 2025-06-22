@@ -17,12 +17,13 @@ class TestChatAPI(AppTestCase):
             self.auth_headers = {"Authorization": f"Bearer {self.access_token}"}
 
             # Common chat room for tests
-            self.test_room = self._create_db_chat_room(name="General Chat Room", creator_id=self.api_user.id)
+            test_room_obj = self._create_db_chat_room(name="General Chat Room", creator_id=self.api_user.id)
+            self.test_room_id = test_room_obj.id # Store the ID
 
             # Add some messages to the room for pagination tests
             for i in range(25): # Create 25 messages
                 msg = ChatMessage(
-                    room_id=self.test_room.id,
+                    room_id=self.test_room_id, # Use the ID
                     user_id=self.api_user.id,
                     message=f"Message {i}"
                 )
@@ -47,11 +48,11 @@ class TestChatAPI(AppTestCase):
     def test_get_chat_room_messages_pagination(self):
         with self.app.app_context():
             # Test first page
-            response_page1 = self.client.get(f'/api/chat/rooms/{self.test_room.id}/messages?page=1&per_page=10', headers=self.auth_headers)
+            response_page1 = self.client.get(f'/api/chat/rooms/{self.test_room_id}/messages?page=1&per_page=10', headers=self.auth_headers)
             self.assertEqual(response_page1.status_code, 200)
             data_page1 = response_page1.get_json()
 
-            self.assertEqual(data_page1["room_id"], self.test_room.id)
+            self.assertEqual(data_page1["room_id"], self.test_room_id)
             self.assertEqual(len(data_page1["messages"]), 10)
             self.assertEqual(data_page1["page"], 1)
             self.assertEqual(data_page1["per_page"], 10)
@@ -62,7 +63,7 @@ class TestChatAPI(AppTestCase):
             self.assertEqual(data_page1["messages"][0]["message"], "Message 24")
 
             # Test second page
-            response_page2 = self.client.get(f'/api/chat/rooms/{self.test_room.id}/messages?page=2&per_page=10', headers=self.auth_headers)
+            response_page2 = self.client.get(f'/api/chat/rooms/{self.test_room_id}/messages?page=2&per_page=10', headers=self.auth_headers)
             self.assertEqual(response_page2.status_code, 200)
             data_page2 = response_page2.get_json()
 
@@ -72,7 +73,7 @@ class TestChatAPI(AppTestCase):
             self.assertEqual(data_page2["messages"][0]["message"], "Message 14")
 
             # Test last page (should have remaining 5 messages)
-            response_page3 = self.client.get(f'/api/chat/rooms/{self.test_room.id}/messages?page=3&per_page=10', headers=self.auth_headers)
+            response_page3 = self.client.get(f'/api/chat/rooms/{self.test_room_id}/messages?page=3&per_page=10', headers=self.auth_headers)
             self.assertEqual(response_page3.status_code, 200)
             data_page3 = response_page3.get_json()
 
@@ -84,7 +85,7 @@ class TestChatAPI(AppTestCase):
     def test_get_chat_room_messages_default_pagination(self):
         with self.app.app_context():
             # Test default pagination (per_page=20 as per API implementation)
-            response = self.client.get(f'/api/chat/rooms/{self.test_room.id}/messages', headers=self.auth_headers)
+            response = self.client.get(f'/api/chat/rooms/{self.test_room_id}/messages', headers=self.auth_headers)
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
 

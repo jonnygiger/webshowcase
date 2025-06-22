@@ -739,6 +739,24 @@ This feature enables multiple users to see live updates when a post is being edi
     *   **Flask-RESTful**: For creating the API endpoints (`/api/posts/<post_id>/lock`) that manage the lifecycle of post locks.
     *   **JavaScript (Client-Side)**: Handles acquiring/releasing locks, sending content changes, and updating the UI based on server events.
 
+### Real-Time Chat
+
+The application now features a real-time chat system, allowing users to communicate instantly in public or private chat rooms.
+
+*   **Functionality**:
+    *   **Chat Rooms**: Users can create new chat rooms or join existing public ones.
+    *   **Real-Time Messaging**: Messages sent in a room are broadcast instantly to all other participants in that room.
+    *   **User Presence**: Users are notified when other users join or leave the chat room they are in.
+    *   **Message Persistence**: Chat messages are saved to the database, allowing users to view conversation history.
+*   **Access**:
+    *   A "Chat" link in the main navigation bar leads to the chat interface (`/chat`).
+    *   The chat page displays a list of available chat rooms and the main chat area.
+*   **Technology**:
+    *   **Flask-SocketIO**: Powers the real-time communication for sending and receiving messages and presence updates.
+    *   **SQLAlchemy**: Manages `ChatRoom` and `ChatMessage` models for storing room information and message history.
+    *   **RESTful API**: Endpoints under `/api/chat/` allow for listing rooms, creating rooms, and fetching message history for a room.
+    *   **JavaScript**: Client-side logic handles SocketIO connections, sending/receiving messages, and dynamically updating the chat UI.
+
 ### On This Day
 
 This feature allows users to revisit their past posts and events that occurred on the same calendar day in previous years.

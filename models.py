@@ -925,3 +925,49 @@ class UserBlock(db.Model):
 
     def __repr__(self):
         return f"<UserBlock blocker_id={self.blocker_id} blocked_id={self.blocked_id}>"
+
+
+class ChatRoom(db.Model):
+    __tablename__ = "chat_room"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    creator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True) # Can be null for system-generated rooms
+
+    messages = db.relationship("ChatMessage", backref="room", lazy="dynamic", cascade="all, delete-orphan")
+    creator = db.relationship("User", backref=db.backref("created_chat_rooms", lazy="dynamic"))
+
+    def __repr__(self):
+        return f"<ChatRoom {self.name}>"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "creator_id": self.creator_id,
+            "creator_username": self.creator.username if self.creator else "System"
+        }
+
+class ChatMessage(db.Model):
+    __tablename__ = "chat_message"
+    id = db.Column(db.Integer, primary_key=True)
+    room_id = db.Column(db.Integer, db.ForeignKey("chat_room.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = db.relationship("User", backref=db.backref("chat_messages", lazy="dynamic"))
+
+    def __repr__(self):
+        return f"<ChatMessage User {self.user_id} in Room {self.room_id} at {self.timestamp}>"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "room_id": self.room_id,
+            "user_id": self.user_id,
+            "username": self.user.username if self.user else "Unknown",
+            "message": self.message,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }

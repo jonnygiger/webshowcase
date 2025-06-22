@@ -13,7 +13,7 @@ class TestChatAPI(AppTestCase):
         with self.app.app_context():
             # User for authentication
             self.api_user = self._create_db_user(username="chat_api_user", password="password")
-            self.access_token = create_access_token(identity=self.api_user.id)
+            self.access_token = create_access_token(identity=str(self.api_user.id)) # Use string identity
             self.auth_headers = {"Authorization": f"Bearer {self.access_token}"}
 
             # Common chat room for tests

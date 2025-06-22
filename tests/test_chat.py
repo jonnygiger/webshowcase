@@ -94,7 +94,7 @@ class ChatTestCase(AppTestCase):
             self.login(self.user1.username, "password") # Login user1 to set session
 
             # User1 joins the room
-            self.socketio_client.emit('join_chat_room', {'room_name': socket_room_name})
+            self.socketio_client.emit('join_chat_room', {'room_name': socket_room_name}, namespace='/')
 
             # Check for 'user_joined_chat' broadcast (optional, might need another client to verify)
             # For simplicity, we'll assume join works and focus on message sending.
@@ -104,7 +104,7 @@ class ChatTestCase(AppTestCase):
             self.socketio_client.emit('send_chat_message', {
                 'room_name': socket_room_name,
                 'message': test_message
-            })
+            }, namespace='/')
 
             # 4. Verify the message is received (by the sender themselves, and potentially others)
             # The test client can receive events it emits if not careful with rooms/broadcasts
@@ -134,6 +134,68 @@ class ChatTestCase(AppTestCase):
             message_in_db = ChatMessage.query.filter_by(room_id=room_id, user_id=self.user1_id, message=test_message).first()
             self.assertIsNotNone(message_in_db)
             self.logout() # Clean up session
+
+    def test_send_message_to_unjoined_room(self):
+        with self.app.app_context():
+            # 1. User1 creates a room
+            room_response = self.client.post('/api/chat/rooms',
+                                             json={'name': "Unjoined Test Room"},
+                                             headers={'Authorization': f'Bearer {self.user1_token}'})
+            self.assertEqual(room_response.status_code, 201)
+            room_data = room_response.get_json()['chat_room']
+            room_id = room_data['id']
+            socket_room_name = f"chat_room_{room_id}"
+
+            # 2. User1 (socketio_client) connects and joins the room
+            self.login(self.user1.username, "password") # Simulate login for User1's socket client
+            self.socketio_client.emit('join_chat_room', {'room_name': socket_room_name})
+            # Clear any initial messages from User1 joining
+            self.socketio_client.get_received()
+            # We keep user1's socketio_client connected.
+            # self.logout() here would disconnect self.socketio_client if not careful.
+            # We'll logout/disconnect user1's client at the end of the test.
+
+            # 3. User2 (socketio_client_user2) connects but DOES NOT join the room
+            # We need a separate client for user2
+            socketio_client_user2 = self.create_socketio_client()
+            self.login(self.user2.username, "password", client_instance=socketio_client_user2) #Login user2 to set session for this new client
+
+            # 4. User2 attempts to send a message to the room
+            test_message_by_user2 = "Hello from User2 (unjoined)"
+            socketio_client_user2.emit('send_chat_message', {
+                'room_name': socket_room_name,
+                'message': test_message_by_user2
+            }, namespace='/')
+
+            # 5. Verify User1 (original socketio_client) did NOT receive User2's message
+            # Allow some time for events to (not) propagate
+            import time
+            time.sleep(0.1) # Small delay
+            received_by_user1 = self.socketio_client.get_received()
+            user1_messages = [r for r in received_by_user1 if r['name'] == 'new_chat_message']
+            for event_data in user1_messages:
+                args = event_data['args'][0]
+                self.assertNotEqual(args['message'], test_message_by_user2, "User1 should not receive message from unjoined User2")
+
+            # 6. Verify User2 did not get their own message back (if server drops it, which is expected)
+            received_by_user2 = socketio_client_user2.get_received()
+            user2_own_messages = [r for r in received_by_user2 if r['name'] == 'new_chat_message' and r['args'][0]['message'] == test_message_by_user2]
+            self.assertEqual(len(user2_own_messages), 0, "User2 should not receive their own message if they are not in the room")
+
+            # It's possible the server sends an error event instead. If so, that would be a different test.
+            # For now, we assume no message event is sent back to the unauthorized sender.
+
+            # 7. Verify message from User2 is NOT in the database
+            message_in_db = ChatMessage.query.filter_by(room_id=room_id, user_id=self.user2_id, message=test_message_by_user2).first()
+            self.assertIsNone(message_in_db, "Message from unjoined User2 should not be saved in DB")
+
+            # Cleanup
+            self.logout(client_instance=socketio_client_user2) # Logout User2 from HTTP session & disconnect its socket client
+            # Explicitly disconnect self.socketio_client (user1's client) and logout its HTTP session
+            if self.socketio_client and self.socketio_client.is_connected():
+                self.socketio_client.disconnect()
+            self.logout() # Logs out self.client (associated with user1's initial login)
+
 
     def test_chat_page_loads_for_logged_in_user(self):
         self.login(self.user1.username, "password")

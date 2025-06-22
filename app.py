@@ -122,6 +122,9 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///site.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 migrate.init_app(app, db)
+app.config["SECRET_KEY"] = "supersecretkey" # Moved Up
+app.config["JWT_SECRET_KEY"] = "your-jwt-secret-key"  # Moved Up
+
 socketio = SocketIO(app)
 api = Api(app)
 jwt = JWTManager(app)
@@ -1741,6 +1744,7 @@ def chat_page():
 # Chat SocketIO Handlers
 @socketio.on('join_chat_room')
 def handle_join_chat_room_event(data):
+    print(f"SOCKETIO DEBUG (direct print): session in handle_join_chat_room_event: {dict(session)}", flush=True)
     room_name = data.get('room_name') # e.g., "chat_room_1"
     user_id = session.get('user_id')
     username = session.get('username', 'Anonymous')

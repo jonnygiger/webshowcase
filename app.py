@@ -135,7 +135,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///site.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 migrate.init_app(app, db)
-app.config["SECRET_KEY"] = "supersecretkey"  # Moved Up
+app.config["SECRET_KEY"] = "test-secret-key"  # Align with test_base.py for session consistency
 app.config["JWT_SECRET_KEY"] = "your-jwt-secret-key"  # Moved Up
 
 socketio = SocketIO(app, async_mode='threading') # Explicit async_mode for testing stability

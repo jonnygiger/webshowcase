@@ -128,6 +128,7 @@ class AppTestCase(unittest.TestCase):
             )
             # This should print "test-secret-key" if our assumption is correct.
 
+
         # Initialize JWTManager - This is already done in app.py when 'jwt = JWTManager(app)' is called.
         # Re-initializing it here on cls.app (which is main_app from app.py) can cause errors
         # like "AssertionError: The setup method 'errorhandler' can no longer be called...".
@@ -326,31 +327,40 @@ class AppTestCase(unittest.TestCase):
     def login(self, username, password, client_instance=None):
         # Determine which HTTP client to use for login
         http_client = self.client  # Default to the instance's primary flask test client
+        login_response = None # Define login_response in the outer scope
 
         # Flask login via POST request
-        response = http_client.post(
-            "/login",
-            data=dict(username=username, password=password),
-            follow_redirects=True,
-        )
-        self.assertEqual(response.status_code, 200, f"HTTP Login failed for {username}")
+        with http_client as c: # Use context manager for client
+            login_response = c.post( # Assign to login_response
+                "/login",
+                data=dict(username=username, password=password),
+                follow_redirects=True,
+            )
+            self.assertEqual(login_response.status_code, 200, f"HTTP Login failed for {username}")
 
-        # If a specific socketio client instance is provided, ensure its session is updated.
-        # Flask-SocketIO's test_client when initialized with flask_test_client=self.client
-        # should share the cookie jar. So, the login via self.client should update cookies
-        # that are then available to socketio_client instances created with that self.client.
-        # No explicit cookie copying might be needed if this link is correctly established.
-        # However, the issue in tests might stem from SocketIO handlers not picking up Flask session
-        # correctly during emits if the session wasn't established *for that socket connection*.
-        # The `connect()` method of the socketio_client is usually where initial session handshake would occur.
-        # For testing, explicitly connecting after login might be beneficial if not done automatically.
+            cookie_header = None
+            cookies = []
+            if hasattr(c, "cookie_jar") and c.cookie_jar is not None:
+                for cookie_in_jar in c.cookie_jar:
+                    cookies.append(f"{cookie_in_jar.name}={cookie_in_jar.value}")
 
-        # If a specific socket.io client (different from self.socketio_client) needs to reflect this login
-        # and it was created with its own flask_test_client or none, this would be more complex.
-        # But given create_socketio_client also links to self.client, this should be okay.
+            if cookies:
+                cookie_header = "; ".join(cookies)
+                print(f"DEBUG: [After with c:] Cookie header for SocketIO connect for {username}: {cookie_header}")
+            else:
+                print(f"DEBUG: [After with c:] No cookies found in http_client.cookie_jar for {username}.")
+                set_cookie_header = login_response.headers.get('Set-Cookie')
+                if set_cookie_header:
+                    session_cookie_name_from_config = self.app.config.get('SESSION_COOKIE_NAME', 'session')
+                    if session_cookie_name_from_config in set_cookie_header:
+                        cookie_value_part = set_cookie_header.split(';')[0]
+                        cookie_header = cookie_value_part
+                        print(f"DEBUG: Fallback - Using Set-Cookie from login response for {username}: {cookie_header}")
 
-        # After HTTP login, if a specific socketio client instance is being set up,
-        # explicitly connect it to ensure its connection handshake uses the new session.
+        connect_headers = {}
+        if cookie_header:
+            connect_headers['Cookie'] = cookie_header
+
         socket_client_to_connect = None
         if client_instance:  # If a specific socketio client is passed
             socket_client_to_connect = client_instance
@@ -360,29 +370,25 @@ class AppTestCase(unittest.TestCase):
             socket_client_to_connect = self.socketio_client
 
         if socket_client_to_connect:
-            if socket_client_to_connect.is_connected(): # Check if connected to any namespace
-                socket_client_to_connect.disconnect()
-            # Connect (or reconnect) to the default namespace
-            # The connect call itself might need a specific namespace if not defaulting correctly or if issues persist.
-            socket_client_to_connect.connect(namespace='/') # Explicitly connect to default namespace
-            time.sleep(0.1) # Give server a moment to process the connection
+            if not socket_client_to_connect.is_connected(namespace='/'): # Check the specific namespace
+                print(f"DEBUG: SocketIO client (for {username}) connecting to namespace '/' with headers: {connect_headers}")
+                socket_client_to_connect.connect(namespace='/', headers=connect_headers) # Pass headers here
+                # After connecting, give a moment for server to process and clear any connect messages
+                time.sleep(0.1) # Initial pause for server to handle connect
+                # Clear out any messages received immediately after connect (e.g., connect acknowledgement)
+                # Loop for a short duration to ensure any connect-related packets are processed
+                connect_receive_start_time = time.time()
+                while time.time() - connect_receive_start_time < 0.3: # Max 0.3s to clear connect acks
+                    if not socket_client_to_connect.get_received(namespace='/'):
+                        break
+                    time.sleep(0.01)
+            else:
+                print(f"DEBUG: SocketIO client (for {username}) already connected to namespace '/'")
 
-            # Try to ensure all initial connection messages are processed
-            # Loop get_received until it returns an empty list or a timeout
-            start_time = time.time()
-            while time.time() - start_time < 0.5: # Max wait 0.5s for connect events
-                # If get_received returns immediately with an empty list, it means no messages were pending.
-                # The original get_received() would block if no messages, this loop is more for flushing.
-                # A simple get_received() might be sufficient if it correctly blocks/waits.
-                # However, let's try to ensure any connect-related packets are cleared.
-                if not socket_client_to_connect.get_received(namespace='/'): # Non-blocking if empty after a moment
-                    break
-                time.sleep(0.01) # Small pause to prevent tight loop if get_received is non-blocking when empty
+            # Final brief pause to ensure server-side state (like session association) is settled
+            time.sleep(0.1)
 
-            # An additional sleep just in case server-side processing needs a moment after client processes acks
-            time.sleep(0.2) # Increased slightly
-
-        return response
+        return login_response # Return the login_response
 
     def logout(self, client_instance=None):
         http_client = self.client  # Default to the instance's primary flask test client

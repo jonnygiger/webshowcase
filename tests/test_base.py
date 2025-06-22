@@ -2,6 +2,7 @@ import os
 import unittest
 import json  # For checking JSON responses
 import io  # For BytesIO
+import time # Added for sleep
 from unittest.mock import patch, call, ANY
 # from flask_socketio import SocketIO # No longer creating a new SocketIO instance here
 # Import the main app instance AND its socketio instance
@@ -56,7 +57,7 @@ class AppTestCase(unittest.TestCase):
         cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///test_site.db"
         cls.app.config["SECRET_KEY"] = "test-secret-key"
         cls.app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"  # Added as per requirements
-        cls.app.config["SERVER_NAME"] = "localhost.test" # Added to allow _external=True for url_for
+        cls.app.config["SERVER_NAME"] = "localhost" # Changed from localhost.test for simpler cookie domain
         cls.app.config["SOCKETIO_MESSAGE_QUEUE"] = None
         cls.app.config["SHARED_FILES_UPLOAD_FOLDER"] = "shared_files_test_folder" # Added for subtask
         shared_folder = cls.app.config["SHARED_FILES_UPLOAD_FOLDER"]
@@ -71,18 +72,45 @@ class AppTestCase(unittest.TestCase):
         # db.create_all() should respect this new URI when called within app_context.
         cls.db = app_db # Assign to class attribute for use in methods
 
-        # Use the app's existing SocketIO instance
+        # Re-initialize SocketIO with the test-configured app instance (cls.app)
+        # This ensures that SocketIO uses the same SECRET_KEY for session handling
+        # as the one used by the Flask test client for HTTP requests.
+        # We need to import SocketIO class here.
+        from flask_socketio import SocketIO as TestSocketIO
+        cls.socketio_class_level = TestSocketIO(cls.app, message_queue=cls.app.config.get('SOCKETIO_MESSAGE_QUEUE'))
+        # Note: This new SocketIO instance (cls.socketio_class_level) does NOT have the
+        # event handlers from app.py's `socketio` instance registered on it.
+        # This is a problem. The event handlers (@socketio.on(...)) are registered on `main_app_socketio`.
+
+        # The core issue is that the `socketio` instance from `app.py` (main_app_socketio)
+        # is initialized with the original app config (original SECRET_KEY).
+        # Modifying cls.app.config["SECRET_KEY"] later doesn't change the SECRET_KEY
+        # that main_app_socketio's session interface is using.
+
+        # A better approach: Instead of creating a new SocketIO instance,
+        # try to make the existing main_app_socketio aware of the new SECRET_KEY.
+        # This is tricky as Flask-SocketIO doesn't have a public API to reconfigure SECRET_KEY
+        # after initialization.
+        # The most straightforward way to ensure config consistency for sessions is for SocketIO
+        # to be initialized *after* app config is set. This usually means a factory pattern for app creation.
+
+        # Given the current structure, let's try a less ideal but potentially working hack:
+        # Update the `secret_key` attribute on the app instance that `main_app_socketio` holds a reference to,
+        # if it's different from `cls.app`. However, `main_app_socketio.app` should be `main_app`, which is `cls.app`.
+        # So, `main_app_socketio.app.secret_key` should already reflect `cls.app.config["SECRET_KEY"]`.
+
+        # Let's verify this assumption. If main_app_socketio.app.secret_key is indeed "test-secret-key",
+        # then the SECRET_KEY mismatch is not the root cause, or not in the way described.
+
+        # For now, let's stick to using the imported `main_app_socketio` and assume its
+        # underlying app's secret_key is correctly updated when `cls.app.config` is changed,
+        # because `cls.app` *is* `main_app`.
         cls.socketio_class_level = main_app_socketio
-        assert cls.socketio_class_level is not None, "main_app_socketio (aliased to cls.socketio_class_level) is None in setUpClass!"
-        # Ensure the app associated with the imported socketio is our test app instance
-        # This is a bit circular if main_app_socketio was initialized with main_app from app.py
-        # but main_app (aliased to cls.app) has its config changed for tests.
-        # Ideally, SocketIO should be initialized *after* app config changes.
-        # For now, we assume that app.socketio in app.py is flexible enough or that
-        # its configuration is not critically different for testing basic event handling.
-        # If specific socketio configs were an issue, one might need to re-init main_app_socketio with cls.app here,
-        # but that defeats using the *exact* app instance.
-        # The critical part is that event handlers are registered on main_app_socketio.
+        assert cls.socketio_class_level is not None, "main_app_socketio is None"
+        # Let's log the secret key that the main_app_socketio's app instance is using.
+        if hasattr(cls.socketio_class_level, 'app') and cls.socketio_class_level.app:
+            print(f"DEBUG: SocketIO App's SECRET_KEY in setUpClass: {cls.socketio_class_level.app.secret_key}")
+            # This should print "test-secret-key" if our assumption is correct.
 
         # Initialize JWTManager - This is already done in app.py when 'jwt = JWTManager(app)' is called.
         # Re-initializing it here on cls.app (which is main_app from app.py) can cause errors
@@ -157,7 +185,7 @@ class AppTestCase(unittest.TestCase):
 
         # Create the SocketIO test client for each test instance
         assert self.socketio_class_level is not None, "socketio_class_level is None in setUp instance method!"
-        self.socketio_client = self.socketio_class_level.test_client(self.app)
+        self.socketio_client = self.socketio_class_level.test_client(self.app, flask_test_client=self.client)
 
         with self.app.app_context(): # Use the class's app instance for context
             self._clean_tables_for_setup() # Reverted to cleaning tables
@@ -268,15 +296,77 @@ class AppTestCase(unittest.TestCase):
         self.logout()
         return response
 
-    def login(self, username, password):
-        return self.client.post(
+    def create_socketio_client(self):
+        """Creates a new SocketIO test client instance."""
+        # It's important that this new client also has access to the Flask test client's cookie jar
+        # if we want to share session state easily.
+        # The flask_test_client argument to socketio.test_client() helps share cookies.
+        return self.socketio_class_level.test_client(self.app, flask_test_client=self.client)
+
+    def login(self, username, password, client_instance=None):
+        # Determine which HTTP client to use for login
+        http_client = self.client # Default to the instance's primary flask test client
+
+        # Flask login via POST request
+        response = http_client.post(
             "/login",
             data=dict(username=username, password=password),
-            follow_redirects=True,
+            follow_redirects=True
         )
+        self.assertEqual(response.status_code, 200, f"HTTP Login failed for {username}")
 
-    def logout(self):
-        return self.client.get("/logout", follow_redirects=True)
+        # If a specific socketio client instance is provided, ensure its session is updated.
+        # Flask-SocketIO's test_client when initialized with flask_test_client=self.client
+        # should share the cookie jar. So, the login via self.client should update cookies
+        # that are then available to socketio_client instances created with that self.client.
+        # No explicit cookie copying might be needed if this link is correctly established.
+        # However, the issue in tests might stem from SocketIO handlers not picking up Flask session
+        # correctly during emits if the session wasn't established *for that socket connection*.
+        # The `connect()` method of the socketio_client is usually where initial session handshake would occur.
+        # For testing, explicitly connecting after login might be beneficial if not done automatically.
+
+        # If a specific socket.io client (different from self.socketio_client) needs to reflect this login
+        # and it was created with its own flask_test_client or none, this would be more complex.
+        # But given create_socketio_client also links to self.client, this should be okay.
+
+        # After HTTP login, if a specific socketio client instance is being set up,
+        # explicitly connect it to ensure its connection handshake uses the new session.
+        socket_client_to_connect = None
+        if client_instance: # If a specific socketio client is passed
+            socket_client_to_connect = client_instance
+        elif hasattr(self, 'socketio_client'): # Fallback to the default one for the test case
+            socket_client_to_connect = self.socketio_client
+
+        if socket_client_to_connect:
+            if socket_client_to_connect.is_connected():
+                socket_client_to_connect.disconnect()
+            socket_client_to_connect.connect() # Connect (or reconnect) to the default namespace
+            time.sleep(0.05) # Allow time for connection to establish fully on server side
+            # Try to process any connection acknowledgment packets
+            socket_client_to_connect.get_received('/')
+
+        return response
+
+
+    def logout(self, client_instance=None):
+        http_client = self.client # Default to the instance's primary flask test client
+
+        # If a specific socketio client is being logged out, disconnect it.
+        socket_client_to_disconnect = None
+        if client_instance:
+            socket_client_to_disconnect = client_instance
+        elif hasattr(self, 'socketio_client'):
+             socket_client_to_disconnect = self.socketio_client
+
+        if socket_client_to_disconnect and hasattr(socket_client_to_disconnect, 'is_connected') and socket_client_to_disconnect.is_connected():
+            socket_client_to_disconnect.disconnect()
+
+        response = http_client.get("/logout", follow_redirects=True)
+        self.assertEqual(response.status_code, 200, "HTTP Logout failed")
+
+        # Similar to login, cookie changes from http_client.get('/logout')
+        # should be reflected in socketio_clients that share its cookie jar.
+        return response
 
     def _create_db_message(
         self, sender_id, receiver_id, content, timestamp=None, is_read=False

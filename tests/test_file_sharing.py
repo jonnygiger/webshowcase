@@ -305,8 +305,8 @@ class TestFileSharing(AppTestCase):
         response = self.client.get("/files/inbox")
         self.assertEqual(response.status_code, 200)
         self.assertIn(
-            "You have not received any files.", response.get_data(as_text=True)
-        )  # Checked template
+            "You have not received any files yet.", response.get_data(as_text=True)
+        )  # Corrected to match template
         self.logout()
 
     def test_files_inbox_with_files(self):

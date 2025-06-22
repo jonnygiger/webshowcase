@@ -164,9 +164,11 @@ class TestContentManagement(AppTestCase):
             post_obj = self._create_db_post(user_id=author.id, title="Original Title", content="Original Content", timestamp=original_timestamp)
             post_id = post_obj.id
 
-            # Ensure last_edited is initially None or same as timestamp
-            self.assertIsNone(post_obj.last_edited or post_obj.timestamp == original_timestamp)
-
+            # Ensure last_edited is initially None
+            self.assertIsNone(post_obj.last_edited)
+            # And that the original timestamp is preserved (with tolerance for DB precision)
+            # Make post_obj.timestamp (naive from DB) aware of UTC for comparison
+            self.assertAlmostEqual(post_obj.timestamp.replace(tzinfo=timezone.utc), original_timestamp, delta=timedelta(seconds=1))
 
             new_title = "Updated Super Title"
             new_content = "This is the new, updated content for the post."
@@ -195,8 +197,10 @@ class TestContentManagement(AppTestCase):
             self.assertEqual(edited_post.content, new_content)
             self.assertEqual(edited_post.hashtags, new_hashtags)
             self.assertIsNotNone(edited_post.last_edited)
-            self.assertTrue(time_before_edit <= edited_post.last_edited <= time_after_edit)
-            self.assertNotEqual(edited_post.timestamp, edited_post.last_edited) # Original timestamp should not change
+            # Make edited_post.last_edited (naive from DB) aware for comparison
+            edited_post_last_edited_aware = edited_post.last_edited.replace(tzinfo=timezone.utc)
+            self.assertTrue(time_before_edit <= edited_post_last_edited_aware <= time_after_edit)
+            self.assertNotEqual(edited_post.timestamp.replace(tzinfo=timezone.utc), edited_post_last_edited_aware) # Compare aware datetimes
 
             self.logout()
 

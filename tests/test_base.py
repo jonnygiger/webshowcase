@@ -52,7 +52,8 @@ class AppTestCase(unittest.TestCase):
         # Apply test-specific configurations TO THE IMPORTED APP
         cls.app.config["TESTING"] = True
         cls.app.config["WTF_CSRF_ENABLED"] = False
-        cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+        # Use a file-based SQLite DB for tests to ensure data visibility
+        cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///test_site.db"
         cls.app.config["SECRET_KEY"] = "test-secret-key"
         cls.app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"  # Added as per requirements
         cls.app.config["SERVER_NAME"] = "localhost.test" # Added to allow _external=True for url_for
@@ -159,27 +160,26 @@ class AppTestCase(unittest.TestCase):
         self.socketio_client = self.socketio_class_level.test_client(self.app)
 
         with self.app.app_context(): # Use the class's app instance for context
-            self._clean_tables_for_setup()
-            self._setup_base_users()  # This would require live User model and db session
+            self._clean_tables_for_setup() # Reverted to cleaning tables
+            self._setup_base_users()  # Sets up self.user1, self.user2, self.user3
         # pass
 
     def _clean_tables_for_setup(self):
         """Clears data from tables before each test's user setup."""
         # Use the class's db instance
         self.db.session.remove()
-        for table in reversed(self.db.metadata.sorted_tables):
-            self.db.session.execute(table.delete())
-        self.db.session.commit()
+        # Drop all tables and recreate them to ensure a truly clean state for each test.
+        # This is more robust than deleting from tables, especially with complex relationships.
+        self.db.drop_all()
+        self.db.create_all()
+        # No commit needed here as drop_all/create_all are DDL. Session is clean.
         # pass
 
     def tearDown(self):
         """Executed after each test."""
         with self.app.app_context(): # Ensure app context for DB operations
-            # Use the class's db instance
-            self.db.session.remove()
-            for table in reversed(self.db.metadata.sorted_tables):
-                self.db.session.execute(table.delete())
-            self.db.session.commit()
+            self.db.session.remove() # Remove the current session
+            # self.db.drop_all() # drop_all is now in _clean_tables_for_setup via setUp
 
         # Use the class's app instance for config
         shared_files_folder = self.app.config.get(
@@ -214,6 +214,10 @@ class AppTestCase(unittest.TestCase):
         )
         self.db.session.add_all([self.user1, self.user2, self.user3]) # Use class's db
         self.db.session.commit() # Use class's db
+        # Refresh users to ensure their IDs are loaded from the DB session
+        self.db.session.refresh(self.user1)
+        self.db.session.refresh(self.user2)
+        self.db.session.refresh(self.user3)
         self.user1_id = self.user1.id
         self.user2_id = self.user2.id
         self.user3_id = self.user3.id
@@ -316,7 +320,7 @@ class AppTestCase(unittest.TestCase):
             group = Group(name=name, description=description, creator_id=creator_id)
             self.db.session.add(group) # Use class's db
             self.db.session.commit() # Use class's db
-            return group
+            return self.db.session.get(Group, group.id) # Re-fetch
 
     def _create_db_event(
         self,
@@ -342,8 +346,8 @@ class AppTestCase(unittest.TestCase):
             )
             self.db.session.add(event) # Use class's db
             self.db.session.commit() # Use class's db
-            _ = event.id # Ensure ID is loaded
-            return event # Return the full event object
+            # _ = event.id # Ensure ID is loaded # Not strictly necessary if re-fetching
+            return self.db.session.get(Event, event.id) # Re-fetch
 
     def _create_db_poll(
         self, user_id, question="Test Poll?", options_texts=None, created_at=None
@@ -365,8 +369,8 @@ class AppTestCase(unittest.TestCase):
             self.db.session.commit() # Use class's db
             _ = poll.id # Ensure ID is loaded
             # Also ensure options are loaded if they are accessed via poll.options in tests
-            _ = [opt.id for opt in poll.options]
-            return poll
+            # _ = [opt.id for opt in poll.options] # Re-fetching poll should handle this
+            return self.db.session.get(Poll, poll.id) # Re-fetch
 
     def _create_db_like(self, user_id, post_id, timestamp=None):
         from models import Like  # Local import to avoid circular if not using live DB
@@ -444,7 +448,7 @@ class AppTestCase(unittest.TestCase):
             )
             self.db.session.add(series) # Use class's db
             self.db.session.commit() # Use class's db
-            return series
+            return self.db.session.get(Series, series.id) # Re-fetch
 
     def assertInHTML(self, needle, haystack, achievement_name):
         try:
@@ -470,4 +474,5 @@ class AppTestCase(unittest.TestCase):
             lock = PostLock(post_id=post_id, user_id=user_id, expires_at=expires_at)
             self.db.session.add(lock) # Use class's db
             self.db.session.commit() # Use class's db
-            return lock
+            # Re-fetch the lock to ensure it's bound to the session and has its ID populated.
+            return self.db.session.get(PostLock, lock.id)

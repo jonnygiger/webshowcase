@@ -70,16 +70,20 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
         with self.app.app_context():
             # User1 and User2 are friends. User1 posts. User2 gets a notification.
             self._create_friendship(self.user1_id, self.user2_id)
-            post1_id_by_user1 = self._create_db_post(user_id=self.user1_id, title="Post 1 by User1", timestamp=datetime.utcnow() - timedelta(minutes=10))
-            post1_by_user1 = self.db.session.get(Post, post1_id_by_user1)
+            # _create_db_post returns the post object directly
+            post1_obj_by_user1 = self._create_db_post(user_id=self.user1_id, title="Post 1 by User1", timestamp=datetime.utcnow() - timedelta(minutes=10))
+            # No need to fetch again if _create_db_post returns a usable object
+            # post1_by_user1 = self.db.session.get(Post, post1_obj_by_user1.id)
+            self.assertIsNotNone(post1_obj_by_user1, "Post1 object by User1 should not be None.")
             # Manually create notification as if post route was hit by user1
-            notif1_for_user2 = FriendPostNotification(user_id=self.user2_id, post_id=post1_by_user1.id, poster_id=self.user1_id, timestamp=post1_by_user1.timestamp)
+            notif1_for_user2 = FriendPostNotification(user_id=self.user2_id, post_id=post1_obj_by_user1.id, poster_id=self.user1_id, timestamp=post1_obj_by_user1.timestamp)
 
             # User3 and User2 are friends. User3 posts. User2 gets another notification (newer).
             self._create_friendship(self.user3_id, self.user2_id)
-            post2_id_by_user3 = self._create_db_post(user_id=self.user3_id, title="Post 2 by User3", timestamp=datetime.utcnow() - timedelta(minutes=5))
-            post2_by_user3 = self.db.session.get(Post, post2_id_by_user3)
-            notif2_for_user2 = FriendPostNotification(user_id=self.user2_id, post_id=post2_by_user3.id, poster_id=self.user3_id, timestamp=post2_by_user3.timestamp)
+            post2_obj_by_user3 = self._create_db_post(user_id=self.user3_id, title="Post 2 by User3", timestamp=datetime.utcnow() - timedelta(minutes=5))
+            # post2_by_user3 = self.db.session.get(Post, post2_obj_by_user3.id)
+            self.assertIsNotNone(post2_obj_by_user3, "Post2 object by User3 should not be None.")
+            notif2_for_user2 = FriendPostNotification(user_id=self.user2_id, post_id=post2_obj_by_user3.id, poster_id=self.user3_id, timestamp=post2_obj_by_user3.timestamp)
 
             self.db.session.add_all([notif1_for_user2, notif2_for_user2])
             self.db.session.commit()
@@ -90,20 +94,21 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             response_data = response.get_data(as_text=True)
 
             self.assertIn(self.user3.username, response_data) # Poster of newer notification
-            self.assertIn(post2_by_user3.title, response_data)
+            self.assertIn(post2_obj_by_user3.title, response_data)
             self.assertIn(self.user1.username, response_data) # Poster of older notification
-            self.assertIn(post1_by_user1.title, response_data)
+            self.assertIn(post1_obj_by_user1.title, response_data)
 
             # Assert order (newer notification from user3 appears before older from user1)
-            self.assertTrue(response_data.find(post2_by_user3.title) < response_data.find(post1_by_user1.title))
+            self.assertTrue(response_data.find(post2_obj_by_user3.title) < response_data.find(post1_obj_by_user1.title))
             self.logout()
 
     def test_mark_one_notification_as_read(self):
         with self.app.app_context():
             self._create_friendship(self.user1_id, self.user2_id)
-            post_id_by_user1 = self._create_db_post(user_id=self.user1_id)
-            post_by_user1 = self.db.session.get(Post, post_id_by_user1)
-            notification = FriendPostNotification(user_id=self.user2_id, post_id=post_by_user1.id, poster_id=self.user1_id, is_read=False)
+            post_obj_by_user1 = self._create_db_post(user_id=self.user1_id)
+            # post_by_user1 = self.db.session.get(Post, post_obj_by_user1.id) # Not needed if post_obj_by_user1 is used directly
+            self.assertIsNotNone(post_obj_by_user1, "Post object by User1 should not be None.")
+            notification = FriendPostNotification(user_id=self.user2_id, post_id=post_obj_by_user1.id, poster_id=self.user1_id, is_read=False)
             self.db.session.add(notification)
             self.db.session.commit()
             notification_id = notification.id
@@ -143,15 +148,17 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
     def test_mark_all_notifications_as_read(self):
         with self.app.app_context():
             self._create_friendship(self.user1_id, self.user2_id)
-            post1_id = self._create_db_post(user_id=self.user1_id, title="Post1")
-            post2_id = self._create_db_post(user_id=self.user1_id, title="Post2")
-            post1 = self.db.session.get(Post, post1_id)
-            post2 = self.db.session.get(Post, post2_id)
+            post1_obj = self._create_db_post(user_id=self.user1_id, title="Post1")
+            post2_obj = self._create_db_post(user_id=self.user1_id, title="Post2")
+            # post1 = self.db.session.get(Post, post1_obj.id) # Not needed
+            # post2 = self.db.session.get(Post, post2_obj.id) # Not needed
+            self.assertIsNotNone(post1_obj, "Post1 object should not be None.")
+            self.assertIsNotNone(post2_obj, "Post2 object should not be None.")
 
-            notif1 = FriendPostNotification(user_id=self.user2_id, post_id=post1.id, poster_id=self.user1_id, is_read=False)
-            notif2 = FriendPostNotification(user_id=self.user2_id, post_id=post2.id, poster_id=self.user1_id, is_read=False)
+            notif1 = FriendPostNotification(user_id=self.user2_id, post_id=post1_obj.id, poster_id=self.user1_id, is_read=False)
+            notif2 = FriendPostNotification(user_id=self.user2_id, post_id=post2_obj.id, poster_id=self.user1_id, is_read=False)
             # Notification for another user (user3) - should not be affected
-            notif_for_user3 = FriendPostNotification(user_id=self.user3_id, post_id=post1.id, poster_id=self.user1_id, is_read=False)
+            notif_for_user3 = FriendPostNotification(user_id=self.user3_id, post_id=post1_obj.id, poster_id=self.user1_id, is_read=False)
 
             self.db.session.add_all([notif1, notif2, notif_for_user3])
             self.db.session.commit()

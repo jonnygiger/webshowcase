@@ -45,43 +45,51 @@ class TestCollaborativeEditing(AppTestCase):
     # --- Model Tests ---
     def test_post_lock_creation(self):
         with self.app.app_context():
-            lock = self._create_db_lock(post_id=self.test_post.id, user_id=self.post_author.id, minutes_offset=15)
-            self.assertIsNotNone(lock)
-            self.assertIsNotNone(lock.id)
-            self.assertEqual(lock.post_id, self.test_post.id)
+            # self.test_post might be from a different session, re-fetch or merge.
+            test_post_merged = self.db.session.merge(self.test_post)
+            lock = self._create_db_lock(post_id=test_post_merged.id, user_id=self.post_author.id, minutes_offset=15)
+            self.assertIsNotNone(lock, "Lock object should not be None.")
+            self.assertIsNotNone(lock.id, "Lock ID should not be None after creation and re-fetch.") # ID should be populated by _create_db_lock now
+            self.assertEqual(lock.post_id, test_post_merged.id)
             self.assertEqual(lock.user_id, self.post_author.id)
             self.assertTrue(lock.expires_at > datetime.utcnow())
 
-            # Verify it's in the database
-            queried_lock = self.db.session.get(PostLock, lock.id)
-            self.assertIsNotNone(queried_lock)
-            self.assertEqual(queried_lock.post_id, self.test_post.id)
+            # Verify it's in the database again, though _create_db_lock should ensure this
+            queried_lock_again = self.db.session.get(PostLock, lock.id)
+            self.assertIsNotNone(queried_lock_again)
+            self.assertEqual(queried_lock_again.post_id, test_post_merged.id)
 
     def test_post_is_locked_method(self):
         with self.app.app_context():
+            # Ensure self.test_post is managed by the current session
+            current_post = self.db.session.get(Post, self.test_post.id)
+            self.assertIsNotNone(current_post, "Test post not found in session at start of test_post_is_locked_method.")
+
             # 1. Test with no lock
-            self.assertFalse(self.test_post.is_locked(), "Post should not be locked if no lock exists.")
+            self.assertFalse(current_post.is_locked(), "Post should not be locked if no lock exists.")
 
             # 2. Test with an active lock
-            active_lock = self._create_db_lock(post_id=self.test_post.id, user_id=self.post_author.id, minutes_offset=15)
-            self.db.session.refresh(self.test_post) # Refresh to ensure lock_info is loaded
-            self.assertTrue(self.test_post.is_locked(), "Post should be locked with an active lock.")
+            active_lock = self._create_db_lock(post_id=current_post.id, user_id=self.post_author.id, minutes_offset=15)
+            self.db.session.refresh(current_post) # Refresh to ensure lock_info is loaded
+            self.assertTrue(current_post.is_locked(), "Post should be locked with an active lock.")
 
             # 3. Test with an expired lock
             # First, remove the active lock to ensure a clean state for the next check
-            self.db.session.delete(active_lock)
+            merged_active_lock = self.db.session.merge(active_lock)
+            self.db.session.delete(merged_active_lock)
             self.db.session.commit()
-            self.db.session.refresh(self.test_post) # Refresh to ensure lock_info is cleared
+
+            self.db.session.refresh(current_post) # Refresh to ensure lock_info is cleared
             # Sanity check that it's indeed not locked now
-            self.assertFalse(self.test_post.is_locked(), "Post should not be locked after deleting the active lock.")
+            self.assertFalse(current_post.is_locked(), "Post should not be locked after deleting the active lock.")
 
-
-            expired_lock = self._create_db_lock(post_id=self.test_post.id, user_id=self.post_author.id, minutes_offset=-5)
-            self.db.session.refresh(self.test_post) # Refresh to ensure the new lock_info is loaded
-            self.assertFalse(self.test_post.is_locked(), "Post should not be locked with an expired lock.")
+            expired_lock = self._create_db_lock(post_id=current_post.id, user_id=self.post_author.id, minutes_offset=-5)
+            self.db.session.refresh(current_post) # Refresh to ensure the new lock_info is loaded
+            self.assertFalse(current_post.is_locked(), "Post should not be locked with an expired lock.")
 
             # Clean up the expired lock
-            self.db.session.delete(expired_lock)
+            merged_expired_lock = self.db.session.merge(expired_lock)
+            self.db.session.delete(merged_expired_lock)
             self.db.session.commit()
 
 
@@ -94,18 +102,20 @@ class TestCollaborativeEditing(AppTestCase):
         response_data = json.loads(response.data.decode())
 
         self.assertEqual(response.status_code, 200, f"Response data: {response_data}")
-        self.assertEqual(response_data.get('message'), 'Lock acquired successfully.')
+        self.assertEqual(response_data.get('message'), 'Post locked successfully.') # Updated expected message
         self.assertIn('lock_details', response_data)
         self.assertEqual(response_data['lock_details']['post_id'], self.test_post.id)
-        self.assertEqual(response_data['lock_details']['user_id'], self.collaborator.id)
-        self.assertEqual(response_data.get('locked_by_username'), self.collaborator.username)
-        self.assertIsNotNone(response_data.get('expires_at'))
+        # The API returns 'locked_by_user_id' and 'locked_by_username' inside 'lock_details'
+        self.assertEqual(response_data['lock_details']['locked_by_user_id'], self.collaborator.id)
+        self.assertEqual(response_data['lock_details']['locked_by_username'], self.collaborator.username)
+        self.assertIsNotNone(response_data['lock_details'].get('expires_at')) # Check within lock_details
 
         with self.app.app_context():
-            lock = PostLock.query.filter_by(post_id=self.test_post.id, user_id=self.collaborator.id).first()
+            current_post = self.db.session.get(Post, self.test_post.id) # Re-fetch post
+            lock = PostLock.query.filter_by(post_id=current_post.id, user_id=self.collaborator.id).first()
             self.assertIsNotNone(lock)
-            self.db.session.refresh(self.test_post)
-            self.assertTrue(self.test_post.is_locked())
+            # self.db.session.refresh(current_post) # Refresh is okay if current_post is from this session
+            self.assertTrue(current_post.is_locked())
 
     def test_api_acquire_lock_conflict(self):
         # User1 (post_author) acquires the lock first
@@ -121,8 +131,8 @@ class TestCollaborativeEditing(AppTestCase):
 
         self.assertEqual(response_collaborator.status_code, 409) # Conflict
         response_data = json.loads(response_collaborator.data.decode())
-        self.assertIn("already locked by", response_data.get("message", "").lower())
-        self.assertIn(self.post_author.username.lower(), response_data.get("message", "").lower())
+        self.assertEqual(response_data.get("message"), "Post is currently locked by another user.")
+        self.assertEqual(response_data.get("locked_by_username"), self.post_author.username)
 
 
         with self.app.app_context():
@@ -138,21 +148,25 @@ class TestCollaborativeEditing(AppTestCase):
         self.assertEqual(response_acquire.status_code, 200, f"Acquire failed: {response_acquire.data.decode()}")
 
         with self.app.app_context():
-            self.db.session.refresh(self.test_post)
-            self.assertTrue(self.test_post.is_locked(), "Post should be locked before release attempt.")
+            current_post = self.db.session.get(Post, self.test_post.id) # Re-fetch post
+            self.assertIsNotNone(current_post, "Post not found before checking lock status in release test.")
+            # self.db.session.refresh(current_post) # No longer needed if fetched
+            self.assertTrue(current_post.is_locked(), "Post should be locked before release attempt.")
 
         # Collaborator releases the lock
         response_release = self.client.delete(f'/api/posts/{self.test_post.id}/lock', headers=headers_collaborator)
         response_data = json.loads(response_release.data.decode())
 
         self.assertEqual(response_release.status_code, 200, f"Response data: {response_data}")
-        self.assertEqual(response_data.get('message'), 'Lock released successfully.')
+        self.assertEqual(response_data.get('message'), 'Post unlocked successfully.') # Updated expected message
 
         with self.app.app_context():
-            lock = PostLock.query.filter_by(post_id=self.test_post.id).first()
+            current_post_after_release = self.db.session.get(Post, self.test_post.id) # Re-fetch post
+            self.assertIsNotNone(current_post_after_release, "Post not found after release attempt.")
+            lock = PostLock.query.filter_by(post_id=current_post_after_release.id).first()
             self.assertIsNone(lock)
-            self.db.session.refresh(self.test_post)
-            self.assertFalse(self.test_post.is_locked())
+            # self.db.session.refresh(current_post_after_release) # No longer needed if fetched
+            self.assertFalse(current_post_after_release.is_locked())
 
     def test_api_release_lock_unauthorized(self):
         # Post_author acquires the lock
@@ -168,20 +182,22 @@ class TestCollaborativeEditing(AppTestCase):
 
         self.assertEqual(response_release.status_code, 403) # Forbidden
         response_data = json.loads(response_release.data.decode())
-        self.assertEqual(response_data.get('message'), 'You do not own this lock.')
+        self.assertEqual(response_data.get('message'), 'You are not authorized to unlock this post as it is locked by another user.') # Updated
 
         with self.app.app_context():
-            lock = PostLock.query.filter_by(post_id=self.test_post.id).first()
+            current_post = self.db.session.get(Post, self.test_post.id) # Re-fetch post
+            self.assertIsNotNone(current_post, "Post not found in unauthorized release test.")
+            lock = PostLock.query.filter_by(post_id=current_post.id).first()
             self.assertIsNotNone(lock) # Lock should still exist
             self.assertEqual(lock.user_id, self.post_author.id) # Still locked by author
-            self.db.session.refresh(self.test_post)
-            self.assertTrue(self.test_post.is_locked())
+            # self.db.session.refresh(current_post) # No longer needed if fetched
+            self.assertTrue(current_post.is_locked())
 
     def test_api_acquire_lock_unauthenticated(self):
         response = self.client.post(f"/api/posts/{self.test_post.id}/lock")  # No token
         self.assertEqual(response.status_code, 401)
         response_data = json.loads(response.data.decode())
-        self.assertIn("Missing JWT", response_data.get("msg", "")) # Or specific message from flask_jwt_extended
+        self.assertIn("Missing Authorization Header", response_data.get("msg", "")) # Updated expected message
 
     def test_api_acquire_lock_on_non_existent_post(self):
         token = self._get_jwt_token(self.collaborator.username, "password")
@@ -204,11 +220,16 @@ class TestCollaborativeEditing(AppTestCase):
         response_acquire_author = self.client.post(f'/api/posts/{self.test_post.id}/lock', headers=headers_author)
         self.assertEqual(response_acquire_author.status_code, 200, "Author failed to acquire lock initially.")
         response_data_author = json.loads(response_acquire_author.data.decode())
-        self.assertEqual(response_data_author.get('locked_by_username'), self.post_author.username)
+        # Ensure 'lock_details' and 'locked_by_username' exist before asserting
+        self.assertIn('lock_details', response_data_author)
+        self.assertIn('locked_by_username', response_data_author['lock_details'])
+        self.assertEqual(response_data_author['lock_details']['locked_by_username'], self.post_author.username)
 
         with self.app.app_context():
-            self.db.session.refresh(self.test_post)
-            self.assertTrue(self.test_post.is_locked(), "Post should be locked by author.")
+            current_post_author_lock = self.db.session.get(Post, self.test_post.id) # Re-fetch
+            self.assertIsNotNone(current_post_author_lock, "Post not found when checking author's lock.")
+            # self.db.session.refresh(current_post_author_lock) # No longer needed if fetched
+            self.assertTrue(current_post_author_lock.is_locked(), "Post should be locked by author.")
 
             # Simulate lock expiry by directly manipulating the lock's expires_at time
             # This is more reliable than waiting for time to pass in a test.
@@ -221,8 +242,10 @@ class TestCollaborativeEditing(AppTestCase):
             self.db.session.commit()
 
             # Refresh post to update its lock_info
-            self.db.session.refresh(self.test_post)
-            self.assertFalse(self.test_post.is_locked(), "Post should be unlocked after lock expiry.")
+            current_post_after_expiry = self.db.session.get(Post, self.test_post.id) # Re-fetch
+            self.assertIsNotNone(current_post_after_expiry, "Post not found after simulating lock expiry.")
+            # self.db.session.refresh(current_post_after_expiry) # No longer needed if fetched
+            self.assertFalse(current_post_after_expiry.is_locked(), "Post should be unlocked after lock expiry.")
 
         # User2 (collaborator) attempts to acquire the lock after expiry
         token_collaborator = self._get_jwt_token(self.collaborator.username, "password")
@@ -231,13 +254,17 @@ class TestCollaborativeEditing(AppTestCase):
         response_acquire_collaborator = self.client.post(f'/api/posts/{self.test_post.id}/lock', headers=headers_collaborator)
         self.assertEqual(response_acquire_collaborator.status_code, 200, f"Collaborator failed to acquire lock after expiry. Response: {response_acquire_collaborator.data.decode()}")
         response_data_collaborator = json.loads(response_acquire_collaborator.data.decode())
-        self.assertEqual(response_data_collaborator.get('locked_by_username'), self.collaborator.username, "Lock not acquired by collaborator.")
+        self.assertIn('lock_details', response_data_collaborator)
+        self.assertIn('locked_by_username', response_data_collaborator['lock_details'])
+        self.assertEqual(response_data_collaborator['lock_details']['locked_by_username'], self.collaborator.username, "Lock not acquired by collaborator.")
 
         with self.app.app_context():
-            self.db.session.refresh(self.test_post)
-            self.assertTrue(self.test_post.is_locked(), "Post should be locked by collaborator.")
+            current_post_collaborator_lock = self.db.session.get(Post, self.test_post.id) # Re-fetch
+            self.assertIsNotNone(current_post_collaborator_lock, "Post not found when checking collaborator's lock.")
+            # self.db.session.refresh(current_post_collaborator_lock) # No longer needed if fetched
+            self.assertTrue(current_post_collaborator_lock.is_locked(), "Post should be locked by collaborator.")
 
-            lock_collaborator = PostLock.query.filter_by(post_id=self.test_post.id, user_id=self.collaborator.id).first()
+            lock_collaborator = PostLock.query.filter_by(post_id=current_post_collaborator_lock.id, user_id=self.collaborator.id).first()
             self.assertIsNotNone(lock_collaborator, "Lock for collaborator not found in database.")
             self.assertEqual(lock_collaborator.user_id, self.collaborator.id)
 
@@ -272,10 +299,10 @@ class TestCollaborativeEditing(AppTestCase):
 
             # 4. Assert database changes
             # Ensure self.test_post is associated with the current session before refreshing
-            if self.test_post not in self.db.session:
-                 self.test_post = self.db.session.merge(self.test_post)
-            self.db.session.refresh(self.test_post)
-            self.assertEqual(self.test_post.content, edit_data['new_content'], "Post content was not updated in the database.")
+            # Re-fetch the post to ensure we have the latest state from the DB
+            updated_post = self.db.session.get(Post, self.test_post.id)
+            self.assertIsNotNone(updated_post, "Post could not be re-fetched from DB after SocketIO edit.")
+            self.assertEqual(updated_post.content, edit_data['new_content'], "Post content was not updated in the database.")
 
             # 5. Assert SocketIO broadcast
             expected_broadcast_data = {

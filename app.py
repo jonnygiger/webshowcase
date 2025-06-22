@@ -91,6 +91,7 @@ from api import (
     PollVoteResource,
     PostLockResource,  # Added Poll resources
     SharedFileResource,
+    UserFeedResource, # Added UserFeedResource
 )
 from recommendations import (
     suggest_users_to_follow,
@@ -261,6 +262,7 @@ api.add_resource(
     PostLockResource, "/api/posts/<int:post_id>/lock"
 )  # Route for locking/unlocking posts
 api.add_resource(SharedFileResource, '/api/files/<int:file_id>') # Route for deleting shared files
+api.add_resource(UserFeedResource, "/api/users/<int:user_id>/feed") # Added route for UserFeedResource
 
 # Scheduler for periodic tasks
 scheduler = BackgroundScheduler()

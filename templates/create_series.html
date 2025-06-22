@@ -4,21 +4,39 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Create New Series</h2>
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-7">
+            <h2 class="mb-4 pb-2 border-bottom">Create New Series</h2>
 
-    {% include '_flash_messages.html' %}
+            {% include '_flash_messages.html' %}
 
-    <form method="POST" action="{{ url_for('create_series') }}">
-        <div class="mb-3">
-            <label for="title" class="form-label">Title</label>
-            <input type="text" class="form-control" id="title" name="title" required>
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('create_series') }}">
+                        {# {{ form.hidden_tag() if form and form.hidden_tag }} #}
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Series Title</label>
+                            <input type="text" class="form-control" id="title" name="title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="5" placeholder="What is this series about?"></textarea>
+                        </div>
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                            <a href="{{ url_for('blog') }}" class="btn btn-outline-secondary me-md-2">Cancel</a>
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-collection-fill"></i> Create Series
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
-        <div class="mb-3">
-            <label for="description" class="form-label">Description</label>
-            <textarea class="form-control" id="description" name="description" rows="5"></textarea>
-        </div>
-        <button type="submit" class="btn btn-primary">Create Series</button>
-        <a href="{{ url_for('hello_world') }}" class="btn btn-secondary">Cancel</a>
-    </form>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# Ensure Bootstrap Icons are loaded if not already in base.html #}
 {% endblock %}

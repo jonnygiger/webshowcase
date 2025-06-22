@@ -4,17 +4,49 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Create a New Group</h2>
-    <form method="POST" action="{{ url_for('create_group') }}">
-        <div class="mb-3">
-            <label for="name" class="form-label">Group Name</label>
-            <input type="text" class="form-control" id="name" name="name" required>
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-7">
+            <h2 class="mb-4 pb-2 border-bottom">Create a New Group</h2>
+
+            {# Flashed messages can be handled here or globally in base.html #}
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('create_group') }}">
+                        {# Add CSRF token if using Flask-WTF or similar #}
+                        {# {{ form.hidden_tag() if form and form.hidden_tag }} #}
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Group Name</label>
+                            <input type="text" class="form-control" id="name" name="name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="4" placeholder="What is this group about?"></textarea>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-people-fill"></i> Create Group
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
-        <div class="mb-3">
-            <label for="description" class="form-label">Description</label>
-            <textarea class="form-control" id="description" name="description" rows="3"></textarea>
-        </div>
-        <button type="submit" class="btn btn-primary">Create Group</button>
-    </form>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# Ensure Bootstrap Icons are loaded if not already in base.html #}
 {% endblock %}

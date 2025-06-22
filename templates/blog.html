@@ -6,99 +6,107 @@
 <div class="container mt-4">
     <div class="row">
         <!-- Main Blog Content -->
-        <div class="col-md-9">
-            <h1 class="mb-4">Blog Posts</h1>
+        <div class="col-lg-9 col-md-8">
+            <h1 class="mb-4 border-bottom pb-2">Blog Posts</h1>
 
-            {% with messages = get_flashed_messages(with_categories=true) %}
-              {% if messages %}
-                {% for category, message in messages %}
-                  <div class="alert alert-{{ category }}">{{ message }}</div>
-                {% endfor %}
-              {% endif %}
-            {% endwith %}
+            {# Flash messages are already handled in base.html, no need to repeat here unless specific placement is desired #}
 
             {% if posts %}
-              {% for post_item in posts %} {# Renamed post to post_item to match variable from instructions #}
-                <div class="card mb-3"> {# Using card styling from instructions #}
+              {% for post_item in posts %}
+                <div class="card mb-4 shadow-sm">
                     <div class="card-body">
-                        <h5 class="card-title"><a href="{{ url_for('view_post', post_id=post_item.id) }}">{{ post_item.title }}</a></h5>
-                        <p><small>By <a href="{{ url_for('user_profile', username=post_item.author.username) }}">{{ post_item.author.username }}</a> on {{ post_item.timestamp.strftime('%Y-%m-%d %H:%M') }}
-                          {% if post_item.last_edited %}
-                            (Edited: {{ post_item.last_edited.strftime('%Y-%m-%d %H:%M') }})
-                          {% endif %}
-                          | {{ post_item.likes|length }} like(s) | {{ post_item.shares.count() if post_item.shares else 0 }} Share(s)
-                          <br>
-                          Average Rating:
-                            {% if post_item.review_count > 0 %}
-                                {{ "%.1f" | format(post_item.average_rating) }}/5 ({{ post_item.review_count }} review{% if post_item.review_count != 1 %}s{% endif %})
-                            {% else %}
-                                No reviews yet.
-                            {% endif %}
-                        </small></p>
-                        <p class="card-text">{{ post_item.content[:200] }}{% if post_item.content|length > 200 %}...{% endif %}</p>
+                        <h4 class="card-title"><a href="{{ url_for('view_post', post_id=post_item.id) }}" class="text-decoration-none">{{ post_item.title }}</a></h4>
+                        <p class="card-subtitle mb-2 text-muted">
+                            <small>
+                                By <a href="{{ url_for('user_profile', username=post_item.author.username) }}" class="text-decoration-none">{{ post_item.author.username }}</a>
+                                on {{ post_item.timestamp.strftime('%Y-%m-%d %H:%M') }}
+                                {% if post_item.last_edited %}
+                                    (Edited: {{ post_item.last_edited.strftime('%Y-%m-%d %H:%M') }})
+                                {% endif %}
+                                <br>
+                                {{ post_item.likes|length }} <i class="bi bi-hand-thumbs-up"></i> like(s) |
+                                {{ post_item.shares.count() if post_item.shares else 0 }} <i class="bi bi-share"></i> Share(s)
+                                <br>
+                                Average Rating:
+                                {% if post_item.review_count > 0 %}
+                                    {{ "%.1f" | format(post_item.average_rating) }}/5
+                                    ({{ post_item.review_count }} review{% if post_item.review_count != 1 %}s{% endif %})
+                                {% else %}
+                                    No reviews yet.
+                                {% endif %}
+                            </small>
+                        </p>
+                        <p class="card-text">{{ post_item.content[:250] }}{% if post_item.content|length > 250 %}... <a href="{{ url_for('view_post', post_id=post_item.id) }}">Read more</a>{% endif %}</p>
                         {% if post_item.hashtags %}
-                            <p>
+                            <div class="mb-2">
                                 {% for tag in post_item.hashtags.split(',') %}
                                     {% set cleaned_tag = tag.strip() %}
                                     {% if cleaned_tag %}
-                                        <a href="{{ url_for('view_hashtag_posts', tag=cleaned_tag) }}">#{{ cleaned_tag }}</a>
+                                        <a href="{{ url_for('view_hashtag_posts', tag=cleaned_tag) }}" class="badge bg-secondary text-decoration-none me-1">#{{ cleaned_tag }}</a>
                                     {% endif %}
                                 {% endfor %}
-                            </p>
+                            </div>
                         {% endif %}
-                        <p><a href="{{ url_for('view_post', post_id=post_item.id) }}" class="btn btn-primary btn-sm">Read More</a>
-                        {% if current_user and current_user.id == post_item.user_id %}
-                          <a href="{{ url_for('edit_post', post_id=post_item.id) }}" class="btn btn-sm btn-outline-secondary" style="margin-left: 10px;">Edit</a>
-                        {% endif %}
-                        {% if current_user %} {# Assuming current_user is available from context_processor #}
-                          <form action="{{ url_for('bookmark_post', post_id=post_item.id) }}" method="POST" style="display: inline; margin-left: 10px;">
-                              <button type="submit" class="btn btn-sm {% if post_item.id in bookmarked_post_ids %}btn-info{% else %}btn-outline-info{% endif %}">
-                                  {% if post_item.id in bookmarked_post_ids %}
-                                      Unbookmark
-                                  {% else %}
-                                      Bookmark
-                                  {% endif %}
-                              </button>
-                          </form>
-                          <form action="{{ url_for('share_post', post_id=post_item.id) }}" method="POST" style="display: inline; margin-left: 10px;">
-                              <button type="submit" class="btn btn-sm btn-outline-success">Share</button>
-                          </form>
-                        {% endif %}
-                        </p>
+                        <div class="mt-2">
+                            <a href="{{ url_for('view_post', post_id=post_item.id) }}" class="btn btn-primary btn-sm">
+                                <i class="bi bi-book-fill"></i> Read More
+                            </a>
+                            {% if current_user and current_user.id == post_item.user_id %}
+                              <a href="{{ url_for('edit_post', post_id=post_item.id) }}" class="btn btn-sm btn-outline-secondary ms-2">
+                                  <i class="bi bi-pencil-square"></i> Edit
+                              </a>
+                            {% endif %}
+                            {% if current_user %}
+                              <form action="{{ url_for('bookmark_post', post_id=post_item.id) }}" method="POST" class="d-inline ms-2">
+                                  <button type="submit" class="btn btn-sm {% if post_item.id in bookmarked_post_ids %}btn-info{% else %}btn-outline-info{% endif %}">
+                                      <i class="bi bi-bookmark-star{{ '-fill' if post_item.id in bookmarked_post_ids else '' }}"></i>
+                                      {{ 'Unbookmark' if post_item.id in bookmarked_post_ids else 'Bookmark' }}
+                                  </button>
+                              </form>
+                              <form action="{{ url_for('share_post', post_id=post_item.id) }}" method="POST" class="d-inline ms-2">
+                                  <button type="submit" class="btn btn-sm btn-outline-success">
+                                      <i class="bi bi-share-fill"></i> Share
+                                  </button>
+                              </form>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
               {% endfor %}
             {% else %}
-              <p>No blog posts yet. <a href="{{ url_for('create_post') }}">Be the first to create one!</a></p>
+              <div class="alert alert-info" role="alert">
+                No blog posts yet. <a href="{{ url_for('create_post') }}" class="alert-link">Be the first to create one!</a>
+              </div>
             {% endif %}
         </div>
 
-        <!-- Sidebar for Recommendations Snippet -->
-        <div class="col-md-3">
-            {% if current_user and suggested_users_snippet %}
-            <div class="card sticky-top" style="top: 20px;"> <!-- sticky-top for sidebar effect -->
-                <div class="card-body">
-                    <h5 class="card-title">Suggested Users</h5>
-                    <div class="list-group list-group-flush">
-                        {% for user_suggestion in suggested_users_snippet %}
-                        <a href="{{ url_for('user_profile', username=user_suggestion.username) }}" class="list-group-item list-group-item-action">
-                            <img src="{{ user_suggestion.profile_picture or url_for('static', filename='profile_pics/default.png') }}" alt="{{ user_suggestion.username }}'s profile picture" class="rounded-circle me-2" style="width: 25px; height: 25px;">
-                            {{ user_suggestion.username }}
-                        </a>
-                        {% endfor %}
+        <!-- Sidebar -->
+        <div class="col-lg-3 col-md-4">
+            <div class="sticky-top" style="top: 70px;"> {# Adjusted top for fixed navbar height #}
+                {% if current_user and suggested_users_snippet %}
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Suggested Users</h5>
+                        <div class="list-group list-group-flush">
+                            {% for user_suggestion in suggested_users_snippet %}
+                            <a href="{{ url_for('user_profile', username=user_suggestion.username) }}" class="list-group-item list-group-item-action d-flex align-items-center">
+                                <img src="{{ user_suggestion.profile_picture or url_for('static', filename='profile_pics/default.png') }}" alt="{{ user_suggestion.username }}'s profile picture" class="rounded-circle me-2" style="width: 30px; height: 30px; object-fit: cover;">
+                                <span class="text-truncate">{{ user_suggestion.username }}</span>
+                            </a>
+                            {% endfor %}
+                        </div>
+                        <a href="{{ url_for('recommendations_view') }}" class="btn btn-sm btn-outline-primary mt-2 w-100">See More Recommendations</a>
                     </div>
-                    <a href="{{ url_for('recommendations_view') }}" class="btn btn-sm btn-outline-primary mt-2">See More Recommendations</a>
                 </div>
-            </div>
-            {% endif %}
+                {% endif %}
 
-            <div class="trending-hashtags-section card mt-3 sticky-top" style="top: 80px;"> <!-- Adjust top value if needed -->
-                <div class="card-body">
-                    <h4>Trending Hashtags</h4>
-                    <ul id="trending-hashtags-list" class="list-group list-group-flush">
-                        <!-- Hashtags will be loaded here by JavaScript -->
-                        <li class="list-group-item">Loading...</li>
-                    </ul>
+                <div class="trending-hashtags-section card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Trending Hashtags</h5>
+                        <ul id="trending-hashtags-list" class="list-group list-group-flush">
+                            <li class="list-group-item">Loading...</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>
@@ -106,48 +114,53 @@
 </div>
 
 {% block scripts %}
-
+{{ super() }} {# Ensure Bootstrap Icons are loaded if not already in base.html #}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const hashtagsList = document.getElementById('trending-hashtags-list');
-    fetch('/api/trending_hashtags')
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            hashtagsList.innerHTML = ''; // Clear "Loading..."
-            if (data.trending_hashtags && data.trending_hashtags.length > 0) {
-                data.trending_hashtags.forEach(item => {
+    if (hashtagsList) { // Check if the element exists
+        fetch('/api/trending_hashtags')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                hashtagsList.innerHTML = ''; // Clear "Loading..."
+                if (data.trending_hashtags && data.trending_hashtags.length > 0) {
+                    data.trending_hashtags.forEach(item => {
+                        const listItem = document.createElement('li');
+                        listItem.classList.add('list-group-item', 'd-flex', 'justify-content-between', 'align-items-center');
+                        const link = document.createElement('a');
+                        link.href = `/hashtag/${encodeURIComponent(item.hashtag)}`;
+                        link.textContent = `#${item.hashtag}`;
+                        link.classList.add('text-decoration-none');
+                        // Optionally, display score or rank as a badge:
+                        // const scoreBadge = document.createElement('span');
+                        // scoreBadge.classList.add('badge', 'bg-primary', 'rounded-pill');
+                        // scoreBadge.textContent = item.score.toFixed(2);
+                        // listItem.appendChild(link);
+                        // listItem.appendChild(scoreBadge);
+                        listItem.appendChild(link); // Simplified for now
+                        hashtagsList.appendChild(listItem);
+                    });
+                } else {
                     const listItem = document.createElement('li');
                     listItem.classList.add('list-group-item');
-                    const link = document.createElement('a');
-                    link.href = `/hashtag/${encodeURIComponent(item.hashtag)}`;
-                    link.textContent = `#${item.hashtag}`;
-                    // Optionally, display score or rank:
-                    // link.textContent += ` (Score: ${item.score.toFixed(2)})`;
-                    listItem.appendChild(link);
+                    listItem.textContent = 'No trending hashtags at the moment.';
                     hashtagsList.appendChild(listItem);
-                });
-            } else {
+                }
+            })
+            .catch(error => {
+                hashtagsList.innerHTML = ''; // Clear "Loading..."
                 const listItem = document.createElement('li');
-                listItem.classList.add('list-group-item');
-                listItem.textContent = 'No trending hashtags at the moment.';
+                listItem.classList.add('list-group-item', 'text-danger');
+                listItem.textContent = 'Error loading trending hashtags.';
                 hashtagsList.appendChild(listItem);
-            }
-        })
-        .catch(error => {
-            hashtagsList.innerHTML = ''; // Clear "Loading..."
-            const listItem = document.createElement('li');
-            listItem.classList.add('list-group-item');
-            listItem.classList.add('text-danger');
-            listItem.textContent = 'Error loading trending hashtags.';
-            hashtagsList.appendChild(listItem);
-            console.error('Error fetching trending hashtags:', error);
-        });
+                console.error('Error fetching trending hashtags:', error);
+            });
+    }
 });
 </script>
 {% endblock %}
-{% endblock %} {# Closes content block #}

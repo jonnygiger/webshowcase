@@ -4,41 +4,63 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Create New Event</h2>
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-7">
+            <h2 class="mb-4 pb-2 border-bottom">Create New Event</h2>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            {# Flashed messages are typically handled in base.html, but can be kept if specific placement is needed. #}
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('create_event') }}">
+                        {# Add CSRF token if using Flask-WTF or similar #}
+                        {# {{ form.hidden_tag() if form and form.hidden_tag }} #}
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Event Title</label>
+                            <input type="text" class="form-control" id="title" name="title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="4"></textarea>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="event_date" class="form-label">Event Date</label>
+                                <input type="date" class="form-control" id="event_date" name="event_date" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="event_time" class="form-label">Event Time</label>
+                                <input type="time" class="form-control" id="event_time" name="event_time">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="location" class="form-label">Location</label>
+                            <input type="text" class="form-control" id="location" name="location" placeholder="e.g., Online, Conference Hall A">
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-calendar-plus-fill"></i> Create Event
+                            </button>
+                        </div>
+                    </form>
                 </div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
-
-    <form method="POST" action="{{ url_for('create_event') }}">
-        <div class="mb-3">
-            <label for="title" class="form-label">Event Title</label>
-            <input type="text" class="form-control" id="title" name="title" required>
+            </div>
         </div>
-        <div class="mb-3">
-            <label for="description" class="form-label">Description</label>
-            <textarea class="form-control" id="description" name="description" rows="3"></textarea>
-        </div>
-        <div class="mb-3">
-            <label for="event_date" class="form-label">Event Date</label>
-            <input type="date" class="form-control" id="event_date" name="event_date" required>
-        </div>
-        <div class="mb-3">
-            <label for="event_time" class="form-label">Event Time</label>
-            <input type="time" class="form-control" id="event_time" name="event_time">
-        </div>
-        <div class="mb-3">
-            <label for="location" class="form-label">Location</label>
-            <input type="text" class="form-control" id="location" name="location">
-        </div>
-        <button type="submit" class="btn btn-primary">Create Event</button>
-    </form>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# Ensure Bootstrap Icons are loaded if not already in base.html #}
 {% endblock %}

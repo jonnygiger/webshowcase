@@ -4,22 +4,40 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>All Groups</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <h2 class="mb-0">All Groups</h2>
+        <a href="{{ url_for('create_group') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle-fill"></i> Create New Group
+        </a>
+    </div>
+
+    {% include '_flash_messages.html' %}
+
     {% if groups %}
-        <ul class="list-group">
+        <div class="list-group">
             {% for group in groups %}
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <a href="{{ url_for('view_group', group_id=group.id) }}"><h5>{{ group.name }}</h5></a>
-                        <p>{{ group.description|truncate(100) if group.description else 'No description provided.' }}</p>
-                        <small>Created by: {{ group.creator.username }} on {{ group.created_at.strftime('%Y-%m-%d') }}</small>
+                <a href="{{ url_for('view_group', group_id=group.id) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center mb-3 shadow-sm p-3">
+                    <div class="flex-grow-1 me-3">
+                        <h5 class="mb-1">{{ group.name }}</h5>
+                        <p class="mb-1 text-muted">{{ group.description|truncate(120) if group.description else 'No description provided.' }}</p>
+                        <small class="text-body-secondary">
+                            Created by: {{ group.creator.username }} on {{ group.created_at.strftime('%b %d, %Y') }}
+                        </small>
                     </div>
-                    <span class="badge bg-primary rounded-pill">{{ group.members.count() }} member(s)</span>
-                </li>
+                    <span class="badge bg-primary rounded-pill fs-6">{{ group.members.count() }} Member{{ 's' if group.members.count() != 1 else '' }}</span>
+                </a>
             {% endfor %}
-        </ul>
+        </div>
     {% else %}
-        <p>No groups have been created yet. <a href="{{ url_for('create_group') }}">Create one now!</a></p>
+        <div class="alert alert-info mt-3" role="alert">
+            <h4 class="alert-heading">No Groups Yet!</h4>
+            <p>No groups have been created yet. Be the first to <a href="{{ url_for('create_group') }}" class="alert-link">create one now!</a></p>
+        </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# Ensure Bootstrap Icons are loaded #}
 {% endblock %}

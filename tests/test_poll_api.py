@@ -543,8 +543,9 @@ class TestPollAPI(AppTestCase):
         # A more robust way would be to use an HTML parser, but for this, string finding should be okay.
         # We expect something like: <li>RenderOpt1 ... <span ...>2 vote(s)</span></li>
         # This can be fragile. Let's check for the specific badge text.
-        self.assertRegex(html_content, r"RenderOpt1.*?<span.*?badge.*?>\s*2\s*vote\(s\)\s*</span>", "Vote count for RenderOpt1 not rendered correctly or not found.")
-        self.assertRegex(html_content, r"RenderOpt2.*?<span.*?badge.*?>\s*1\s*vote\(s\)\s*</span>", "Vote count for RenderOpt2 not rendered correctly or not found.")
+        # Using re.DOTALL equivalent for .*? to match across newlines: [\s\S]*?
+        self.assertRegex(html_content, r"RenderOpt1[\s\S]*?<span[^>]*class=[\"'][^\"']*badge[^\"']*[\"'][^>]*>\s*2\s*vote\(s\)\s*</span>", "Vote count for RenderOpt1 not rendered correctly or not found.")
+        self.assertRegex(html_content, r"RenderOpt2[\s\S]*?<span[^>]*class=[\"'][^\"']*badge[^\"']*[\"'][^>]*>\s*1\s*vote\(s\)\s*</span>", "Vote count for RenderOpt2 not rendered correctly or not found.")
 
 
         # Check progress bar percentages (approximate)

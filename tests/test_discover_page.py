@@ -62,7 +62,7 @@ class TestDiscoverPageViews(AppTestCase):
         response_data = response.get_data(as_text=True)
 
         # Check for the reason string
-        self.assertIn(f"Recommended because: {mock_reason}", response_data)
+        self.assertIn(f"Recommended: {mock_reason}", response_data)
         # Check for post details
         self.assertIn(mock_post.title, response_data)
         self.assertIn(mock_post.author.username, response_data)
@@ -129,7 +129,7 @@ class TestDiscoverPageViews(AppTestCase):
         self.assertIn(mock_post.title, response_data)
         self.assertIn(mock_post.author.username, response_data)
         self.assertIn(mock_post.content[:50], response_data)  # Check for a snippet
-        self.assertIn(f"Recommended because: {mock_reason}", response_data)
+        self.assertIn(f"Recommended: {mock_reason}", response_data)
 
         # Assert that the mock was called correctly
         mock_get_personalized_feed_posts.assert_called_once_with(
@@ -193,7 +193,7 @@ class TestDiscoverPageViews(AppTestCase):
         )
 
         # Assert that the recommendation reason is in the response data
-        self.assertIn(f"Recommended because: {mock_reason}", response_data)
+        self.assertIn(f"Recommended: {mock_reason}", response_data)
 
         self.logout()
 

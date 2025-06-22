@@ -5,7 +5,7 @@
 {% block content %}
 <div class="container mt-4">
     <h3>{{ poll.question }}</h3>
-    <p class="text-muted">Created by: {{ poll.author_username }} on {{ poll.created_at }}</p>
+    <p class="text-muted">Created by: {{ poll.author.username if poll.author else 'Unknown User' }} on {{ poll.created_at }}</p>
     <hr>
 
     {% if not session.logged_in %}

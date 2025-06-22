@@ -242,6 +242,10 @@ class AppTestCase(unittest.TestCase):
                 except Exception as e:
                     print(f"Failed to delete {file_path}. Reason: {e}")
 
+        # Ensure the main socketio_client for the test case is disconnected
+        if hasattr(self, 'socketio_client') and self.socketio_client and self.socketio_client.is_connected():
+            self.socketio_client.disconnect()
+
     def _setup_base_users(self):
         # This method is problematic without live User model and db session.
         # Called in setUp, which is now simplified. Kept for reference.
@@ -356,14 +360,26 @@ class AppTestCase(unittest.TestCase):
             socket_client_to_connect = self.socketio_client
 
         if socket_client_to_connect:
-            if socket_client_to_connect.is_connected():
+            if socket_client_to_connect.is_connected(): # Check if connected to any namespace
                 socket_client_to_connect.disconnect()
-            socket_client_to_connect.connect()  # Connect (or reconnect) to the default namespace
-            time.sleep(
-                0.1
-            )  # Allow time for connection to establish fully on server side
-            # Try to process any connection acknowledgment packets
-            socket_client_to_connect.get_received("/")
+            # Connect (or reconnect) to the default namespace
+            # The connect call itself might need a specific namespace if not defaulting correctly or if issues persist.
+            socket_client_to_connect.connect(namespace='/') # Explicitly connect to default namespace
+
+            # Try to ensure all initial connection messages are processed
+            # Loop get_received until it returns an empty list or a timeout
+            start_time = time.time()
+            while time.time() - start_time < 0.5: # Max wait 0.5s for connect events
+                # If get_received returns immediately with an empty list, it means no messages were pending.
+                # The original get_received() would block if no messages, this loop is more for flushing.
+                # A simple get_received() might be sufficient if it correctly blocks/waits.
+                # However, let's try to ensure any connect-related packets are cleared.
+                if not socket_client_to_connect.get_received(namespace='/'): # Non-blocking if empty after a moment
+                    break
+                time.sleep(0.01) # Small pause to prevent tight loop if get_received is non-blocking when empty
+
+            # An additional sleep just in case server-side processing needs a moment after client processes acks
+            time.sleep(0.1)
 
         return response
 

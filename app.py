@@ -2411,7 +2411,7 @@ def handle_edit_post_content(data):
         emit(
             "edit_error",
             {"message": "Post is not locked for editing. Please acquire a lock first."},
-            room=request.sid,
+            room=request.sid, # Emit to the sender
         )
         return
 

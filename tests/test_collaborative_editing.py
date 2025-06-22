@@ -1,5 +1,6 @@
 import unittest
 import json
+import time # Import the time module
 from unittest.mock import patch, call, ANY, MagicMock  # Added MagicMock here
 from datetime import datetime, timedelta, timezone
 
@@ -348,21 +349,85 @@ class TestCollaborativeEditing(AppTestCase):
 
             # 6. Clean up (socketio_client disconnect is handled in tearDown)
 
-    def test_socketio_edit_post_without_lock(self):
-        # with app.app_context():
-        # PostLock.query.delete() # Requires live DB
-        # db.session.commit()
-        # ... (simulate socketio client and event) ...
-        pass  # Placeholder
+    @patch("app.socketio.emit") # Mock for app-level emits (broadcasts)
+    def test_socketio_edit_post_without_lock(self, mock_app_socketio_emit):
+        with self.app.app_context():
+            # 1. Ensure the post is not locked
+            # Delete any existing locks on the test_post to be certain
+            PostLock.query.filter_by(post_id=self.test_post.id).delete()
+            self.db.session.commit()
 
-    @patch("app.socketio.emit")
-    def test_socketio_lock_acquired_broadcast_from_api(self, mock_app_socketio_emit_lock_api): # Changed mock name to avoid conflict
+            # Verify post is indeed not locked (refresh might be needed if Post.is_locked relies on lazy loaded lock_info)
+            current_post_state = self.db.session.get(Post, self.test_post.id)
+            self.assertIsNotNone(current_post_state, "Test post not found before edit attempt without lock.")
+            self.assertFalse(current_post_state.is_locked(), "Post should be unlocked at the start of the test.")
+            original_content = current_post_state.content
+
+            # 2. Attempt to edit without a lock
+            # User `self.collaborator` attempts to edit.
+            token_collaborator = self._get_jwt_token(self.collaborator.username, "password")
+            edit_data = {
+                'post_id': self.test_post.id,
+                'new_content': 'Content edit attempt without lock.',
+                'token': token_collaborator
+            }
+
+            # Ensure a fresh, connected client right before the emit
+            if self.socketio_client and self.socketio_client.connected:
+                self.socketio_client.disconnect()
+            self.socketio_client = self.socketio_class_level.test_client(self.app, flask_test_client=self.client)
+            self.assertTrue(self.socketio_client.is_connected(), "SocketIO client failed to connect for edit attempt.")
+
+            # Clear any old received messages
+            self.socketio_client.get_received()
+
+            self.socketio_client.emit('edit_post_content', edit_data)
+
+            # Give a moment for the server to process and respond.
+            # SocketIO Test Client's get_received can block, but a small sleep might still be needed in some CI/test environments.
+            # Let's try with a slightly shorter sleep, relying more on get_received's blocking nature if it has one.
+            time.sleep(0.1) # Reverted from self.socketio_client.sleep
+
+            # 3. Assert 'edit_error' was received by the client
+            received_events = self.socketio_client.get_received()
+            edit_error_event = None
+            for event in received_events:
+                if event['name'] == 'edit_error':
+                    edit_error_event = event
+                    break
+
+            self.assertIsNotNone(edit_error_event, f"'edit_error' event was not received by the client. Received: {received_events}")
+            self.assertIn('args', edit_error_event)
+            self.assertTrue(len(edit_error_event['args']) > 0, "No arguments in edit_error event.")
+            error_data = edit_error_event['args'][0]
+            self.assertIn('message', error_data)
+            self.assertEqual(error_data['message'], "Post is not locked for editing. Please acquire a lock first.")
+
+            # 4. Assert database content is unchanged
+            post_after_attempt = self.db.session.get(Post, self.test_post.id)
+            self.assertIsNotNone(post_after_attempt, "Post not found after edit attempt.")
+            self.assertEqual(post_after_attempt.content, original_content, "Post content should not have changed.")
+
+            # 5. Assert no 'post_content_updated' broadcast occurred
+            # mock_app_socketio_emit is for app.socketio.emit (broadcasts)
+            for call_args in mock_app_socketio_emit.call_args_list:
+                event_name_called = call_args[0][0]
+                self.assertNotEqual(event_name_called, 'post_content_updated',
+                                    f"'post_content_updated' should not have been broadcast. Calls: {mock_app_socketio_emit.call_args_list}")
+
+            # Clean up listener
+            # self.socketio_client.remove_event_handler('edit_error', on_edit_error) # .on is not available
+
+
+    @patch("flask_socketio.SocketIO.emit") # Try patching the base class method
+    def test_socketio_lock_acquired_broadcast_from_api(self, mock_socketio_emit_class_method):
         token = self._get_jwt_token(self.collaborator.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
 
         response = self.client.post(f'/api/posts/{self.test_post.id}/lock', headers=headers)
 
         self.assertEqual(response.status_code, 200, f"Failed to acquire lock: {response.data.decode()}")
+        time.sleep(0.1) # Allow a moment for the emit to be processed, just in case
 
         expected_data = {
             'post_id': self.test_post.id,
@@ -370,11 +435,35 @@ class TestCollaborativeEditing(AppTestCase):
             'username': self.collaborator.username,
             'expires_at': ANY  # We use ANY for the expiry time as it's dynamic
         }
-        mock_app_socketio_emit_lock_api.assert_called_once_with( # Changed mock name
-            'post_lock_acquired',
-            expected_data,
-            room=f'post_{self.test_post.id}'
-        )
+        expected_room = f'post_{self.test_post.id}'
+
+        # self.app.logger.debug(f"Asserting with expected_data: {expected_data}, expected_room: {expected_room}")
+        # self.app.logger.debug(f"Actual calls to mock: {mock_socketio_emit_class_method.call_args_list}")
+
+        self.assertEqual(mock_socketio_emit_class_method.call_count, 1,
+                         f"Expected emit to be called once. Actual calls: {mock_socketio_emit_class_method.call_args_list}")
+
+        # Get the single call
+        actual_call = mock_socketio_emit_class_method.call_args_list[0]
+
+        # If mock is on Class.method, call_args.args does not include 'self'.
+        # So, call_args.args should be (event_name, data_dict, ...)
+        # and call_args.kwargs includes other kwargs like 'room'.
+
+        # Check event name (first positional argument to emit)
+        self.assertEqual(actual_call.args[0], 'post_lock_acquired')
+
+        # Check room (from keyword arguments)
+        self.assertEqual(actual_call.kwargs.get('room'), expected_room)
+
+        # Check data dictionary (second positional argument to emit)
+        actual_data_dict = actual_call.args[1]
+        self.assertEqual(actual_data_dict.get('post_id'), expected_data['post_id'])
+        self.assertEqual(actual_data_dict.get('user_id'), expected_data['user_id'])
+        self.assertEqual(actual_data_dict.get('username'), expected_data['username'])
+        self.assertIn('expires_at', actual_data_dict) # Check for presence of expires_at
+        # Optionally, validate the format of expires_at if needed, but ANY covers its value.
+
 
     @patch("app.socketio.emit")
     def test_socketio_lock_released_broadcast_from_api(self, mock_app_socketio_emit_release_api): # Changed mock name

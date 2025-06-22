@@ -979,7 +979,7 @@ class ChatRoomMessagesResource(Resource):
         )  # Default 20 messages per page
 
         messages_query = ChatMessage.query.filter_by(room_id=room_id).order_by(
-            ChatMessage.timestamp.desc()
+            ChatMessage.timestamp.desc(), ChatMessage.id.desc()
         )
         paginated_messages = messages_query.paginate(
             page=page, per_page=per_page, error_out=False

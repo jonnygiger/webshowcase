@@ -658,20 +658,31 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     Excludes posts by the user, or already interacted with/bookmarked by the user.
     """
     db_ext = current_app.extensions['sqlalchemy'] # Use db_ext
-    current_user = db_ext.session.get(User, user_id)
-    if not current_user:
-        return []
+    current_user = None
+    if user_id is not None:
+        current_user = db_ext.session.get(User, user_id)
+        # It's possible a user_id is provided but the user doesn't exist (e.g., deleted).
+        # In this case, we might still want to show generic trending posts,
+        # or return [], depending on desired behavior. For now, proceed as if guest.
+        # If user_id is provided but user not found, current_user remains None.
 
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=since_days)
+    cutoff_date_aware = datetime.now(timezone.utc) - timedelta(days=since_days)
+    cutoff_date_naive = cutoff_date_aware.replace(tzinfo=None)
 
     # 1. Exclusions: Posts by the user, liked, commented, or bookmarked by the user
-    user_liked_post_ids = {
-        like.post_id for like in Like.query.filter_by(user_id=user_id).all()
-    }
-    user_commented_post_ids = {
-        comment.post_id for comment in Comment.query.filter_by(user_id=user_id).all()
-    }
-    user_bookmarked_post_ids = {bookmark.post_id for bookmark in current_user.bookmarks}
+    user_liked_post_ids = set()
+    user_commented_post_ids = set()
+    user_bookmarked_post_ids = set()
+
+    if user_id is not None: # Only fetch user-specific exclusions if user_id is provided
+        user_liked_post_ids = {
+            like.post_id for like in Like.query.filter_by(user_id=user_id).all()
+        }
+        user_commented_post_ids = {
+            comment.post_id for comment in Comment.query.filter_by(user_id=user_id).all()
+        }
+        if current_user: # current_user might be None if user_id was provided but user not found
+            user_bookmarked_post_ids = {bookmark.post_id for bookmark in current_user.bookmarks}
 
     excluded_post_ids = user_liked_post_ids.union(user_commented_post_ids).union(
         user_bookmarked_post_ids
@@ -684,24 +695,24 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     #    - Having shares within since_days
 
     # Posts created recently
-    recent_posts_query = Post.query.filter(Post.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None))
+    recent_posts_query = Post.query.filter(Post.timestamp >= cutoff_date_naive)
 
     # Posts with recent likes
     posts_with_recent_likes_ids = (
-        db.session.query(Like.post_id).filter(Like.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None)).distinct()
+        db.session.query(Like.post_id).filter(Like.timestamp >= cutoff_date_naive).distinct()
     )
 
     # Posts with recent comments
     posts_with_recent_comments_ids = (
         db.session.query(Comment.post_id)
-        .filter(Comment.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None))
+        .filter(Comment.timestamp >= cutoff_date_naive)
         .distinct()
     )
 
     # Posts with recent shares
     posts_with_recent_shares_ids = (
         db.session.query(SharedPost.original_post_id)
-        .filter(SharedPost.shared_at.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None))
+        .filter(SharedPost.shared_at >= cutoff_date_naive)
         .distinct()
     )
 
@@ -736,7 +747,7 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     recent_likes_counts = (
         db.session.query(Like.post_id, func.count(Like.id).label("like_count"))
         .filter(
-            Like.post_id.in_(valid_candidate_post_ids), Like.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None)
+            Like.post_id.in_(valid_candidate_post_ids), Like.timestamp >= cutoff_date_naive
         )
         .group_by(Like.post_id)
         .all()
@@ -747,7 +758,7 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
         db.session.query(Comment.post_id, func.count(Comment.id).label("comment_count"))
         .filter(
             Comment.post_id.in_(valid_candidate_post_ids),
-            Comment.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None),
+            Comment.timestamp >= cutoff_date_naive,
         )
         .group_by(Comment.post_id)
         .all()
@@ -760,7 +771,7 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
         )
         .filter(
             SharedPost.original_post_id.in_(valid_candidate_post_ids),
-            SharedPost.shared_at.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None),
+            SharedPost.shared_at >= cutoff_date_naive,
         )
         .group_by(SharedPost.original_post_id)
         .all()
@@ -783,11 +794,11 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
         # Post age factor: higher for newer posts within the window
         # This gives a small bonus to newer posts.
         # The score is higher if the post is more recent (smaller age_in_days_within_window)
-        # We consider the age from the start of the window (cutoff_date) or its actual creation if newer.
+        # We consider the age from the start of the window (cutoff_date_naive) or its actual creation if newer.
         # Or simply its age from now, normalized by since_days.
 
-        post_timestamp_aware = post.timestamp.replace(tzinfo=timezone.utc)
-        post_age_days = (datetime.now(timezone.utc) - post_timestamp_aware).days
+        # Assuming post.timestamp is naive UTC from the database
+        post_age_days = (datetime.utcnow() - post.timestamp).days # Compare naive with naive
         if post_age_days < 0:
             post_age_days = 0  # Should not happen
 
@@ -832,8 +843,9 @@ def update_trending_hashtags(top_n=10, since_days=7):
         f"Starting update_trending_hashtags job. Top N: {top_n}, Since Days: {since_days}"
     )
     try:
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=since_days)
-        recent_posts = Post.query.filter(Post.timestamp.replace(tzinfo=None) >= cutoff_date.replace(tzinfo=None)).all()
+        cutoff_date_aware = datetime.now(timezone.utc) - timedelta(days=since_days)
+        cutoff_date_naive = cutoff_date_aware.replace(tzinfo=None)
+        recent_posts = Post.query.filter(Post.timestamp >= cutoff_date_naive).all()
 
         if not recent_posts:
             current_app.logger.info(

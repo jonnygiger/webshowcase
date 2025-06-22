@@ -216,7 +216,7 @@ class TestOnThisDayPage(AppTestCase):
         # Re-fetch the user to ensure it's bound to the current session
         # and available for login and content creation.
         with self.app.app_context():
-            self.no_otd_content_user = User.query.get(no_otd_content_user_id)
+            self.no_otd_content_user = self.db.session.get(User, no_otd_content_user_id)
 
         # Corrected: Ensure content is created with the fetched user's ID
         # self.fixed_today is datetime(2023, 10, 26, 12, 0, 0)
@@ -296,7 +296,7 @@ class TestOnThisDayPage(AppTestCase):
             wrong_day_user_id = wrong_day_user.id
 
         with self.app.app_context():
-            self.wrong_day_user = User.query.get(wrong_day_user_id)
+            self.wrong_day_user = self.db.session.get(User, wrong_day_user_id)
 
         # Create a post by this user from a previous year but a different day/month
         # self.fixed_today is datetime(2023, 10, 26, 12, 0, 0)

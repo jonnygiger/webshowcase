@@ -517,7 +517,7 @@ class TestFileSharing(AppTestCase):
             # self.assertEqual(response_json['message'], "File deleted successfully") # Already checked
 
             self.assertFalse(os.path.exists(file_path), "Physical file should be deleted from filesystem.")
-            self.assertIsNone(SharedFile.query.get(file_id_to_delete), "DB record should be deleted.")
+            self.assertIsNone(self.db.session.get(SharedFile, file_id_to_delete), "DB record should be deleted.")
 
         self.logout()
 
@@ -568,7 +568,7 @@ class TestFileSharing(AppTestCase):
         with self.app.app_context():
             # Step 4: Assertions (continued) - DB and filesystem checks
             self.assertFalse(os.path.exists(file_path), "Physical file should be deleted by sender.") # file_path from above context
-            self.assertIsNone(SharedFile.query.get(file_id_to_delete), "DB record should be deleted by sender.")
+            self.assertIsNone(self.db.session.get(SharedFile, file_id_to_delete), "DB record should be deleted by sender.")
 
         self.logout()
 
@@ -618,7 +618,7 @@ class TestFileSharing(AppTestCase):
         with self.app.app_context():
             # Assertions on file system and DB state
             self.assertTrue(os.path.exists(file_path), "Physical file should NOT be deleted by unauthorized user.")
-            self.assertIsNotNone(SharedFile.query.get(file_id_to_attempt_delete), "DB record should NOT be deleted by unauthorized user.")
+            self.assertIsNotNone(self.db.session.get(SharedFile, file_id_to_attempt_delete), "DB record should NOT be deleted by unauthorized user.")
             # Clean up the physical file that was not deleted by the test logic
             if os.path.exists(file_path):
                 os.remove(file_path)

@@ -70,7 +70,7 @@ class TestSeriesFeature(AppTestCase):
             db.session.add(original_series_obj) # Add to current session
             series_id = original_series_obj.id # Now access ID
             self.assertIsNotNone(series_id, "Series ID should be populated.")
-            series = Series.query.get(series_id)
+            series = self.db.session.get(Series, series_id)
             self.assertIsNotNone(series, "Series should exist after creation and fetching.")
 
             post1_title = "Post 1 for Cascade Test"
@@ -80,14 +80,14 @@ class TestSeriesFeature(AppTestCase):
             db.session.add(original_post1_obj) # Add to current session
             post1_id = original_post1_obj.id # Now access ID
             self.assertIsNotNone(post1_id, "Post1 ID should be populated.")
-            post1 = Post.query.get(post1_id)
+            post1 = self.db.session.get(Post, post1_id)
             self.assertIsNotNone(post1, "Post1 should exist after creation and fetching.")
 
             original_post2_obj = self._create_db_post(user_id=user.id, title=post2_title)
             db.session.add(original_post2_obj) # Add to current session
             post2_id = original_post2_obj.id # Now access ID
             self.assertIsNotNone(post2_id, "Post2 ID should be populated.")
-            post2 = Post.query.get(post2_id)
+            post2 = self.db.session.get(Post, post2_id)
             self.assertIsNotNone(post2, "Post2 should exist after creation and fetching.")
 
             # 2. Associate Posts with the Series using SeriesPost
@@ -115,7 +115,7 @@ class TestSeriesFeature(AppTestCase):
 
             # 4. Assertions
             # Assert Series is deleted
-            deleted_series = Series.query.get(series_id)
+            deleted_series = self.db.session.get(Series, series_id)
             self.assertIsNone(deleted_series, "Series should be deleted from the database.")
 
             # Assert SeriesPost entries are cascade deleted
@@ -124,8 +124,8 @@ class TestSeriesFeature(AppTestCase):
                              "SeriesPost entries should be cascade deleted.")
 
             # Assert original Posts still exist
-            self.assertIsNotNone(Post.query.get(post1_id), "Post1 should still exist after series deletion.")
-            self.assertIsNotNone(Post.query.get(post2_id), "Post2 should still exist after series deletion.")
+            self.assertIsNotNone(self.db.session.get(Post, post1_id), "Post1 should still exist after series deletion.")
+            self.assertIsNotNone(self.db.session.get(Post, post2_id), "Post2 should still exist after series deletion.")
 
     @unittest.skip("Placeholder test")
     def test_cascade_delete_post_to_series_post(self):

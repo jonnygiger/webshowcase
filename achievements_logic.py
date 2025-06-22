@@ -58,7 +58,7 @@ def check_and_award_achievements(user_id):
     Checks all defined achievements for a given user and awards them if criteria are met
     and the user hasn't already received them.
     """
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return {"error": "User not found"}, 404
 

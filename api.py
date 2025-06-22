@@ -26,7 +26,7 @@ class PostListResource(Resource):
     @jwt_required()
     def post(self):
         current_user_id = int(get_jwt_identity())
-        user = User.query.get(current_user_id)  # Use actual User model query
+        user = db.session.get(User, current_user_id)  # Use actual User model query
         if not user:
             return {"message": "User not found for provided token"}, 404
 
@@ -55,11 +55,11 @@ class CommentListResource(Resource):
     @jwt_required()
     def post(self, post_id):
         current_user_id = int(get_jwt_identity())
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         if not user:
             return {"message": "User not found"}, 404
 
-        post = Post.query.get(post_id)
+        post = db.session.get(Post, post_id)
         if not post:
             return {"message": "Post not found"}, 404
 
@@ -118,7 +118,7 @@ class PollListResource(Resource):
     @jwt_required()
     def post(self):
         current_user_id = int(get_jwt_identity())
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         if not user:
             return {"message": "User not found"}, 404
 
@@ -165,7 +165,7 @@ class PollListResource(Resource):
 class PollResource(Resource):
     @jwt_required()
     def get(self, poll_id):
-        poll = Poll.query.get(poll_id)
+        poll = db.session.get(Poll, poll_id)
         if not poll:
             return {"message": "Poll not found"}, 404
         return {"poll": poll.to_dict()}, 200
@@ -173,7 +173,7 @@ class PollResource(Resource):
     @jwt_required()
     def delete(self, poll_id):
         current_user_id = int(get_jwt_identity())
-        poll = Poll.query.get(poll_id)
+        poll = db.session.get(Poll, poll_id)
         if not poll:
             return {"message": "Poll not found"}, 404
 
@@ -191,13 +191,13 @@ class PollVoteResource(Resource):
         self, poll_id
     ):  # The option_id was in the original plan, but typically it's in the request body.
         current_user_id = int(get_jwt_identity())
-        user = User.query.get(
+        user = db.session.get(User,
             current_user_id
         )  # Query user to ensure they exist, though jwt implies it.
         if not user:
             return {"message": "User not found"}, 404
 
-        poll = Poll.query.get(poll_id)
+        poll = db.session.get(Poll, poll_id)
         if not poll:
             return {"message": "Poll not found"}, 404
 
@@ -233,11 +233,11 @@ class PostLockResource(Resource):
     @jwt_required()
     def post(self, post_id):
         current_user_id = int(get_jwt_identity())
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         if not user:
             return {"message": "User not found for provided token"}, 404
 
-        post = Post.query.get(post_id)
+        post = db.session.get(Post, post_id)
         if not post:
             return {"message": "Post not found"}, 404
 
@@ -298,11 +298,11 @@ class PostLockResource(Resource):
     @jwt_required()
     def delete(self, post_id):
         current_user_id = int(get_jwt_identity())
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         if not user:
             return {"message": "User not found for provided token"}, 404
 
-        post = Post.query.get(post_id)
+        post = db.session.get(Post, post_id)
         if not post:
             return {"message": "Post not found"}, 404
 
@@ -372,7 +372,7 @@ class RecommendationResource(Resource):
         args = parser.parse_args()
         user_id = args["user_id"]
 
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if not user:
             return {"message": f"User {user_id} not found"}, 404
 
@@ -461,7 +461,7 @@ class UserFeedResource(Resource):
     def get(self, user_id):
         # current_user_id = int(get_jwt_identity()) # Not strictly needed unless for auth checks
 
-        target_user = User.query.get(user_id)
+        target_user = db.session.get(User, user_id)
         if not target_user:
             return {"message": "User not found"}, 404
 
@@ -488,7 +488,7 @@ class PersonalizedFeedResource(Resource):
     @jwt_required()
     def get(self):
         current_user_id = int(get_jwt_identity())
-        current_user = User.query.get(current_user_id)
+        current_user = db.session.get(User, current_user_id)
 
         if not current_user:
             return {"message": "User not found"}, 404
@@ -637,7 +637,7 @@ class OnThisDayResource(Resource):
             return {"message": "Invalid user identity in token"}, 400
 
         # It's good practice to ensure the user exists, though jwt_required handles token validity.
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         if not user:
             return {"message": "User not found for provided token"}, 404
 
@@ -667,11 +667,11 @@ class UserStatsResource(Resource):
 
         if current_jwt_user_id != user_id:
             # Future: Add admin role check here to allow admins access
-            # requesting_user = User.query.get(current_jwt_user_id)
+            # requesting_user = db.session.get(User, current_jwt_user_id)
             # if not (requesting_user and requesting_user.role == 'admin'):
             return {"message": "You are not authorized to view these stats."}, 403
 
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if not user:
             return {"message": "User not found"}, 404
 
@@ -707,7 +707,7 @@ class SharedFileResource(Resource):
             current_app.logger.error(f"Invalid user identity format in JWT: {current_user_id_str}")
             return {"message": "Invalid user identity format."}, 400
 
-        shared_file = SharedFile.query.get(file_id)
+        shared_file = db.session.get(SharedFile, file_id)
 
         if not shared_file:
             return {"message": "File not found"}, 404

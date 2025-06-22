@@ -246,8 +246,8 @@ class TestRecommendationAPI(AppTestCase):
         # 3. user2 joins this group
         # Need to fetch user2 and group_by_user3 as ORM objects to append to relationship
         with self.app.app_context(): # Add app context here
-            user2 = User.query.get(self.user2_id)
-            # group_obj = Group.query.get(group_by_user3.id) # _create_db_group should return the object
+            user2 = self.db.session.get(User, self.user2_id)
+            # group_obj = self.db.session.get(Group, group_by_user3.id) # _create_db_group should return the object
             group_by_user3_merged = self.db.session.merge(group_by_user3) # Ensure group is in session
 
             if user2 and group_by_user3_merged:

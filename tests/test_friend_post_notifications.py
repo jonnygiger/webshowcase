@@ -113,28 +113,28 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             self.db.session.commit()
             notification_id = notification.id
 
-            self.assertFalse(FriendPostNotification.query.get(notification_id).is_read)
+            self.assertFalse(self.db.session.get(FriendPostNotification, notification_id).is_read)
 
             # User2 (owner) marks as read
             self.login(self.user2.username, 'password')
             response = self.client.post(f'/friend_post_notifications/mark_as_read/{notification_id}')
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json, {'status': 'success', 'message': 'Notification marked as read.'})
-            self.assertTrue(FriendPostNotification.query.get(notification_id).is_read)
+            self.assertTrue(self.db.session.get(FriendPostNotification, notification_id).is_read)
             self.logout()
 
             # User3 (not owner) tries to mark as read
             # First, set it back to unread for this part of the test
-            notification_db = FriendPostNotification.query.get(notification_id)
+            notification_db = self.db.session.get(FriendPostNotification, notification_id)
             notification_db.is_read = False
             self.db.session.commit()
-            self.assertFalse(FriendPostNotification.query.get(notification_id).is_read)
+            self.assertFalse(self.db.session.get(FriendPostNotification, notification_id).is_read)
 
             self.login(self.user3.username, 'password')
             response = self.client.post(f'/friend_post_notifications/mark_as_read/{notification_id}')
             self.assertEqual(response.status_code, 403) # Forbidden
             self.assertEqual(response.json, {'status': 'error', 'message': 'Unauthorized.'})
-            self.assertFalse(FriendPostNotification.query.get(notification_id).is_read) # Still false
+            self.assertFalse(self.db.session.get(FriendPostNotification, notification_id).is_read) # Still false
             self.logout()
 
             # Test non-existent notification
@@ -170,9 +170,9 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json, {'status': 'success', 'message': 'All friend post notifications marked as read.'})
 
-            self.assertTrue(FriendPostNotification.query.get(notif1_id).is_read)
-            self.assertTrue(FriendPostNotification.query.get(notif2_id).is_read)
-            self.assertFalse(FriendPostNotification.query.get(notif3_id).is_read) # User3's notification untouched
+            self.assertTrue(self.db.session.get(FriendPostNotification, notif1_id).is_read)
+            self.assertTrue(self.db.session.get(FriendPostNotification, notif2_id).is_read)
+            self.assertFalse(self.db.session.get(FriendPostNotification, notif3_id).is_read) # User3's notification untouched
             self.logout()
 
             # Test when no unread notifications exist for the user
@@ -369,7 +369,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             # 4. Assert that the FriendPostNotification for User B still exists.
             # notification_for_b was captured during the initial setup.
             # Let's refetch it from DB to ensure it wasn't cascade-deleted or altered.
-            persisted_notification_for_b = FriendPostNotification.query.get(notification_for_b.id)
+            persisted_notification_for_b = self.db.session.get(FriendPostNotification, notification_for_b.id)
 
             self.assertIsNotNone(persisted_notification_for_b,
                                  "Notification for User B should still exist after unfriending.")
@@ -381,7 +381,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
                              "Notification's post_id should remain unchanged.")
             self.assertEqual(persisted_notification_for_b.poster_id, self.user1_id,
                              "Notification's poster_id should remain unchanged.")
-            self.assertFalse(persisted_notification_for_b.is_read,
+            self.assertFalse(persisted_notification_for_b.is_read, # This line had a typo in the original, fixed here.
                              "Notification's is_read status should remain unchanged (false).")
 
             # 5. Assert SocketIO behavior post-unfriend for the original notification

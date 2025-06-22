@@ -36,7 +36,7 @@ class TestCommentAPI(AppTestCase):
             self.assertEqual(comment_data['author_username'], self.user1.username)
 
             # Verify the comment is in the database
-            comment_in_db = Comment.query.get(data["comment"]["id"])
+            comment_in_db = self.db.session.get(Comment, data["comment"]["id"])
             self.assertIsNotNone(comment_in_db)
             self.assertEqual(comment_in_db.content, comment_content) # Use variable with period
             self.assertEqual(comment_in_db.user_id, self.user1.id)

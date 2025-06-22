@@ -1,4 +1,5 @@
 import unittest
+import os # Import os module
 from flask import session, get_flashed_messages
 from app import app, db
 from models import User, Post, Friendship, FlaggedContent, SharedFile, Series
@@ -124,12 +125,17 @@ class TestViewRoutes(AppTestCase):
             other_user = self._create_db_user("file_other", "pass_other", "other@example.com")
 
             # Simulate file upload and create SharedFile record
-            # We don't need to actually save a file on disk for this auth test, just the DB record.
+            saved_filename_on_disk = "uuid_test_auth_file.txt" # Needs to be unique if other tests use it
+            shared_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
+            dummy_file_path = os.path.join(shared_folder, saved_filename_on_disk)
+            with open(dummy_file_path, "w") as f:
+                f.write("dummy content for download test")
+
             shared_file = SharedFile(
                 sender_id=sender.id,
                 receiver_id=receiver.id,
                 original_filename="test_auth_file.txt",
-                saved_filename="uuid_test_auth_file.txt" # Needs to be unique if other tests use it
+                saved_filename=saved_filename_on_disk
             )
             db.session.add(shared_file)
             db.session.commit()

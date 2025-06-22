@@ -25,7 +25,7 @@
             <p><strong>Location:</strong> {{ event.location if event.location else 'To be announced' }}</p>
             {% if event.description %}
                 <p><strong>Description:</strong></p>
-                <p>{{ event.description | nl2br }}</p> {# Use nl2br filter for newlines in description #}
+                <p>{{ event.description | nl2br | safe }}</p> {# Use nl2br filter and mark as safe #}
             {% endif %}
             <p><small class="text-muted">Posted on: {{ event.created_at }}</small></p>
         </div>

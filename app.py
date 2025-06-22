@@ -2508,6 +2508,7 @@ def handle_edit_post_content(data):
         app.logger.debug(
             f"No lock found for post_id={post_id}. Post lock_info: {post.lock_info}"
         )
+        app.logger.debug(f"Emitting edit_error to SID: {request.sid}") # Log request.sid
         emit(
             "edit_error",
             {"message": "Post is not locked for editing. Please acquire a lock first."},
@@ -4514,11 +4515,18 @@ def files_inbox():
 def download_shared_file(shared_file_id):
     shared_file = SharedFile.query.get_or_404(shared_file_id)
 
+    app.logger.debug(f"Download attempt for file_id: {shared_file_id}")
+    app.logger.debug(f"Session content: {dict(session)}")
+    app.logger.debug(f"SharedFile sender_id: {shared_file.sender_id}, receiver_id: {shared_file.receiver_id}")
+    current_user_id = session.get("user_id")
+    app.logger.debug(f"Current session user_id: {current_user_id}")
+
     if (
-        shared_file.receiver_id != session["user_id"]
-        and shared_file.sender_id != session["user_id"]
+        shared_file.receiver_id != current_user_id
+        and shared_file.sender_id != current_user_id
     ):  # Allow sender to download too
         flash("You are not authorized to download this file.", "danger")
+        app.logger.warning(f"Unauthorized download attempt for file {shared_file_id} by user {current_user_id}. Redirecting.")
         return redirect(url_for("files_inbox"))  # Or hello_world
 
     try:

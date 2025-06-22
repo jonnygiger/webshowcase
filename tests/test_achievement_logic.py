@@ -225,7 +225,7 @@ class AchievementLogicTests(AppTestCase):
             db.session.commit()
 
             self.login("all_ach_user_page", "password")
-            response = self.client.get("/achievements")
+            response = self.client.get("/user/all_ach_user_page/achievements")
             self.assertEqual(response.status_code, 200)
             html_content = response.data.decode()
 
@@ -259,7 +259,7 @@ class AchievementLogicTests(AppTestCase):
             ).first()  # Re-fetch
 
             self.login("no_earned_ach_page", "password")
-            response = self.client.get("/achievements")
+            response = self.client.get("/user/no_earned_ach_page/achievements")
             self.assertEqual(response.status_code, 200)
             html_content = response.data.decode()
 
@@ -267,8 +267,8 @@ class AchievementLogicTests(AppTestCase):
             # a general "No achievements earned" or similar is also acceptable.
             # Using a less strict check:
             self.assertIn(
-                "haven't earned any achievements yet",
-                html_content,
+                "has not earned any achievements yet", # More flexible check
+                html_content.lower(), # Convert to lowercase for case-insensitive matching
                 "Should display message for no earned achievements.",
             )
 

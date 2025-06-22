@@ -65,6 +65,7 @@
                 <li><a href="{{ url_for('blog') }}">Blog</a></li>
                 <li><a href="{{ url_for('polls_list') }}">Polls</a></li>
                 <li><a href="{{ url_for('events_list') }}">Events</a></li>
+                <li><a href="{{ url_for('chat_page') }}">Chat</a></li> {# New Chat Link #}
                 {% if session['logged_in'] %}
                   <li><a href="{{ url_for('create_event') }}">Create Event</a></li>
                   <li class="nav-item">

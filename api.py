@@ -743,3 +743,76 @@ class SharedFileResource(Resource):
             db.session.rollback()
             current_app.logger.error(f"Error deleting file ID {file_id}: {str(e)}")
             return {"message": f"An error occurred while deleting the file: {str(e)}"}, 500
+
+
+# Chat API Resources
+from models import ChatRoom, ChatMessage # Ensure models are imported
+
+class ChatRoomListResource(Resource):
+    @jwt_required()
+    def get(self):
+        chat_rooms = ChatRoom.query.order_by(ChatRoom.name).all()
+        return {"chat_rooms": [room.to_dict() for room in chat_rooms]}, 200
+
+    @jwt_required()
+    def post(self):
+        current_user_id = int(get_jwt_identity())
+        user = db.session.get(User, current_user_id)
+        if not user:
+            return {"message": "User not found for provided token"}, 404
+
+        parser = reqparse.RequestParser()
+        parser.add_argument("name", type=str, required=True, help="Chat room name cannot be blank.")
+        data = parser.parse_args()
+
+        room_name = data["name"].strip()
+        if not room_name:
+            return {"message": "Chat room name cannot be empty."}, 400
+
+        existing_room = ChatRoom.query.filter_by(name=room_name).first()
+        if existing_room:
+            return {"message": f"Chat room with name '{room_name}' already exists."}, 409
+
+        new_chat_room = ChatRoom(name=room_name, creator_id=current_user_id)
+        db.session.add(new_chat_room)
+        try:
+            db.session.commit()
+            # Optionally, emit a socketio event if other parts of the app should react to new rooms
+            # current_app.extensions['socketio'].emit('new_chat_room_created', new_chat_room.to_dict(), broadcast=True)
+            return {"message": "Chat room created successfully.", "chat_room": new_chat_room.to_dict()}, 201
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error creating chat room '{room_name}': {str(e)}")
+            return {"message": "Failed to create chat room due to an internal error."}, 500
+
+class ChatRoomMessagesResource(Resource):
+    @jwt_required()
+    def get(self, room_id):
+        chat_room = db.session.get(ChatRoom, room_id)
+        if not chat_room:
+            return {"message": "Chat room not found"}, 404
+
+        # Implement pagination for messages
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int) # Default 20 messages per page
+
+        messages_query = ChatMessage.query.filter_by(room_id=room_id).order_by(ChatMessage.timestamp.desc())
+        paginated_messages = messages_query.paginate(page=page, per_page=per_page, error_out=False)
+
+        messages_data = [message.to_dict() for message in paginated_messages.items]
+        # Reverse for chronological order in display if needed by frontend, or handle in frontend
+        # messages_data.reverse()
+
+        return {
+            "room_id": room_id,
+            "room_name": chat_room.name,
+            "messages": messages_data,
+            "page": paginated_messages.page,
+            "per_page": paginated_messages.per_page,
+            "total_pages": paginated_messages.pages,
+            "total_messages": paginated_messages.total
+        }, 200
+
+    # POST to this resource (i.e., sending a message to a room) is typically handled via SocketIO
+    # for real-time communication. If a RESTful way to post messages is also desired,
+    # it could be implemented here, but it's often redundant with SocketIO.

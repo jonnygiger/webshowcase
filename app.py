@@ -64,6 +64,8 @@ from models import (
     Series,
     SeriesPost,
     UserBlock, # Added UserBlock
+    ChatRoom,
+    ChatMessage,
 )
 
 migrate = Migrate()
@@ -92,6 +94,8 @@ from api import (
     PostLockResource,  # Added Poll resources
     SharedFileResource,
     UserFeedResource, # Added UserFeedResource
+    ChatRoomListResource, # Added ChatRoomListResource
+    ChatRoomMessagesResource, # Added ChatRoomMessagesResource
 )
 from recommendations import (
     suggest_users_to_follow,
@@ -222,6 +226,10 @@ api.add_resource(
 )  # Route for locking/unlocking posts
 api.add_resource(SharedFileResource, '/api/files/<int:file_id>') # Route for deleting shared files
 api.add_resource(UserFeedResource, "/api/users/<int:user_id>/feed") # Added route for UserFeedResource
+
+# Chat API routes
+api.add_resource(ChatRoomListResource, "/api/chat/rooms")
+api.add_resource(ChatRoomMessagesResource, "/api/chat/rooms/<int:room_id>/messages")
 
 # Scheduler for periodic tasks
 scheduler = BackgroundScheduler()
@@ -1719,6 +1727,108 @@ def post_stream(post_id):
                     del app.sse_listeners[post_id]
 
     return Response(event_stream(), mimetype="text/event-stream")
+
+
+@app.route('/chat')
+@login_required
+def chat_page():
+    # User object is injected into templates via context_processor (inject_user)
+    # No specific data needs to be passed here unless chat rooms are pre-loaded server-side,
+    # but the current JS fetches them dynamically.
+    return render_template('chat.html')
+
+
+# Chat SocketIO Handlers
+@socketio.on('join_chat_room')
+def handle_join_chat_room_event(data):
+    room_name = data.get('room_name') # e.g., "chat_room_1"
+    user_id = session.get('user_id')
+    username = session.get('username', 'Anonymous')
+
+    if not room_name or not user_id:
+        app.logger.error(f"Join chat room event failed: room_name='{room_name}', user_id='{user_id}'")
+        # Optionally emit an error back to the client
+        # emit('chat_error', {'message': 'Room name and user authentication are required.'})
+        return
+
+    join_room(room_name)
+    app.logger.info(f"User '{username}' (ID: {user_id}) joined chat room: '{room_name}'")
+    # Notify others in the room that a user has joined
+    socketio.emit('user_joined_chat', {'username': username, 'room': room_name}, room=room_name)
+
+@socketio.on('leave_chat_room')
+def handle_leave_chat_room_event(data):
+    room_name = data.get('room_name')
+    user_id = session.get('user_id')
+    username = session.get('username', 'Anonymous')
+
+    if not room_name or not user_id:
+        app.logger.error(f"Leave chat room event failed: room_name='{room_name}', user_id='{user_id}'")
+        return
+
+    # Flask-SocketIO's leave_room is not explicitly called here as per typical patterns.
+    # Client simply stops listening or disconnects from this "logical" room.
+    # We can, however, notify others.
+    app.logger.info(f"User '{username}' (ID: {user_id}) left chat room: '{room_name}' (notified others)")
+    socketio.emit('user_left_chat', {'username': username, 'room': room_name}, room=room_name)
+    # Note: Actual `leave_room(room_name)` from Flask-SocketIO might be used if managing server-side room membership strictly.
+    # For broadcasting, just not sending to them or them disconnecting is often enough.
+
+@socketio.on('send_chat_message')
+def handle_send_chat_message_event(data):
+    room_name = data.get('room_name') # e.g., "chat_room_1"
+    message_text = data.get('message')
+    user_id = session.get('user_id')
+    username = session.get('username')
+
+    if not room_name or not message_text or not user_id:
+        app.logger.error(f"Send chat message event failed: room_name='{room_name}', message='{message_text}', user_id='{user_id}'")
+        emit('chat_error', {'message': 'Room, message, and user authentication are required.'})
+        return
+
+    # Attempt to parse room_id from room_name (e.g., "chat_room_5" -> 5)
+    try:
+        room_id_str = room_name.split('_')[-1]
+        chat_room_id = int(room_id_str)
+    except (IndexError, ValueError) as e:
+        app.logger.error(f"Could not parse chat_room_id from room_name '{room_name}': {e}")
+        emit('chat_error', {'message': 'Invalid room name format.'})
+        return
+
+    # Validate room_id actually exists
+    chat_room = db.session.get(ChatRoom, chat_room_id)
+    if not chat_room:
+        app.logger.error(f"ChatRoom with id {chat_room_id} not found for message from user {user_id}.")
+        emit('chat_error', {'message': f'Chat room {chat_room_id} not found.'})
+        return
+
+    # Save the message to the database
+    try:
+        new_chat_message = ChatMessage(
+            room_id=chat_room_id,
+            user_id=user_id,
+            message=message_text
+        )
+        db.session.add(new_chat_message)
+        db.session.commit()
+        app.logger.info(f"User '{username}' sent message to room '{room_name}': '{message_text}' (ID: {new_chat_message.id})")
+
+        # Prepare payload for broadcasting
+        message_payload = {
+            'id': new_chat_message.id,
+            'room_id': new_chat_message.room_id, # or room_name
+            'room_name': room_name,
+            'user_id': new_chat_message.user_id,
+            'username': username, # Sender's username from session
+            'message': new_chat_message.message,
+            'timestamp': new_chat_message.timestamp.isoformat()
+        }
+        socketio.emit('new_chat_message', message_payload, room=room_name)
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error saving/sending chat message for room {room_name} by user {user_id}: {e}")
+        emit('chat_error', {'message': 'An error occurred while sending your message.'})
 
 
 @app.route("/post/<int:post_id>/react", methods=["POST"])

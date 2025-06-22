@@ -109,7 +109,11 @@ class TestContentManagement(AppTestCase):
             series_id = series_obj.id
             post1_id = post1.id
             post2_id = post2.id
-            author_username = series_obj.author.username # Get username before deletion
+
+            # Re-fetch series_obj to ensure it's session-bound before accessing author
+            series_obj_reloaded = db.session.get(Series, series_id)
+            self.assertIsNotNone(series_obj_reloaded, "Failed to reload series object.")
+            author_username = series_obj_reloaded.author.username # Get username before deletion
 
             # Verify associations exist
             self.assertEqual(SeriesPost.query.filter_by(series_id=series_id).count(), 2)

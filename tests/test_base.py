@@ -365,6 +365,7 @@ class AppTestCase(unittest.TestCase):
             # Connect (or reconnect) to the default namespace
             # The connect call itself might need a specific namespace if not defaulting correctly or if issues persist.
             socket_client_to_connect.connect(namespace='/') # Explicitly connect to default namespace
+            time.sleep(0.1) # Give server a moment to process the connection
 
             # Try to ensure all initial connection messages are processed
             # Loop get_received until it returns an empty list or a timeout
@@ -379,7 +380,7 @@ class AppTestCase(unittest.TestCase):
                 time.sleep(0.01) # Small pause to prevent tight loop if get_received is non-blocking when empty
 
             # An additional sleep just in case server-side processing needs a moment after client processes acks
-            time.sleep(0.1)
+            time.sleep(0.2) # Increased slightly
 
         return response
 

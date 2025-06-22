@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timezone, timedelta
 
 from app import db
-from models import User, Post, PostLock, Friendship, UserBlock, Series, SeriesPost, UserStatus, Comment, Like, EventRSVP, PollVote # Added EventRSVP, PollVote
+from models import User, Post, PostLock, Friendship, UserBlock, Series, SeriesPost, UserStatus, Comment, Like, EventRSVP, PollVote, Poll # Added EventRSVP, PollVote, Poll
 from tests.test_base import AppTestCase # Assuming this sets up app context and db
 
 class TestUserModel(AppTestCase):
@@ -363,11 +363,13 @@ class TestEventRSVPModel(AppTestCase):
             event = self._create_db_event(user_id=event_organizer.id, title="RSVP Test Event")
 
             # First RSVP should be fine
-            rsvp1_initial = self._create_db_event_rsvp(user_id=user.id, event_id=event.id, status="Attending")
-            rsvp1 = db.session.get(EventRSVP, rsvp1_initial.id) # Re-fetch
-            self.assertIsNotNone(rsvp1, "RSVP1 object could not be re-fetched from DB.")
-            self.assertIsNotNone(rsvp1, "RSVP1 object could not be re-fetched from DB.")
-            self.assertIsNotNone(rsvp1.id, "RSVP1 ID is None after re-fetch.")
+            # Helper now returns ID directly
+            rsvp1_id = self._create_db_event_rsvp(user_id=user.id, event_id=event.id, status="Attending")
+
+            # Re-fetch to ensure we have a session-bound object for assertions
+            rsvp1_fetched = db.session.get(EventRSVP, rsvp1_id)
+            self.assertIsNotNone(rsvp1_fetched, "RSVP1 object could not be re-fetched from DB.")
+            self.assertIsNotNone(rsvp1_fetched.id, "RSVP1 ID is None after re-fetch.")
 
             # Second RSVP for the same user and event should fail
             rsvp2 = EventRSVP(user_id=user.id, event_id=event.id, status="Maybe")
@@ -384,33 +386,49 @@ class TestPollVoteModel(AppTestCase):
         with self.app.app_context():
             voter = self._create_db_user(username="poll_voter_uc")
             poll_creator = self._create_db_user(username="poll_creator_uc")
-            poll = self._create_db_poll(user_id=poll_creator.id, question="Unique Vote Test Poll?")
 
-            # Ensure poll has options
+            # Create the poll using the helper
+            created_poll_obj = self._create_db_poll(user_id=poll_creator.id, question="Unique Vote Test Poll?")
+            # Get its ID
+            poll_id = created_poll_obj.id
+
+            # Re-fetch the poll within the current session context to ensure it's bound
+            poll = db.session.get(Poll, poll_id)
+            self.assertIsNotNone(poll, "Poll could not be re-fetched in the test context.")
+
+            # Now access poll.options
             self.assertTrue(len(poll.options) > 0, "Poll created without options for testing.")
-            option1 = poll.options[0]
+            option1 = poll.options[0] # This option is from the re-fetched 'poll'
 
             # First vote should be fine
-            vote1_initial = self._create_db_poll_vote(user_id=voter.id, poll_id=poll.id, poll_option_id=option1.id)
-            vote1 = db.session.get(PollVote, vote1_initial.id) # Re-fetch
-            self.assertIsNotNone(vote1, "Vote1 object could not be re-fetched from DB.")
-            self.assertIsNotNone(vote1.id, "Vote1 ID is None after re-fetch.")
+            # Helper now returns ID directly
+            vote1_id = self._create_db_poll_vote(user_id=voter.id, poll_id=poll.id, poll_option_id=option1.id)
 
+            # Re-fetch vote1 to ensure it's session-bound
+            vote1_fetched = db.session.get(PollVote, vote1_id)
+            self.assertIsNotNone(vote1_fetched, "Vote1 object could not be re-fetched from DB.")
+            self.assertIsNotNone(vote1_fetched.id, "Vote1 ID is None after re-fetch.")
 
             # Second vote by the same user in the same poll (even if for a different option) should fail
-
-            # Attempt to vote for the same option again (or different, constraint is on user_id, poll_id)
-            # Need to ensure there's another option if we want to test voting for a different one.
             option2 = None
+            # Access poll.options from the session-bound 'poll' object
             if len(poll.options) > 1:
                 option2 = poll.options[1]
             else: # If only one option, create another one for the test.
                 from models import PollOption
-                option2 = PollOption(text="Option 2 For UC Test", poll_id=poll.id)
-                db.session.add(option2)
-                db.session.commit()
-                db.session.refresh(poll) # Refresh poll to load new option
-                option2 = db.session.get(PollOption, option2.id) # Get session-bound option
+                # Ensure operations on 'poll' use the session-bound instance
+                option2_obj = PollOption(text="Option 2 For UC Test", poll_id=poll.id)
+                db.session.add(option2_obj)
+                db.session.commit() # Commit the new option
+                # The 'poll' object's 'options' collection might be stale.
+                # Refresh 'poll' to update its 'options' relationship.
+                db.session.refresh(poll)
+                # Get the newly created option, now session-bound
+                option2 = db.session.get(PollOption, option2_obj.id)
+
+            self.assertIsNotNone(option2, "Option2 could not be prepared for the test.")
+            self.assertIsNotNone(option2.id, "Option2 ID is None after creation/retrieval.")
+
 
             vote2 = PollVote(user_id=voter.id, poll_id=poll.id, poll_option_id=option2.id)
             db.session.add(vote2)

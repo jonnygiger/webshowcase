@@ -553,8 +553,8 @@ class TestPollAPI(AppTestCase):
         # Opt2: 1/3 = 33.3%
         # Example: style="width: 66.6...%;"
         # Using regex to find the style attribute for progress bars
-        self.assertRegex(html_content, r"width:\s*66\.[67]%", "Progress bar for RenderOpt1 (2/3 votes) not rendered correctly.") # Allows for 66.6 or 66.7 due to formatting "%.1f"
-        self.assertRegex(html_content, r"width:\s*33\.3%", "Progress bar for RenderOpt2 (1/3 votes) not rendered correctly.")
+        self.assertRegex(html_content, r"width:\s*66\.6+%;", "Progress bar for RenderOpt1 (2/3 votes) not rendered correctly.") # Matches 66.6, 66.66, 66.666 etc.
+        self.assertRegex(html_content, r"width:\s*33\.3+%;", "Progress bar for RenderOpt2 (1/3 votes) not rendered correctly.") # Matches 33.3, 33.33 etc.
 
 
 if __name__ == "__main__":

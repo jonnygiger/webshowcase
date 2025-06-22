@@ -21,20 +21,66 @@ class TestSocketIOEvents(AppTestCase):
 
             self.login(liker_user.username, "password") # Liker logs in
 
+            import time
+
+            # Liker user logs in using the main self.client for HTTP actions
+            self.login(liker_user.username, "password")
+
+            # Create an independent SocketIO client for the post_author
+            author_socket_client = self.socketio_class_level.test_client(self.app) # No flask_test_client linkage
+
+            import time
+
             # Client for post_author to receive notifications
             author_socket_client = self.create_socketio_client()
-            # Simulate author joining their own user room
-            author_socket_client.emit('join_room', {'room': f'user_{post_author.id}'}, namespace='/')
-            author_socket_client.get_received() # Clear any initial messages
 
-            # Liker performs the action that triggers the notification (e.g., POST to like route)
+            # Log in post_author. This will:
+            # 1. Associate author_socket_client with post_author's session (due to client_instance arg).
+            # 2. Set self.client (HTTP client) cookies to post_author's session.
+            self.login(post_author.username, "password", client_instance=author_socket_client)
+            time.sleep(0.5) # Added delay: Allow server to fully process the connection and session from login
+
+            # Author's client joins its room
+            author_socket_client.emit('join_room', {'room': f'user_{post_author.id}'}, namespace='/')
+            # Clear any ack from join_room
+            join_ack_start_time = time.time()
+            while time.time() - join_ack_start_time < 0.2: # Max 0.2s to clear
+                if not author_socket_client.get_received(namespace='/'):
+                    break
+
+            # self.client (HTTP client) is currently logged in as post_author.
+            # We need liker_user to make the HTTP POST request for the like.
+            # So, log out self.client (from post_author) and log in liker_user.
+            self.logout() # Logs out self.client (HTTP) and self.socketio_client (default socket client)
+
+            # Log in liker_user. This sets self.client (HTTP) to liker_user's session.
+            # It also connects/reconfigures self.socketio_client (the default one for the test case) for liker_user.
+            self.login(liker_user.username, "password")
+
+            # Liker performs the action (self.client is now liker_user for HTTP)
             response = self.client.post(f"/blog/post/{post_by_author.id}/like")
             self.assertEqual(response.status_code, 302) # Redirects after like
 
             # Check for 'new_like_notification' received by the author's client
-            received_by_author = author_socket_client.get_received(timeout=1)
+            time.sleep(0.5) # Wait for server-side emit
 
-            like_notification_events = [r for r in received_by_author if r['name'] == 'new_like_notification']
+            # Collect all received messages within a timeout period
+            received_by_author_total = []
+            notification_receive_start_time = time.time()
+            while time.time() - notification_receive_start_time < 1.0: # Collect for up to 1 second
+                received_event_batch = author_socket_client.get_received(namespace='/')
+                if received_event_batch:
+                    # get_received can return a list of events if multiple were processed
+                    if isinstance(received_event_batch, list):
+                         received_by_author_total.extend(received_event_batch)
+                    else: # Or a single event
+                        received_by_author_total.append(received_event_batch)
+                else: # No more messages in the queue currently
+                    if like_notification_events := [r for r in received_by_author_total if r['name'] == 'new_like_notification']:
+                        break # Found the notification, no need to wait longer
+                    time.sleep(0.05) # Small pause before trying get_received again
+
+            like_notification_events = [r for r in received_by_author_total if r['name'] == 'new_like_notification']
             self.assertTrue(len(like_notification_events) > 0, "Author did not receive 'new_like_notification'")
 
             notification_data = like_notification_events[0]['args'][0]
@@ -54,10 +100,23 @@ class TestSocketIOEvents(AppTestCase):
 
             # Client to listen on the post's room
             listener_client = self.create_socketio_client()
-            listener_client.emit('join_room', {'room': f'post_{post_to_lock.id}'}, namespace='/')
-            listener_client.get_received()
+            # Log in a user with this client to ensure it's properly connected.
+            # The user performing the login for this listener client doesn't strictly matter
+            # as it's just joining a room to listen. We can use locking_user.
+            self.login(locking_user.username, "password", client_instance=listener_client)
+            import time # Ensure time is imported
+            time.sleep(0.5) # Allow server to fully process the connection
 
-            # User1 locks the post via API
+            listener_client.emit('join_room', {'room': f'post_{post_to_lock.id}'}, namespace='/')
+            # Clear any ack from join_room
+            join_ack_start_time = time.time()
+            while time.time() - join_ack_start_time < 0.2: # Max 0.2s to clear
+                if not listener_client.get_received(namespace='/'):
+                    break
+            # listener_client.get_received() # Original line, replaced by loop
+
+            # User1 locks the post via API - self.client is now locking_user from the self.login above.
+            # This is fine, or we can re-login if needed, but JWT token is used below, making self.client's session less critical for this API call.
             token_user1 = self._get_jwt_token(locking_user.username, "password")
             headers_user1 = {"Authorization": f"Bearer {token_user1}"}
             lock_response = self.client.post(f'/api/posts/{post_to_lock.id}/lock', headers=headers_user1)

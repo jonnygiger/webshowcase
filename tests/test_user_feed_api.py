@@ -34,11 +34,20 @@ class TestUserFeedAPI(AppTestCase):
         """Test Case 4: Empty Feed for New User (or user with no relevant activity/content)."""
         mock_get_feed_posts_func.return_value = []
 
-        # Use an existing user's token for authentication
-        token = self._get_jwt_token(self.user1.username, "password")
+        # To properly test the mocked function, we need to ensure the resource's user check passes.
+        # Let's use self.user3 for this, who typically has less activity.
+        with self.app.app_context():
+            target_user_instance = User.query.filter_by(username="testuser3").first()
+            self.assertIsNotNone(target_user_instance, "User 'testuser3' must exist in the database for this test.")
+            target_user_id_for_api = target_user_instance.id
+
+        # Use the target user's token for authentication to ensure authorization passes
+        token = self._get_jwt_token(target_user_instance.username, "password") # MODIFIED
         headers = {"Authorization": f"Bearer {token}"}
 
-        new_user_id = 999 # This user ID doesn't exist, UserFeedResource will return 404
+        # The following comments about new_user_id = 999 are now less relevant
+        # as we are using an existing user.
+        # new_user_id = 999 # This user ID doesn't exist, UserFeedResource will return 404
                         # The mock should ideally not be hit if user is not found.
                         # Let's test with an existing user ID that has no feed.
                         # For this specific test, we are mocking the function that generates feed items,
@@ -67,4 +76,4 @@ class TestUserFeedAPI(AppTestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data, {"feed_posts": []})
-        mock_get_feed_posts_func.assert_called_once_with(target_user_id_for_api, limit=20)
+        mock_get_feed_posts_func.assert_called_once_with(target_user_id_for_api, limit=20) # Original assertion

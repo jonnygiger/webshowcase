@@ -42,24 +42,21 @@ class TestUserInteractions(AppTestCase):
             blocked_user = self.user2
 
             # Blocker blocks the user initially
-            block_instance_initial = self._create_db_block(blocker_user_obj=blocker, blocked_user_obj=blocked_user)
-            block_id = block_instance_initial.id # Store ID
-            # Verify it was created
-            self.assertIsNotNone(UserBlock.query.get(block_id), "Block instance not found after creation.")
+            # _create_db_block now returns the ID of the created block
+            block_id = self._create_db_block(blocker_user_obj=blocker, blocked_user_obj=blocked_user)
 
+            # Verify it was created by fetching it using the ID in the current session context
+            block_instance_check = UserBlock.query.get(block_id)
+            self.assertIsNotNone(block_instance_check, "Block instance not found after creation using its ID.")
 
             # Blocker logs in
             self.login(blocker.username, "password")
 
-            # Blocker unblocks the user (assuming a route like /user/<username>/unblock)
-            # This route doesn't exist yet, so this test will fail or needs adjustment.
-            # For now, let's simulate unblocking by deleting the UserBlock record directly for test logic.
-            # In a real scenario, this would be a POST request to an unblock endpoint.
             response = self.client.post(url_for('unblock_user', username_to_unblock=blocked_user.username), follow_redirects=True)
             self.assertEqual(response.status_code, 200) # unblock_user redirects to profile
 
-            # Verify the block is removed from DB
-            self.assertIsNone(UserBlock.query.get(block_instance.id))
+            # Verify the block is removed from DB using the block_id
+            self.assertIsNone(UserBlock.query.get(block_id))
 
             # Verify flash message
             self.assertIn(f"You have unblocked {blocked_user.username}.".encode('utf-8'), response.data)
@@ -68,7 +65,7 @@ class TestUserInteractions(AppTestCase):
             post_by_unblocked_user = self._create_db_post(user_id=blocked_user.id, title="Unblocked User's Post")
             response = self.client.get(url_for('user_profile', username=blocked_user.username))
             self.assertEqual(response.status_code, 200)
-            self.assertIn(b"Unblocked User's Post", response.data)
+            self.assertIn(b"Unblocked User&#39;s Post", response.data) # Account for HTML escaping of apostrophe
             self.assertNotIn(b"You have blocked this user", response.data)
 
             self.logout()
@@ -132,39 +129,41 @@ class TestUserInteractions(AppTestCase):
 
     def test_profile_picture_update_reflects_on_profile_page(self):
         with self.app.app_context():
-            user_to_update = self.user1
+            # Fetch the user from the current session to ensure we're working with a tracked instance
+            user_to_update = db.session.get(User, self.user1.id)
             self.login(user_to_update.username, "password")
 
             # Simulate file upload
-            # In a real test, you might need to mock `os.path.join`, `file.save`, etc.
-            # For simplicity, we'll directly update the user's profile_picture field
-            # as if the upload and file saving were successful.
             new_pic_filename = "new_test_profile.png"
-            new_pic_url = url_for('static', filename=f'profile_pics/{new_pic_filename}', _external=False) # internal path for DB
+            # Ensure the URL is generated within the app context for url_for to work correctly
+            new_pic_url = url_for('static', filename=f'profile_pics/{new_pic_filename}', _external=False)
 
-            # This is the action that the /upload_profile_picture route would perform
             user_to_update.profile_picture = new_pic_url
             db.session.commit()
 
-            # Create a dummy file in static/profile_pics so the url_for generates a valid link that doesn't 404 in the template
-            # This step is more for ensuring the template renders correctly if it tries to load the image.
-            # For testing the DB update and display of the path, it's not strictly necessary if the template handles broken image links gracefully.
+            # Verify the change in the database directly from the test's session
+            fetched_user_for_debug = db.session.get(User, user_to_update.id)
+            self.assertEqual(fetched_user_for_debug.profile_picture, new_pic_url, "Profile picture URL not updated in DB as expected by test.")
+
+            # Create a dummy file in static/profile_pics
             static_profile_pics_path = self.app.config["PROFILE_PICS_FOLDER"]
             if not os.path.exists(static_profile_pics_path):
                 os.makedirs(static_profile_pics_path)
-            with open(os.path.join(static_profile_pics_path, new_pic_filename), 'w') as f:
+            dummy_file_path = os.path.join(static_profile_pics_path, new_pic_filename)
+            with open(dummy_file_path, 'w') as f:
                 f.write("dummy image data")
-
 
             # Visit profile page
             response = self.client.get(url_for('user_profile', username=user_to_update.username))
             self.assertEqual(response.status_code, 200)
+
             # Check if the new profile picture URL is present in the rendered HTML
-            # The exact check depends on how the image is rendered (e.g., <img> tag src attribute)
-            self.assertIn(bytes(new_pic_url, 'utf-8'), response.data)
+            self.assertIn(bytes(new_pic_url, 'utf-8'), response.data,
+                          f"Expected profile picture URL '{new_pic_url}' not found in response. User profile_picture is '{user_to_update.profile_picture}'. Default might be showing.")
 
             # Clean up dummy file
-            os.remove(os.path.join(static_profile_pics_path, new_pic_filename))
+            if os.path.exists(dummy_file_path):
+                os.remove(dummy_file_path)
 
             self.logout()
 

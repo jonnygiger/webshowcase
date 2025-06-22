@@ -665,7 +665,8 @@ class AppTestCase(unittest.TestCase):
             )
             self.db.session.add(block)
             self.db.session.commit()
-            return block
+            block_id = block.id # Get the ID before context closes or object becomes detached
+            return block_id # Return the ID
 
     def _create_db_friendship(self, user_obj_1, user_obj_2, status="accepted", timestamp=None):
         # This method was _create_friendship before, standardizing and using user objects

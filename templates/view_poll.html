@@ -12,7 +12,7 @@
         {# User not logged in - Show results #}
         <h4>Results:</h4>
         <ul class="list-group">
-            {% for option in poll.options %}
+            {% for option in poll.options_display %}
             <li class="list-group-item d-flex justify-content-between align-items-center">
                 {{ option.text }}
                 <span class="badge bg-primary rounded-pill">{{ option.vote_count }} vote(s)</span>
@@ -32,7 +32,7 @@
         {# User logged in and has voted - Show results and highlight their vote #}
         <h4>Results (You voted for: "{{ poll.options|selectattr('id', 'equalto', user_vote)|first|attr('text') }}"):</h4>
         <ul class="list-group">
-            {% for option in poll.options %}
+            {% for option in poll.options_display %}
             <li class="list-group-item d-flex justify-content-between align-items-center {% if option.id == user_vote %}active{% endif %}">
                 {{ option.text }}
                 <span class="badge {% if option.id == user_vote %}bg-light text-dark{% else %}bg-primary{% endif %} rounded-pill">{{ option.vote_count }} vote(s)</span>

@@ -104,55 +104,14 @@ from recommendations import (
     get_personalized_feed_posts,
     get_on_this_day_content,
 )
+from notifications import new_post_sse_queues, broadcast_new_post
 
 app = Flask(__name__)
 app.sse_listeners = {}
 app.user_notification_queues = {}
 
-new_post_sse_queues = []
-
-
-def broadcast_new_post(post_data):
-    # This function will be called when a new post is created.
-    # It sends the post data to all connected SSE clients.
-
-    post_data_with_url = post_data.copy()  # Work with a copy
-
-    if "id" in post_data_with_url:
-        try:
-            # The tests should ensure broadcast_new_post is called within an app context.
-            post_data_with_url["url"] = url_for(
-                "view_post", post_id=post_data_with_url["id"], _external=True
-            )
-        except Exception as e: # Handles exceptions from url_for
-            app.logger.error(
-                f"Error generating URL for post ID {post_data_with_url.get('id')}: {e}. Sending notification without URL."
-            )
-            if 'url' in post_data_with_url: # Clean up if 'url' was partially set or if error occurred after setting
-                del post_data_with_url['url']
-    else:
-        # This warning is for when 'id' is missing, preventing URL generation.
-        app.logger.warning(
-            "Post data missing 'id' field, cannot generate URL for SSE notification. Sending notification without URL."
-        )
-        # No 'id', so no attempt to generate URL.
-
-    # Now check for queues
-    if not new_post_sse_queues:
-        # This warning can be issued alongside the "missing id" warning if both conditions are true.
-        app.logger.warning("No SSE queues to send new post notifications to.")
-        return  # No queues, so nothing more to do, even if URL was or wasn't generated.
-
-    # If we have queues, proceed to log and send.
-    app.logger.info(
-        f"Broadcasting new post: ID {post_data_with_url.get('id')}, Title: {post_data_with_url.get('title')} to {len(new_post_sse_queues)} clients. URL: {post_data_with_url.get('url', 'N/A')}"
-    )
-    for q_item in new_post_sse_queues:
-        try:
-            q_item.put(post_data_with_url)  # Send the copy (potentially with URL)
-        except Exception as e:
-            app.logger.error(f"Error putting post_data_with_url into a queue: {e}")
-
+# new_post_sse_queues and broadcast_new_post are now imported from notifications.py
+# to break a circular dependency with api.py
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///site.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False

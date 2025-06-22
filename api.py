@@ -1,11 +1,12 @@
 # Assuming these are from common Flask libraries and local models
 from flask_restful import Resource, reqparse
-from flask import request, g
+from flask import request, g, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
 import os
 
-import app as main_app  # Modified import
+# import app as main_app  # Removed to break circular dependency
+from notifications import broadcast_new_post # Import the moved function
 from models import User, Post, Comment, Like, Friendship, Event, EventRSVP, Poll, PollOption, PollVote, db, PostLock, SharedFile, UserBlock
 
 
@@ -45,7 +46,7 @@ class PostListResource(Resource):
         #     new_post.id = random.randint(1, 1000) # Simulate ID assignment
 
         post_dict = new_post.to_dict()
-        main_app.broadcast_new_post(post_dict)  # Call using main_app
+        broadcast_new_post(post_dict)  # Call imported function directly
 
         return {"message": "Post created successfully", "post": post_dict}, 201
 
@@ -89,9 +90,9 @@ class CommentListResource(Resource):
             "content": new_comment.content,
             "timestamp": new_comment.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         }
-        main_app.socketio.emit(
+        current_app.extensions['socketio'].emit(
             "new_comment_event", new_comment_data_for_post_room, room=f"post_{post_id}"
-        )  # Use main_app
+        )  # Use current_app
 
         comment_details = {
             "id": new_comment.id,
@@ -267,16 +268,13 @@ class PostLockResource(Resource):
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            # main_app.app.logger.error(f"Error creating lock: {str(e)}") # app is not defined here
-            print(
-                f"Error creating lock: {str(e)}"
-            )  # Use print or proper logging setup for api module
+            current_app.logger.error(f"Error creating lock: {str(e)}")
             return {"message": f"Error creating lock: {str(e)}"}, 500
 
         # Emit SocketIO event for lock acquired
-        main_app.socketio.emit(
+        current_app.extensions['socketio'].emit(
             "post_lock_acquired",
-            {  # Use main_app
+            {
                 "post_id": new_lock.post_id,
                 "user_id": new_lock.user_id,
                 "username": user.username,
@@ -324,16 +322,13 @@ class PostLockResource(Resource):
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            # main_app.app.logger.error(f"Error unlocking post: {str(e)}")
-            print(
-                f"Error unlocking post: {str(e)}"
-            )  # Use print or proper logging setup for api module
+            current_app.logger.error(f"Error unlocking post: {str(e)}")
             return {"message": f"Error unlocking post: {str(e)}"}, 500
 
         # Emit SocketIO event for lock released
-        main_app.socketio.emit(
+        current_app.extensions['socketio'].emit(
             "post_lock_released",
-            {  # Use main_app
+            {
                 "post_id": post_id,
                 "released_by_user_id": current_user_id,
                 "username": user.username,
@@ -657,7 +652,7 @@ class SharedFileResource(Resource):
         try:
             current_user_id = int(current_user_id_str)
         except ValueError:
-            main_app.logger.error(f"Invalid user identity format in JWT: {current_user_id_str}")
+            current_app.logger.error(f"Invalid user identity format in JWT: {current_user_id_str}")
             return {"message": "Invalid user identity format."}, 400
 
         shared_file = SharedFile.query.get(file_id)
@@ -675,17 +670,17 @@ class SharedFileResource(Resource):
         try:
             # Check if the essential saved_filename attribute is present
             if not shared_file.saved_filename:
-                 main_app.app.logger.error(f"File record is incomplete (missing saved_filename) for SharedFile ID: {file_id}")
+                 current_app.logger.error(f"File record is incomplete (missing saved_filename) for SharedFile ID: {file_id}")
                  return {"message": "File record is incomplete, cannot delete physical file"}, 500
 
-            upload_folder = main_app.app.config.get('SHARED_FILES_UPLOAD_FOLDER', 'shared_files_uploads')
+            upload_folder = current_app.config.get('SHARED_FILES_UPLOAD_FOLDER', 'shared_files_uploads')
             file_path = os.path.join(upload_folder, shared_file.saved_filename) # Use saved_filename
 
             if os.path.exists(file_path):
                 os.remove(file_path)
             else:
                 # Log this inconsistency but proceed to delete DB record
-                main_app.app.logger.warning(f"Warning: File {file_path} not found on filesystem for SharedFile ID {file_id} but DB record exists.")
+                current_app.logger.warning(f"Warning: File {file_path} not found on filesystem for SharedFile ID {file_id} but DB record exists.")
 
             db.session.delete(shared_file)
             db.session.commit()
@@ -694,5 +689,5 @@ class SharedFileResource(Resource):
 
         except Exception as e:
             db.session.rollback()
-            main_app.app.logger.error(f"Error deleting file ID {file_id}: {str(e)}")
+            current_app.logger.error(f"Error deleting file ID {file_id}: {str(e)}")
             return {"message": f"An error occurred while deleting the file: {str(e)}"}, 500

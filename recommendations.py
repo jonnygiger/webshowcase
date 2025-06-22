@@ -1,4 +1,5 @@
-from app import db  # Added app for logger
+from flask import current_app
+# from app import db # Removed this line
 from models import (
     User,
     Post,
@@ -86,6 +87,7 @@ def suggest_users_to_follow(user_id, limit=5):
 
 def suggest_posts_to_read(user_id, limit=5):
     """Suggest posts liked or commented on by the current user's friends, ranked by recency of interaction."""
+    db = current_app.extensions['sqlalchemy']
     current_user = User.query.get(user_id)
     if not current_user:
         return []
@@ -216,6 +218,7 @@ def suggest_posts_to_read(user_id, limit=5):
 
     # Pre-fetch all likes and comments for efficiency if dealing with many posts
     # This avoids N+1 queries within the loop when accessing post.likes or post.comments
+    db = current_app.extensions['sqlalchemy']
     all_likes_query = db.session.query(Like.post_id, Like.user_id).all()
     post_likes_map = defaultdict(list)
     for post_id, liker_id in all_likes_query:
@@ -426,6 +429,7 @@ def suggest_groups_to_join(user_id, limit=5):
 
 
 def suggest_events_to_attend(user_id, limit=5):
+    db = current_app.extensions['sqlalchemy']
     current_user = User.query.get(user_id)
     if not current_user:
         return []
@@ -504,6 +508,7 @@ def suggest_events_to_attend(user_id, limit=5):
 
 
 def suggest_polls_to_vote(user_id, limit=5):
+    db = current_app.extensions['sqlalchemy']
     current_user = User.query.get(user_id)
     if not current_user:
         return []
@@ -650,6 +655,7 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     Suggests trending posts based on recent activity (likes, comments) and post recency.
     Excludes posts by the user, or already interacted with/bookmarked by the user.
     """
+    db = current_app.extensions['sqlalchemy']
     current_user = User.query.get(user_id)
     if not current_user:
         return []
@@ -816,8 +822,9 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
 def update_trending_hashtags(top_n=10, since_days=7):
     """
     Calculates hashtag frequencies from recent posts, deletes existing trending
-    hashtags, and populates the TrendingHashtag table with the new top N hashtags.
+    hashtags, and populates TrendingHashtag table with the new top N hashtags.
     """
+    db = current_app.extensions['sqlalchemy']
     current_app.logger.info(
         f"Starting update_trending_hashtags job. Top N: {top_n}, Since Days: {since_days}"
     )

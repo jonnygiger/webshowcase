@@ -246,7 +246,7 @@ class AppTestCase(unittest.TestCase):
             self.db.session.commit() # Use class's db
 
             # Debug check
-            retrieved_post = Post.query.get(post.id)
+            retrieved_post = self.db.session.get(Post, post.id)
             if retrieved_post is None:
                 print(f"DEBUG: Post with id {post.id} was NOT found immediately after commit in _create_db_post!")
                 # Optionally raise an exception to make it a hard failure here

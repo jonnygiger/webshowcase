@@ -128,7 +128,7 @@ class TestLiveActivityFeed(AppTestCase):
             }
 
             # Re-fetch user2 to ensure friend relationships are up-to-date after accepting request
-            user2_updated = User.query.get(self.user2.id)
+            user2_updated = self.db.session.get(User, self.user2.id)
             friends_of_user2 = user2_updated.get_friends()
 
             emit_calls = []
@@ -351,7 +351,7 @@ class TestLiveActivityFeed(AppTestCase):
             activity = UserActivity.query.filter_by(user_id=self.user2.id, activity_type='new_post').order_by(UserActivity.timestamp.desc()).first()
             self.assertIsNotNone(activity, "UserActivity for 'new_post' was not created.")
 
-            created_post = Post.query.get(activity.related_id)
+            created_post = self.db.session.get(Post, activity.related_id)
             self.assertIsNotNone(created_post, "Post referred in activity not found.")
             self.assertEqual(created_post.title, post_title)
             self.assertEqual(activity.user_id, self.user2.id)
@@ -684,7 +684,7 @@ class TestLiveActivityFeed(AppTestCase):
 
         # Store current profile picture to check it changes
         with self.app.app_context():
-            user1_before_update = User.query.get(self.user1.id)
+            user1_before_update = self.db.session.get(User, self.user1.id)
             original_profile_pic = user1_before_update.profile_picture
 
         # 2. Prepare a mock image file
@@ -705,7 +705,7 @@ class TestLiveActivityFeed(AppTestCase):
 
         # Verify that user1's profile picture path has changed in DB
         with self.app.app_context():
-            user1_after_update = User.query.get(self.user1.id)
+            user1_after_update = self.db.session.get(User, self.user1.id)
             self.assertIsNotNone(user1_after_update.profile_picture, "User profile picture path should be set in the database.")
             self.assertNotEqual(original_profile_pic, user1_after_update.profile_picture, "User profile picture path should have changed from the original.")
             self.assertTrue(user1_after_update.profile_picture.startswith('/static/profile_pics/'), "Profile picture path should start with /static/profile_pics/.")
@@ -729,7 +729,7 @@ class TestLiveActivityFeed(AppTestCase):
             # 5. Verify socketio.emit call
             # self.user1 is friends with self.user2 (established in TestLiveActivityFeed.setUp via AppTestCase helper)
             # The profile_picture in the payload is the new one, taken from user1_after_update.profile_picture
-            user1_after_update = User.query.get(self.user1.id) # Re-fetch to ensure we have the latest state for payload
+            user1_after_update = self.db.session.get(User, self.user1.id) # Re-fetch to ensure we have the latest state for payload
 
             expected_payload = {
                 "activity_id": activity.id,

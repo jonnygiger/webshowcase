@@ -165,7 +165,7 @@ def emit_new_activity_event(activity_log):
         if (
             not target_user and activity_log.target_user_id
         ):  # Fallback to query if not preloaded
-            target_user = User.query.get(activity_log.target_user_id)
+            target_user = db.session.get(User, activity_log.target_user_id)
 
         if target_user:
             payload["target_user_id"] = target_user.id
@@ -397,7 +397,7 @@ def moderator_required(f):
             flash("You need to be logged in to access this page.", "danger")
             return redirect(url_for("login"))
 
-        user = User.query.get(session["user_id"])
+        user = db.session.get(User, session["user_id"])
         if not user:
             flash("User not found. Please log in again.", "danger")
             session.pop("user_id", None)  # Clear potentially invalid session
@@ -718,7 +718,7 @@ def upload_image():
 
             user_id = session.get("user_id")
             if user_id:
-                user = User.query.get(user_id)
+                user = db.session.get(User, user_id)
                 if user:
                     current_images_str = (
                         user.uploaded_images if user.uploaded_images else ""
@@ -814,7 +814,7 @@ def upload_profile_picture():
                 file.save(file_path)
 
                 # Update user's profile picture path in DB
-                user = User.query.get(
+                user = db.session.get(User,
                     session["user_id"]
                 )  # or current_user from context
                 if user:
@@ -939,7 +939,7 @@ def edit_profile():
 def inject_user():
     if "user_id" in session:
         # Use .get() on session to avoid KeyError if 'user_id' isn't set
-        user = User.query.get(session.get("user_id"))
+        user = db.session.get(User, session.get("user_id"))
         return dict(current_user=user)
     return dict(current_user=None)
 
@@ -1224,7 +1224,7 @@ def view_post(post_id):
     next_post_in_series = None
 
     if current_series_id:
-        current_series = Series.query.get(current_series_id)
+        current_series = db.session.get(Series, current_series_id)
         if current_series:
             # Find the current post's association entry in this specific series
             current_series_post_entry = SeriesPost.query.filter_by(
@@ -1239,14 +1239,14 @@ def view_post(post_id):
                     series_id=current_series_id, order=current_order - 1
                 ).first()
                 if prev_assoc:
-                    previous_post_in_series = Post.query.get(prev_assoc.post_id)
+                    previous_post_in_series = db.session.get(Post, prev_assoc.post_id)
 
                 # Find next post in the same series
                 next_assoc = SeriesPost.query.filter_by(
                     series_id=current_series_id, order=current_order + 1
                 ).first()
                 if next_assoc:
-                    next_post_in_series = Post.query.get(next_assoc.post_id)
+                    next_post_in_series = db.session.get(Post, next_assoc.post_id)
             else:
                 # Post is not part of the specified series_id, so clear it
                 current_series_id = None
@@ -1492,7 +1492,7 @@ def add_comment(post_id):
 
     if post_author_id != commenter_id:
         # Ensure commenter's User object is available for username
-        commenter_user = User.query.get(commenter_id)
+        commenter_user = db.session.get(User, commenter_id)
         if commenter_user:  # Should always be true if user_id in session is valid
             notification_data = {
                 "post_id": post.id,
@@ -1538,7 +1538,7 @@ def like_post(post_id):
 
             # <<< INSERT NEW NOTIFICATION LOGIC HERE >>>
             if user_id != post.user_id:  # Check: liker is not post author
-                liker = User.query.get(user_id)
+                liker = db.session.get(User, user_id)
                 # post.author is implicitly available if post object is loaded correctly
                 if liker and post.author:
                     notification_message = (
@@ -1724,7 +1724,11 @@ def post_stream(post_id):
 @app.route("/post/<int:post_id>/react", methods=["POST"])
 @login_required
 def react_to_post(post_id):
-    post = Post.query.get_or_404(post_id)
+    post = db.session.get(Post, post_id)
+    if not post:
+        # Decide on error handling, e.g., flash message and redirect, or abort(404)
+        flash("Post not found.", "danger")
+        return redirect(request.referrer or url_for("hello_world")) # Redirect to previous page or home
     user_id = session.get("user_id")  # Assuming current_user.id from session
     emoji = request.form.get("emoji")
 
@@ -2279,7 +2283,7 @@ def handle_edit_post_content(data):
         )
         return
 
-    post = Post.query.get(post_id)
+    post = db.session.get(Post, post_id)
     if not post:
         app.logger.debug(f"Post not found for post_id={post_id}")
         emit("edit_error", {"message": "Post not found."}, room=request.sid)
@@ -2363,7 +2367,7 @@ def handle_edit_post_content(data):
             "new_content": post.content,
             "last_edited": post.last_edited.isoformat(),
             "edited_by_user_id": user_id,  # Optionally send who edited
-            "edited_by_username": User.query.get(
+            "edited_by_username": db.session.get(User,
                 user_id
             ).username,  # Optionally send who edited
         }
@@ -2953,7 +2957,7 @@ def create_group():
             )
             return render_template("create_group.html")
 
-        current_user = User.query.get(user_id)
+        current_user = db.session.get(User, user_id)
         if not current_user:  # Should not happen if @login_required works
             flash("User not found. Please log in again.", "danger")
             return redirect(url_for("login"))
@@ -2982,7 +2986,7 @@ def create_group():
 def join_group(group_id):
     group = Group.query.get_or_404(group_id)
     user_id = session.get("user_id")
-    current_user = User.query.get(user_id)
+    current_user = db.session.get(User, user_id)
 
     if not current_user:  # Should be caught by @login_required
         flash("User not found. Please log in again.", "danger")
@@ -3065,7 +3069,7 @@ def bookmarked_posts():
 def leave_group(group_id):
     group = Group.query.get_or_404(group_id)
     user_id = session.get("user_id")
-    current_user = User.query.get(user_id)
+    current_user = db.session.get(User, user_id)
 
     if not current_user:  # Should be caught by @login_required
         flash("User not found. Please log in again.", "danger")
@@ -3095,7 +3099,7 @@ def send_friend_request(target_user_id):
         flash("Please log in to send friend requests.", "danger")
         return redirect(url_for("login"))
 
-    target_user = User.query.get(target_user_id)
+    target_user = db.session.get(User, target_user_id)
     if not target_user:
         flash("Target user not found.", "danger")
         return redirect(request.referrer or url_for("hello_world"))
@@ -3152,7 +3156,7 @@ def send_friend_request(target_user_id):
     flash("Friend request sent successfully.", "success")
 
     # Dispatch SSE notification
-    current_user = User.query.get(current_user_id)
+    current_user = db.session.get(User, current_user_id)
     if current_user:
         notification_payload = {
             "type": "friend_request_received",
@@ -3229,7 +3233,7 @@ def view_friends_list(username):
 @login_required
 def accept_friend_request(request_id):
     current_user_id = session.get("user_id")
-    friend_request = Friendship.query.get(request_id)
+    friend_request = db.session.get(Friendship, request_id)
 
     if not friend_request:
         flash("Friend request not found.", "danger")
@@ -3253,7 +3257,7 @@ def accept_friend_request(request_id):
         flash("Friend request accepted successfully!", "success")
 
         # Dispatch SSE Notification to the original sender
-        accepting_user = User.query.get(current_user_id)
+        accepting_user = db.session.get(User, current_user_id)
         original_sender_id = (
             friend_request.user_id
         )  # ID of the user who sent the request
@@ -3338,7 +3342,7 @@ def accept_friend_request(request_id):
 @login_required
 def reject_friend_request(request_id):
     current_user_id = session.get("user_id")
-    friend_request = Friendship.query.get(request_id)
+    friend_request = db.session.get(Friendship, request_id)
 
     if not friend_request:
         flash("Friend request not found.", "danger")
@@ -3366,12 +3370,12 @@ def reject_friend_request(request_id):
 @login_required
 def remove_friend(friend_user_id):
     current_user_id = session.get("user_id")
-    friend_user = User.query.get(friend_user_id)
+    friend_user = db.session.get(User, friend_user_id)
 
     if not friend_user:
         flash("User not found.", "danger")
         # Redirect to a sensible default, like the user's own profile or homepage
-        current_user_obj = User.query.get(current_user_id)
+        current_user_obj = db.session.get(User, current_user_id)
         if current_user_obj:
             return redirect(url_for("user_profile", username=current_user_obj.username))
         return redirect(url_for("hello_world"))
@@ -3628,7 +3632,7 @@ def reorder_series_posts(series_id):
 
     # Check if all posts belong to the series author (redundant if they are already in SeriesPost and SeriesPost implies authorship, but good for safety)
     for post_id in new_post_ids_order:
-        post = Post.query.get(post_id)
+        post = db.session.get(Post, post_id)
         if not post:
             # This case should ideally be caught by the set comparison above if SeriesPost entries are consistent
             return jsonify({"status": "error", "message": f"Post with ID {post_id} not found."}), 404
@@ -3667,7 +3671,7 @@ def reorder_series_posts(series_id):
 @login_required
 def live_feed():
     current_user_id = session.get("user_id")
-    current_user = User.query.get(current_user_id)
+    current_user = db.session.get(User, current_user_id)
 
     if not current_user:
         flash("User not found. Please log in again.", "danger")
@@ -3744,7 +3748,12 @@ def on_this_day_page():
 @app.route("/post/<int:post_id>/flag", methods=["POST"])
 @login_required
 def flag_post(post_id):
-    post = Post.query.get_or_404(post_id)
+    post = db.session.get(Post, post_id)
+    if not post:
+        # flash("Post not found.", "danger") # Original was API like, ensure consistency
+        # return redirect(request.referrer or url_for("hello_world"))
+        # Assuming this should be consistent with other get_or_404 replacements for view functions
+        return abort(404)
     user_id = session.get("user_id")
 
     if not user_id:  # Should be caught by @login_required
@@ -3778,7 +3787,9 @@ def flag_post(post_id):
 @app.route("/comment/<int:comment_id>/flag", methods=["POST"])
 @login_required
 def flag_comment(comment_id):
-    comment = Comment.query.get_or_404(comment_id)
+    comment = db.session.get(Comment, comment_id)
+    if not comment:
+        return {"message": "Comment not found"}, 404 # Or appropriate error handling
     user_id = session.get("user_id")
 
     if not user_id:  # Should be caught by @login_required
@@ -3831,7 +3842,7 @@ def moderation_dashboard():
             "comment_post_id": None,  # Initialize
         }
         if flag.content_type == "comment":
-            comment = Comment.query.get(flag.content_id)
+            comment = db.session.get(Comment, flag.content_id)
             if comment:
                 flag_data["comment_post_id"] = comment.post_id
         processed_flags.append(flag_data)
@@ -3886,7 +3897,7 @@ def remove_content_and_reject_flag(flag_id):
 
     content_removed = False
     if flag.content_type == "post":
-        post_to_delete = Post.query.get(flag.content_id)
+        post_to_delete = db.session.get(Post, flag.content_id)
         if post_to_delete:
             # Cascading deletes for comments, likes, reviews, etc., associated with the post
             # are assumed to be handled by the database relationships (e.g., cascade="all, delete-orphan")
@@ -3896,7 +3907,7 @@ def remove_content_and_reject_flag(flag_id):
         else:
             flash(f"Post ID {flag.content_id} not found for deletion.", "error")
     elif flag.content_type == "comment":
-        comment_to_delete = Comment.query.get(flag.content_id)
+        comment_to_delete = db.session.get(Comment, flag.content_id)
         if comment_to_delete:
             db.session.delete(comment_to_delete)
             content_removed = True
@@ -3954,7 +3965,7 @@ def view_friend_post_notifications():
 @login_required
 def mark_friend_post_notification_as_read(notification_id):
     user_id = session["user_id"]
-    notification = FriendPostNotification.query.get(notification_id)
+    notification = db.session.get(FriendPostNotification, notification_id)
 
     if not notification:
         return jsonify({"status": "error", "message": "Notification not found."}), 404
@@ -4216,7 +4227,7 @@ def delete_shared_file(shared_file_id):
 @login_required
 def set_status():
     user_id = session.get("user_id")
-    current_user_obj = User.query.get(user_id)
+    current_user_obj = db.session.get(User, user_id)
 
     if (
         not current_user_obj

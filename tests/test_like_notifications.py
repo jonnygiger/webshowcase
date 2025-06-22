@@ -23,7 +23,7 @@ class TestLikeNotifications(AppTestCase):
             db.session.add(self.author2)
             db.session.commit()
             # Fetch from DB to ensure it's a managed object, consistent with others
-            self.author2 = User.query.get(self.author2.id)
+            self.author2 = self.db.session.get(User, self.author2.id)
 
     @patch(
         "app.socketio.emit"

@@ -13,6 +13,7 @@ from models import (
     Comment,
     SharedPost,
     TrendingHashtag,
+    db, # Added db import
 )  # Added SharedPost and TrendingHashtag
 from sqlalchemy import func, or_, extract
 from collections import defaultdict, Counter
@@ -22,7 +23,7 @@ from flask import current_app
 
 def suggest_users_to_follow(user_id, limit=5):
     """Suggest users who are friends of the current user's friends."""
-    current_user = User.query.get(user_id)
+    current_user = db.session.get(User, user_id)
     if not current_user:
         return []
 
@@ -87,8 +88,8 @@ def suggest_users_to_follow(user_id, limit=5):
 
 def suggest_posts_to_read(user_id, limit=5):
     """Suggest posts liked or commented on by the current user's friends, ranked by recency of interaction."""
-    db = current_app.extensions['sqlalchemy']
-    current_user = User.query.get(user_id)
+    db_session = current_app.extensions['sqlalchemy'].session
+    current_user = db_session.get(User, user_id)
     if not current_user:
         return []
 
@@ -113,7 +114,7 @@ def suggest_posts_to_read(user_id, limit=5):
 
     # 2. Fetch Posts Liked by Friends
     likes_by_friends = (
-        db.session.query(Like.post_id, Like.timestamp)
+        db_session.query(Like.post_id, Like.timestamp) # Use db_session
         .filter(Like.user_id.in_(friend_ids))
         .all()
     )
@@ -127,7 +128,7 @@ def suggest_posts_to_read(user_id, limit=5):
 
     # 3. Fetch Posts Commented on by Friends
     comments_by_friends = (
-        db.session.query(Comment.post_id, Comment.timestamp)
+        db_session.query(Comment.post_id, Comment.timestamp) # Use db_session
         .filter(Comment.user_id.in_(friend_ids))
         .all()
     )
@@ -154,7 +155,7 @@ def suggest_posts_to_read(user_id, limit=5):
 
     valid_post_ids = []
     for post_id in recommended_posts_with_ts.keys():
-        post = Post.query.get(post_id)  # Fetch the post object
+        post = db_session.get(Post, post_id)  # Fetch the post object
         if post:  # Ensure post exists
             if post.user_id == user_id:  # Exclude posts by current user
                 continue
@@ -334,7 +335,7 @@ def suggest_posts_to_read(user_id, limit=5):
 
 def suggest_groups_to_join(user_id, limit=5):
     """Suggest groups that the current user's friends are members of."""
-    current_user = User.query.get(user_id)
+    current_user = db.session.get(User, user_id)
     if not current_user:
         return []
 
@@ -393,7 +394,7 @@ def suggest_groups_to_join(user_id, limit=5):
 
     groups_of_friends_counts = defaultdict(int)
     for friend_id in friend_ids:
-        friend = User.query.get(friend_id)
+        friend = db.session.get(User, friend_id)
         if friend:
             # friend.joined_groups is a query builder due to lazy='dynamic'
             for group in friend.joined_groups.all():
@@ -429,8 +430,8 @@ def suggest_groups_to_join(user_id, limit=5):
 
 
 def suggest_events_to_attend(user_id, limit=5):
-    db = current_app.extensions['sqlalchemy']
-    current_user = User.query.get(user_id)
+    db_ext = current_app.extensions['sqlalchemy'] # Use db_ext for clarity
+    current_user = db_ext.session.get(User, user_id)
     if not current_user:
         return []
 
@@ -508,8 +509,8 @@ def suggest_events_to_attend(user_id, limit=5):
 
 
 def suggest_polls_to_vote(user_id, limit=5):
-    db = current_app.extensions['sqlalchemy']
-    current_user = User.query.get(user_id)
+    db_ext = current_app.extensions['sqlalchemy'] # Use db_ext
+    current_user = db_ext.session.get(User, user_id)
     if not current_user:
         return []
 
@@ -655,8 +656,8 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
     Suggests trending posts based on recent activity (likes, comments) and post recency.
     Excludes posts by the user, or already interacted with/bookmarked by the user.
     """
-    db = current_app.extensions['sqlalchemy']
-    current_user = User.query.get(user_id)
+    db_ext = current_app.extensions['sqlalchemy'] # Use db_ext
+    current_user = db_ext.session.get(User, user_id)
     if not current_user:
         return []
 
@@ -904,7 +905,7 @@ def get_personalized_feed_posts(user_id, limit=20):
     Combines posts from followed users, friends' activity, trending posts, and user's groups.
     Ensures posts are not duplicated and are ranked appropriately.
     """
-    current_user = User.query.get(user_id)
+    current_user = db.session.get(User, user_id) # Use db.session.get
     if not current_user:
         current_app.logger.warning(
             f"get_personalized_feed_posts: User with ID {user_id} not found."

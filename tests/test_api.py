@@ -3,9 +3,10 @@ import json
 from unittest.mock import patch
 
 from app import app, db
-from models import User, Post, Poll, PollOption, PostLock, ChatRoom, TrendingHashtag
+from models import User, Post, Poll, PollOption, PostLock, ChatRoom, TrendingHashtag, UserBlock, SharedFile
 from tests.test_base import AppTestCase # Assuming this sets up app context and db
 from flask_jwt_extended import create_access_token
+import os
 from datetime import datetime, timedelta, timezone
 
 class TestPollAPI(AppTestCase):
@@ -145,6 +146,118 @@ class TestChatRoomAPI(AppTestCase):
             self.assertEqual(response2.status_code, 409) # Conflict
             data = response2.get_json()
             self.assertIn(f"Chat room with name '{room_name}' already exists.", data["message"])
+
+class TestCommentAPI(AppTestCase):
+    def test_post_comment_to_non_existent_post(self):
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            non_existent_post_id = 99999
+
+            response = self.client.post(f'/api/posts/{non_existent_post_id}/comments', headers=headers, json={
+                "content": "A comment for a ghost post."
+            })
+            self.assertEqual(response.status_code, 404)
+            data = response.get_json()
+            self.assertIn("Post not found", data["message"])
+
+    def test_post_comment_when_blocked_by_author(self):
+        with self.app.app_context():
+            post_author = self.user1
+            commenter = self.user2
+
+            # Post author (user1) blocks commenter (user2)
+            self._create_db_block(blocker_user_obj=post_author, blocked_user_obj=commenter)
+
+            # Post by user1
+            post_by_author = self._create_db_post(user_id=post_author.id, title="Blocker's Post")
+
+            # Commenter (user2) attempts to comment - should be blocked
+            token_commenter = self._get_jwt_token(commenter.username, "password")
+            headers_commenter = {"Authorization": f"Bearer {token_commenter}"}
+
+            response = self.client.post(f'/api/posts/{post_by_author.id}/comments', headers=headers_commenter, json={
+                "content": "Trying to comment while blocked."
+            })
+
+            self.assertEqual(response.status_code, 403)
+            data = response.get_json()
+            self.assertIn("You are blocked by the post author and cannot comment.", data["message"])
+
+class TestSharedFileAPI(AppTestCase):
+
+    def setUp(self):
+        super().setUp() # Call AppTestCase.setUp
+        # Ensure the test shared files folder exists
+        shared_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
+        if not os.path.exists(shared_folder):
+            os.makedirs(shared_folder)
+
+    def tearDown(self):
+        # Clean up any created files in the test shared folder
+        shared_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
+        if os.path.exists(shared_folder):
+            for filename in os.listdir(shared_folder):
+                file_path = os.path.join(shared_folder, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                except Exception as e:
+                    print(f"Failed to delete {file_path} during teardown. Reason: {e}")
+        super().tearDown()
+
+
+    def _create_db_shared_file_for_api_test(self, sender, receiver, original_filename="test_file.txt", saved_filename="saved_test_file.txt"):
+        # Create a dummy file on disk for deletion test
+        upload_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
+        dummy_file_path = os.path.join(upload_folder, saved_filename)
+        with open(dummy_file_path, "w") as f:
+            f.write("dummy content")
+
+        shared_file = SharedFile(
+            sender_id=sender.id,
+            receiver_id=receiver.id,
+            original_filename=original_filename,
+            saved_filename=saved_filename # This is crucial
+        )
+        db.session.add(shared_file)
+        db.session.commit()
+        return shared_file
+
+    def test_delete_shared_file_unauthorized_user(self):
+        with self.app.app_context():
+            sender = self.user1
+            receiver = self.user2
+            unauthorized_user = self.user3 # Neither sender nor receiver
+
+            shared_file = self._create_db_shared_file_for_api_test(sender=sender, receiver=receiver)
+
+            token_unauthorized = self._get_jwt_token(unauthorized_user.username, "password")
+            headers_unauthorized = {"Authorization": f"Bearer {token_unauthorized}"}
+
+            response = self.client.delete(f'/api/files/{shared_file.id}', headers=headers_unauthorized)
+
+            self.assertEqual(response.status_code, 403)
+            data = response.get_json()
+            self.assertIn("You are not authorized to delete this file", data["message"])
+
+            # Ensure file still exists in DB and on disk
+            self.assertIsNotNone(db.session.get(SharedFile, shared_file.id))
+            upload_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
+            self.assertTrue(os.path.exists(os.path.join(upload_folder, shared_file.saved_filename)))
+
+
+    def test_delete_non_existent_shared_file_record(self):
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            non_existent_file_id = 99999
+
+            response = self.client.delete(f'/api/files/{non_existent_file_id}', headers=headers)
+
+            self.assertEqual(response.status_code, 404)
+            data = response.get_json()
+            self.assertIn("File not found", data["message"])
 
 if __name__ == "__main__":
     unittest.main()

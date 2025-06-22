@@ -2,10 +2,89 @@ import unittest
 from datetime import datetime, timezone, timedelta
 
 from app import db
-from models import User, Post, PostLock, Friendship, UserBlock, Series, SeriesPost
+from models import User, Post, PostLock, Friendship, UserBlock, Series, SeriesPost, UserStatus, Comment, Like
 from tests.test_base import AppTestCase # Assuming this sets up app context and db
 
 class TestUserModel(AppTestCase):
+
+    def test_user_get_stats(self):
+        with self.app.app_context():
+            user = self._create_db_user(username="stats_user")
+            user_friend = self._create_db_user(username="stats_friend")
+
+            # Create posts
+            post1 = self._create_db_post(user_id=user.id, title="User Post 1")
+            self._create_db_post(user_id=user.id, title="User Post 2")
+
+            # Create comments by user
+            self._create_db_comment(user_id=user.id, post_id=post1.id, content="Comment on own post")
+
+            # Create likes received by user on their post
+            liker1 = self._create_db_user(username="liker1")
+            liker2 = self._create_db_user(username="liker2")
+            self._create_db_like(user_id=liker1.id, post_id=post1.id)
+            self._create_db_like(user_id=liker2.id, post_id=post1.id)
+
+            # Create friendships
+            self._create_db_friendship(user, user_friend, status="accepted")
+
+            # Refresh user to ensure all relationships are loaded
+            db.session.refresh(user)
+
+            stats = user.get_stats()
+
+            self.assertEqual(stats["posts_count"], 2)
+            self.assertEqual(stats["comments_count"], 1) # Comments made by the user
+            self.assertEqual(stats["likes_received_count"], 2) # Likes on user's posts
+            self.assertEqual(stats["friends_count"], 1)
+            self.assertIsNotNone(stats["join_date"])
+            # Check if join_date is a valid ISO format string
+            try:
+                datetime.fromisoformat(stats["join_date"].replace('Z', '+00:00'))
+            except ValueError:
+                self.fail("join_date is not a valid ISO format string")
+
+    def test_user_get_current_status(self):
+        with self.app.app_context():
+            user_with_status = self._create_db_user(username="status_user")
+
+            # No status initially
+            self.assertIsNone(user_with_status.get_current_status())
+
+            # Add a status
+            status1_time = datetime.now(timezone.utc) - timedelta(minutes=10)
+            status1 = UserStatus(user_id=user_with_status.id, status_text="Feeling great!", timestamp=status1_time)
+            db.session.add(status1)
+            db.session.commit()
+            db.session.refresh(user_with_status) # Refresh to update relationships
+
+            current_status = user_with_status.get_current_status()
+            self.assertIsNotNone(current_status)
+            self.assertEqual(current_status.status_text, "Feeling great!")
+
+            # Add a newer status
+            status2_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+            status2 = UserStatus(user_id=user_with_status.id, status_text="Just updated!", timestamp=status2_time)
+            db.session.add(status2)
+            db.session.commit()
+            db.session.refresh(user_with_status)
+
+            current_status_updated = user_with_status.get_current_status()
+            self.assertIsNotNone(current_status_updated)
+            self.assertEqual(current_status_updated.status_text, "Just updated!")
+            self.assertEqual(current_status_updated.id, status2.id)
+
+            # Add an older status (should not become current)
+            status0_time = datetime.now(timezone.utc) - timedelta(minutes=20)
+            status0 = UserStatus(user_id=user_with_status.id, status_text="Way back when", timestamp=status0_time)
+            db.session.add(status0)
+            db.session.commit()
+            db.session.refresh(user_with_status)
+
+            current_status_still_updated = user_with_status.get_current_status()
+            self.assertIsNotNone(current_status_still_updated)
+            self.assertEqual(current_status_still_updated.status_text, "Just updated!")
+            self.assertEqual(current_status_still_updated.id, status2.id)
 
     def test_password_hashing(self):
         with self.app.app_context():
@@ -233,6 +312,109 @@ class TestSeriesModel(AppTestCase):
             self.assertEqual(ordered_posts_from_series[0].id, post2.id) # Beta
             self.assertEqual(ordered_posts_from_series[1].id, post3.id) # Gamma
             self.assertEqual(ordered_posts_from_series[2].id, post1.id) # Alpha
+
+    def test_series_to_dict_with_posts(self):
+        with self.app.app_context():
+            author = self._create_db_user(username="series_dict_author")
+            series = self._create_db_series(user_id=author.id, title="Series For Dict Test")
+
+            post1 = self._create_db_post(user_id=author.id, title="Post One Dict")
+            post2 = self._create_db_post(user_id=author.id, title="Post Two Dict")
+
+            # Add posts to series
+            sp_entry1 = SeriesPost(series_id=series.id, post_id=post1.id, order=1)
+            sp_entry2 = SeriesPost(series_id=series.id, post_id=post2.id, order=2)
+            db.session.add_all([sp_entry1, sp_entry2])
+            db.session.commit()
+
+            # Re-fetch series to ensure relationships are loaded
+            fetched_series = db.session.get(Series, series.id)
+            series_dict = fetched_series.to_dict()
+
+            self.assertEqual(series_dict["title"], "Series For Dict Test")
+            self.assertEqual(series_dict["author_username"], author.username)
+            self.assertEqual(len(series_dict["posts"]), 2)
+            self.assertEqual(series_dict["posts"][0]["title"], "Post One Dict")
+            self.assertEqual(series_dict["posts"][0]["author_username"], author.username)
+            self.assertEqual(series_dict["posts"][1]["title"], "Post Two Dict")
+
+    def test_add_post_to_series_property(self):
+        with self.app.app_context():
+            author = self._create_db_user(username="series_add_post_author")
+            series = self._create_db_series(user_id=author.id, title="Series Adding Posts")
+            post_to_add = self._create_db_post(user_id=author.id, title="Standalone Post")
+
+            # Add post to series
+            series_post_entry = SeriesPost(series_id=series.id, post_id=post_to_add.id, order=1)
+            db.session.add(series_post_entry)
+            db.session.commit()
+
+            fetched_series = db.session.get(Series, series.id)
+            self.assertEqual(len(fetched_series.posts), 1)
+            self.assertEqual(fetched_series.posts[0].id, post_to_add.id)
+            self.assertEqual(fetched_series.posts[0].title, "Standalone Post")
+
+class TestEventRSVPModel(AppTestCase):
+    def test_event_rsvp_unique_constraint(self):
+        # Tests the _user_event_uc unique constraint (user_id, event_id)
+        with self.app.app_context():
+            user = self._create_db_user(username="rsvp_user")
+            event_organizer = self._create_db_user(username="event_organizer_rsvp")
+            event = self._create_db_event(user_id=event_organizer.id, title="RSVP Test Event")
+
+            # First RSVP should be fine
+            rsvp1 = self._create_db_event_rsvp(user_id=user.id, event_id=event.id, status="Attending")
+            self.assertIsNotNone(rsvp1.id)
+
+            # Second RSVP for the same user and event should fail
+            from models import EventRSVP # Local import for clarity
+            rsvp2 = EventRSVP(user_id=user.id, event_id=event.id, status="Maybe")
+            db.session.add(rsvp2)
+            with self.assertRaises(Exception) as context: # sqlalchemy.exc.IntegrityError
+                db.session.commit()
+            self.assertTrue('unique constraint failed' in str(context.exception).lower() or
+                            '_user_event_uc' in str(context.exception).lower())
+            db.session.rollback()
+
+class TestPollVoteModel(AppTestCase):
+    def test_poll_vote_unique_constraint(self):
+        # Tests the _user_poll_uc unique constraint (user_id, poll_id)
+        with self.app.app_context():
+            voter = self._create_db_user(username="poll_voter_uc")
+            poll_creator = self._create_db_user(username="poll_creator_uc")
+            poll = self._create_db_poll(user_id=poll_creator.id, question="Unique Vote Test Poll?")
+
+            # Ensure poll has options
+            self.assertTrue(len(poll.options) > 0, "Poll created without options for testing.")
+            option1 = poll.options[0]
+
+            # First vote should be fine
+            vote1 = self._create_db_poll_vote(user_id=voter.id, poll_id=poll.id, poll_option_id=option1.id)
+            self.assertIsNotNone(vote1.id)
+
+            # Second vote by the same user in the same poll (even if for a different option) should fail
+            from models import PollVote # Local import for clarity
+
+            # Attempt to vote for the same option again (or different, constraint is on user_id, poll_id)
+            # Need to ensure there's another option if we want to test voting for a different one.
+            option2 = None
+            if len(poll.options) > 1:
+                option2 = poll.options[1]
+            else: # If only one option, create another one for the test.
+                from models import PollOption
+                option2 = PollOption(text="Option 2 For UC Test", poll_id=poll.id)
+                db.session.add(option2)
+                db.session.commit()
+                db.session.refresh(poll) # Refresh poll to load new option
+                option2 = db.session.get(PollOption, option2.id) # Get session-bound option
+
+            vote2 = PollVote(user_id=voter.id, poll_id=poll.id, poll_option_id=option2.id)
+            db.session.add(vote2)
+            with self.assertRaises(Exception) as context: # sqlalchemy.exc.IntegrityError
+                db.session.commit()
+            self.assertTrue('unique constraint failed' in str(context.exception).lower() or
+                            '_user_poll_uc' in str(context.exception).lower())
+            db.session.rollback()
 
 if __name__ == "__main__":
     unittest.main()

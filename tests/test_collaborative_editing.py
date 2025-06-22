@@ -427,10 +427,10 @@ class TestCollaborativeEditing(AppTestCase):
 
     # --- SocketIO Event Tests ---
     # These tests are more complex and depend heavily on live app, socketio, and db.
-    @patch("app.socketio.emit")  # Restored patch
+    @patch("flask_socketio.SocketIO.emit")  # Changed patch target
     def test_socketio_edit_post_by_lock_owner(
-        self, mock_app_socketio_emit
-    ):  # Restored mock_app_socketio_emit
+        self, mock_socketio_emit # Changed mock name
+    ):
         with self.app.app_context():
             # 1. Setup: Collaborator acquires lock
             token = self._get_jwt_token(self.collaborator.username, "password")
@@ -444,7 +444,7 @@ class TestCollaborativeEditing(AppTestCase):
                 "Failed to acquire lock for collaborator.",
             )
             # Clear mock calls from lock acquisition
-            mock_app_socketio_emit.reset_mock()  # Restored unconditional reset
+            mock_socketio_emit.reset_mock() # Use the correct mock name
 
             # 2. Prepare for SocketIO event emission
             # Ensure self.socketio_client is connected (it's usually handled by AppTestCase.setUp)
@@ -491,7 +491,7 @@ class TestCollaborativeEditing(AppTestCase):
             # Check if 'post_content_updated' event was broadcast.
             # UNCOMMENTED the assertion block
             found_call = False
-            for call_args in mock_app_socketio_emit.call_args_list:
+            for call_args in mock_socketio_emit.call_args_list: # Use correct mock name
                 event_name_called = call_args[0][0]
                 event_data_called = call_args[0][1]
                 event_room_called = call_args[1].get("room")
@@ -525,7 +525,7 @@ class TestCollaborativeEditing(AppTestCase):
                 found_call,
                 f"Expected 'post_content_updated' event with data matching {expected_broadcast_data} "
                 f"to room f'post_{self.test_post.id}' not found or 'last_edited' invalid. "
-                f"Actual calls: {mock_app_socketio_emit.call_args_list}",
+                f"Actual calls: {mock_socketio_emit.call_args_list}", # Use correct mock name
             )
 
             # 6. Clean up (socketio_client disconnect is handled in tearDown)
@@ -631,9 +631,9 @@ class TestCollaborativeEditing(AppTestCase):
             # Clean up listener
             # self.socketio_client.remove_event_handler('edit_error', on_edit_error) # .on is not available
 
-    @patch("app.socketio.emit") # Kept app.socketio.emit for this other test, adjust if needed
+    @patch("flask_socketio.SocketIO.emit") # Changed patch target
     def test_socketio_lock_acquired_broadcast_from_api(
-        self, mock_app_socketio_emit # Renamed mock to avoid conflict
+        self, mock_socketio_emit # Changed mock name
     ):
         token = self._get_jwt_token(self.collaborator.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
@@ -658,16 +658,16 @@ class TestCollaborativeEditing(AppTestCase):
         expected_room = f"post_{self.test_post.id}"
 
         # self.app.logger.debug(f"Asserting with expected_data: {expected_data}, expected_room: {expected_room}")
-        # self.app.logger.debug(f"Actual calls to mock: {mock_socketio_emit_class_method.call_args_list}")
+        # self.app.logger.debug(f"Actual calls to mock: {mock_socketio_emit.call_args_list}")
 
         self.assertEqual(
-            mock_socketio_emit_class_method.call_count,
+            mock_socketio_emit.call_count,
             1,
-            f"Expected emit to be called once. Actual calls: {mock_socketio_emit_class_method.call_args_list}",
+            f"Expected emit to be called once. Actual calls: {mock_socketio_emit.call_args_list}",
         )
 
         # Get the single call
-        actual_call = mock_socketio_emit_class_method.call_args_list[0]
+        actual_call = mock_socketio_emit.call_args_list[0]
 
         # If mock is on Class.method, call_args.args does not include 'self'.
         # So, call_args.args should be (event_name, data_dict, ...)

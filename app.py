@@ -138,7 +138,7 @@ migrate.init_app(app, db)
 app.config["SECRET_KEY"] = "supersecretkey"  # Moved Up
 app.config["JWT_SECRET_KEY"] = "your-jwt-secret-key"  # Moved Up
 
-socketio = SocketIO(app)
+socketio = SocketIO(app, async_mode='threading') # Explicit async_mode for testing stability
 api = Api(app)
 jwt = JWTManager(app)
 

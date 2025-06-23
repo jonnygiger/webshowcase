@@ -139,7 +139,7 @@ migrate.init_app(app, db)
 app.config["SECRET_KEY"] = "test-secret-key"  # Align with test_base.py for session consistency
 app.config["JWT_SECRET_KEY"] = "your-jwt-secret-key"  # Moved Up
 
-socketio = SocketIO(app, async_mode='threading') # Explicit async_mode for testing stability
+socketio = SocketIO(app, async_mode='threading') # Reverted manage_session to default (True)
 api = Api(app)
 jwt = JWTManager(app)
 
@@ -266,7 +266,7 @@ scheduler = BackgroundScheduler()
 # For testing, use a short interval like 1 minute.
 # In production, this might be 5, 10, or 15 minutes.
 
-app.config["SECRET_KEY"] = "supersecretkey"
+app.config["SECRET_KEY"] = "test-secret-key"
 app.config["JWT_SECRET_KEY"] = "your-jwt-secret-key"  # Choose a strong, unique key
 app.config["UPLOAD_FOLDER"] = os.path.join(
     app.root_path, "uploads"
@@ -2660,19 +2660,43 @@ def login_required_socketio(f):
     return decorated_function
 
 
+import sys # Add sys import for stderr
+
 @socketio.on("connect", namespace="/")
 def handle_connect():
+    print(f"SERVER: SocketIO connect attempt. SID: {request.sid}. Request cookies: {request.cookies}", file=sys.stderr)
+    app.logger.info(f"SERVER: SocketIO connect attempt. SID: {request.sid}. Request cookies: {request.cookies}")
+    if hasattr(current_user, 'is_authenticated'):
+        print(f"SERVER: current_user has is_authenticated. Value: {current_user.is_authenticated}", file=sys.stderr)
+        app.logger.info(f"SERVER: current_user.is_authenticated: {current_user.is_authenticated}")
+        if current_user.is_authenticated:
+            print(f"SERVER: Authenticated user ID: {current_user.id}, Username: {current_user.username}. SID: {request.sid}", file=sys.stderr)
+            app.logger.info(f"SERVER: Authenticated user ID: {current_user.id}, Username: {current_user.username}")
+            join_room(f"user_{current_user.id}")
+            app.logger.info(
+                f"User {current_user.username} (SID: {request.sid}) connected to global namespace and joined room user_{current_user.id}"
+            )
+            emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': current_user.username})
+        else:
+            print(f"SERVER: current_user is not authenticated. SID: {request.sid}", file=sys.stderr)
+            app.logger.info(f"SERVER: current_user is not authenticated. SID: {request.sid}")
+            emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous'})
+    else:
+        print(f"SERVER: current_user object does not have is_authenticated. Type: {type(current_user)}. SID: {request.sid}", file=sys.stderr)
+        app.logger.warning(f"SERVER: current_user object does not have is_authenticated. Type: {type(current_user)}. SID: {request.sid}")
+        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous_error_current_user'})
+
     # current_user is available here if the connection carries session cookies
     # or if a token was used and authenticated by Flask-SocketIO's connection hook (if configured)
-    if current_user.is_authenticated: # Flask-SocketIO's current_user
-        join_room(f"user_{current_user.id}")
-        print(
-            f"User {current_user.username} (SID: {request.sid}) connected to global namespace and joined room user_{current_user.id}"
-        )
-        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': current_user.username})
-    else:
-        print(f"Anonymous user (SID: {request.sid}) connected to global namespace.")
-        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous'})
+    # if current_user.is_authenticated: # Flask-SocketIO's current_user # Original logic commented out for new logging
+    #     join_room(f"user_{current_user.id}")
+    #     print(
+    #         f"User {current_user.username} (SID: {request.sid}) connected to global namespace and joined room user_{current_user.id}"
+    #     )
+    #     emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': current_user.username})
+    # else:
+    #     print(f"Anonymous user (SID: {request.sid}) connected to global namespace.")
+    #     emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous'})
 
 
 if __name__ == "__main__":

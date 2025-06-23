@@ -19,6 +19,7 @@ from functools import wraps
 from datetime import datetime, timezone
 from collections import Counter  # Added for reaction counts
 from flask_socketio import SocketIO, emit, join_room
+from flask_login import LoginManager, current_user, login_user, logout_user # Import LoginManager and other necessary components
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_  # Added for inbox query
@@ -141,6 +142,14 @@ app.config["JWT_SECRET_KEY"] = "your-jwt-secret-key"  # Moved Up
 socketio = SocketIO(app, async_mode='threading') # Explicit async_mode for testing stability
 api = Api(app)
 jwt = JWTManager(app)
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login' # Specify the login view
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
 
 
 # Helper function for preparing and emitting activity events
@@ -2637,6 +2646,35 @@ def api_login():
         return {"message": "Invalid credentials"}, 401
 
 
+# Decorator for SocketIO login required
+def login_required_socketio(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated: # Uses Flask-SocketIO's current_user
+            emit('unauthorized_error', {'message': 'User not authenticated for this action.'})
+            # Returning False or None might signal to Flask-SocketIO to not proceed with the handler
+            # or to disconnect the client, depending on configuration.
+            # For now, emitting an error is a clear way to inform the client.
+            return False # Indicate failure / stop processing
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@socketio.on("connect", namespace="/")
+def handle_connect():
+    # current_user is available here if the connection carries session cookies
+    # or if a token was used and authenticated by Flask-SocketIO's connection hook (if configured)
+    if current_user.is_authenticated: # Flask-SocketIO's current_user
+        join_room(f"user_{current_user.id}")
+        print(
+            f"User {current_user.username} (SID: {request.sid}) connected to global namespace and joined room user_{current_user.id}"
+        )
+        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': current_user.username})
+    else:
+        print(f"Anonymous user (SID: {request.sid}) connected to global namespace.")
+        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous'})
+
+
 if __name__ == "__main__":
     # Start the scheduler only once, even with Flask reloader
     # The os.environ.get('WERKZEUG_RUN_MAIN') check ensures this runs in the main Flask process,
@@ -4749,3 +4787,31 @@ def post_stream_api_global():  # Also renamed function for clarity, though endpo
                 )
 
     return Response(event_stream(), mimetype="text/event-stream")
+
+# Decorator for SocketIO login required
+def login_required_socketio(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated: # Uses Flask-SocketIO's current_user
+            emit('unauthorized_error', {'message': 'User not authenticated for this action.'})
+            # Returning False or None might signal to Flask-SocketIO to not proceed with the handler
+            # or to disconnect the client, depending on configuration.
+            # For now, emitting an error is a clear way to inform the client.
+            return False # Indicate failure / stop processing
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@socketio.on("connect", namespace="/")
+def handle_connect():
+    # current_user is available here if the connection carries session cookies
+    # or if a token was used and authenticated by Flask-SocketIO's connection hook (if configured)
+    if current_user.is_authenticated: # Flask-SocketIO's current_user
+        join_room(f"user_{current_user.id}")
+        print(
+            f"User {current_user.username} (SID: {request.sid}) connected to global namespace and joined room user_{current_user.id}"
+        )
+        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': current_user.username})
+    else:
+        print(f"Anonymous user (SID: {request.sid}) connected to global namespace.")
+        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous'})

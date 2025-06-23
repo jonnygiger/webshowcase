@@ -364,49 +364,87 @@ class AppTestCase(unittest.TestCase):
         socket_client_to_connect = None
         if client_instance:  # If a specific socketio client is passed
             socket_client_to_connect = client_instance
-        elif hasattr(
-            self, "socketio_client"
-        ):  # Fallback to the default one for the test case
-            socket_client_to_connect = self.socketio_client
 
-        if socket_client_to_connect:
-            # If client is already connected (e.g. from test_client() auto-connect),
-            # disconnect it first to ensure the new connect call uses the correct headers.
+            # Disconnect if already connected, to prepare for new session association
             if socket_client_to_connect.is_connected(namespace='/'):
-                print(f"DEBUG: SocketIO client (for {username}) was already connected. Disconnecting before reconnecting with session.")
+                print(f"DEBUG: Provided client_instance for {username} was connected. Disconnecting.")
                 socket_client_to_connect.disconnect(namespace='/')
-                # Add a small delay to ensure disconnection is processed server-side
-                time.sleep(0.15) # Increased from 0.05 to 0.15
+                time.sleep(0.2) # Allow disconnect to settle
 
-            # Now connect with the headers that include the session cookie
-            print(f"DEBUG: SocketIO client (for {username}) connecting to namespace '/' with headers: {connect_headers}")
-            socket_client_to_connect.connect(namespace='/', headers=connect_headers) # Pass headers here
+            print(f"DEBUG: Attempting to connect provided client_instance for {username} with headers: {connect_headers}")
+            connect_success = socket_client_to_connect.connect(namespace='/', headers=connect_headers)
 
-            # Wait for the server to confirm the namespace connection.
-            connection_confirmed = False
-            wait_start_time = time.time()
-            max_wait_duration = 5.0  # seconds
+            if not connect_success:
+                raise ConnectionError(f"Provided SocketIO client for {username} connect() call returned False.")
 
-            print(f"DEBUG: SocketIO client (for {username}) waiting for 'confirm_namespace_connected' event (max {max_wait_duration}s).")
-            while time.time() - wait_start_time < max_wait_duration:
-                received = socket_client_to_connect.get_received(namespace='/')
-                for msg in received:
-                    if msg['name'] == 'confirm_namespace_connected':
-                        args = msg['args'][0]
-                        print(f"DEBUG: Received 'confirm_namespace_connected': {args}")
-                        if args.get('sid') == socket_client_to_connect.sid: # Check if confirmation is for this client
-                            connection_confirmed = True
-                            break
-                if connection_confirmed:
-                    break
-                time.sleep(0.05) # Poll interval
+            if not (hasattr(socket_client_to_connect, 'sid') and socket_client_to_connect.sid):
+                is_connected_debug = socket_client_to_connect.is_connected(namespace='/') # Re-check
+                current_sid_debug = getattr(socket_client_to_connect, 'sid', 'NOT SET')
+                raise ConnectionError(
+                    f"Provided SocketIO client for {username} connected (success={connect_success}, is_connected_now={is_connected_debug}) but has no SID ({current_sid_debug})."
+                )
+            # If we reach here, the provided client is now (hopefully) connected with the new session and has an SID.
+        else:
+            # Default path: manage self.socketio_client
+            if hasattr(self, 'socketio_client') and self.socketio_client.is_connected(namespace='/'):
+                print(f"DEBUG: Default SocketIO client (for {username}) was connected. Disconnecting old instance.")
+                self.socketio_client.disconnect(namespace='/')
+                time.sleep(0.2) # Delay for old client disconnect to settle
 
-            if not connection_confirmed:
-                raise TimeoutError(
-                    f"SocketIO client for {username} did not receive 'confirm_namespace_connected' event for its SID {socket_client_to_connect.sid} within {max_wait_duration}s."
+            print(f"DEBUG: Creating new SocketIO client for {username} to use updated cookie jar from self.client.")
+            # Create a new client instance. This new client will use self.client's (updated) cookie_jar
+            # and auto-connect.
+            self.socketio_client = self.socketio_class_level.test_client(
+                self.app, flask_test_client=self.client
+            )
+            socket_client_to_connect = self.socketio_client # This is the new instance that auto-connected
+
+            # Check SID directly after auto-connection of the new instance
+            if not (hasattr(socket_client_to_connect, 'sid') and socket_client_to_connect.sid):
+                # For debugging, let's see what is_connected says
+                is_connected_debug = socket_client_to_connect.is_connected(namespace='/')
+                current_sid_debug = getattr(socket_client_to_connect, 'sid', 'NOT SET')
+                print(f"DEBUG: New client for {username} auto-connect state: is_connected={is_connected_debug}, SID={current_sid_debug}")
+
+                # If SID is not set even after auto-connect, this is the problem.
+                # It might be worth trying one explicit connect here as a last resort,
+                # but the primary expectation is that auto-connect with flask_test_client should work.
+                # For now, let's error out if auto-connect didn't set SID.
+                raise ConnectionError(
+                    f"SocketIO client for {username} (new instance) failed to get SID during auto-connect. is_connected={is_connected_debug}, SID={current_sid_debug}"
                 )
 
-            print(f"DEBUG: SocketIO client (for {username}) received 'confirm_namespace_connected' after {time.time() - wait_start_time:.2f}s.")
+        # If we pass the above, socket_client_to_connect should have a valid SID from auto-connect.
+
+        print(f"DEBUG: SocketIO client for {username} is connected with SID: {socket_client_to_connect.sid}")
+
+        # Wait for the server to confirm the namespace connection.
+        connection_confirmed = False
+        wait_start_time = time.time()
+        max_wait_duration = 5.0  # seconds
+
+        print(f"DEBUG: SocketIO client (for {username}, SID: {socket_client_to_connect.sid}) waiting for 'confirm_namespace_connected' event (max {max_wait_duration}s).")
+        while time.time() - wait_start_time < max_wait_duration:
+            received = socket_client_to_connect.get_received(namespace='/')
+            for msg in received:
+                if msg['name'] == 'confirm_namespace_connected':
+                    args = msg['args'][0]
+                    print(f"DEBUG: Received 'confirm_namespace_connected': {args} for client SID {socket_client_to_connect.sid}")
+                    # Ensure sid attribute exists before comparing
+                    if hasattr(socket_client_to_connect, 'sid') and args.get('sid') == socket_client_to_connect.sid:
+                        connection_confirmed = True
+                        break
+            if connection_confirmed:
+                break
+            time.sleep(0.05) # Poll interval
+
+        if not connection_confirmed:
+            client_sid_for_error = getattr(socket_client_to_connect, 'sid', 'UNKNOWN_OR_UNSET_SID')
+            raise TimeoutError(
+                f"SocketIO client for {username} did not receive 'confirm_namespace_connected' event for its SID {client_sid_for_error} within {max_wait_duration}s."
+            )
+
+        print(f"DEBUG: SocketIO client (for {username}) received 'confirm_namespace_connected' after {time.time() - wait_start_time:.2f}s.")
 
         return login_response # Return the login_response
 

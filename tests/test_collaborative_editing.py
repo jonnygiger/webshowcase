@@ -464,6 +464,7 @@ class TestCollaborativeEditing(AppTestCase):
             self.socketio_client.emit(
                 "edit_post_content", edit_data, namespace="/"
             )  # Restored event emit
+            time.sleep(0.2) # Allow time for event to be processed by server
 
             # 4. Assert database changes
             # Ensure self.test_post is associated with the current session before refreshing
@@ -530,9 +531,8 @@ class TestCollaborativeEditing(AppTestCase):
 
             # 6. Clean up (socketio_client disconnect is handled in tearDown)
 
-    @patch("app.emit")  # Patch app.emit
-    @patch("flask_socketio.emit")  # Patch flask_socketio.emit
-    def test_socketio_edit_post_without_lock(self, mock_flask_socketio_emit, mock_app_emit): # Added mock_app_emit
+    @patch("flask_socketio.emit")  # Patch flask_socketio.emit directly
+    def test_socketio_edit_post_without_lock(self, mock_emit):
         with self.app.app_context():
             # 1. Ensure the post is not locked
             # Delete any existing locks on the test_post to be certain
@@ -589,8 +589,8 @@ class TestCollaborativeEditing(AppTestCase):
             time.sleep(0.1) # Give a moment for emit to be called
 
             found_edit_error_call = False
-            # Check both mocks
-            all_calls = mock_flask_socketio_emit.call_args_list + mock_app_emit.call_args_list
+            # Check the single mock
+            all_calls = mock_emit.call_args_list
             for call_args in all_calls:
                 event_name = call_args[0][0] # First positional argument to emit
                 if event_name == "edit_error":

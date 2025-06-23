@@ -298,12 +298,16 @@ class AppTestCase(unittest.TestCase):
     def tearDown(self):
         """Executed after each test."""
         # Disconnect the Flask-SocketIO test client
-        if hasattr(self, 'socketio_client') and self.socketio_client and self.socketio_client.is_connected():
-            print(f"Disconnecting Flask-SocketIO test_client in tearDown. SID: {self.socketio_client.sid}", file=sys.stderr)
-            self.socketio_client.disconnect()
-            print("Flask-SocketIO test_client disconnected in tearDown.", file=sys.stderr)
-        elif hasattr(self, 'socketio_client') and self.socketio_client: # If it exists but not connected
-            print("Flask-SocketIO test_client existed in tearDown but was not connected.", file=sys.stderr)
+        if hasattr(self, 'socketio_client') and self.socketio_client:
+            if self.socketio_client.is_connected():
+                client_sid = getattr(self.socketio_client, 'sid', 'N/A (sid missing despite connected)')
+                print(f"Disconnecting Flask-SocketIO test_client in tearDown. SID: {client_sid}", file=sys.stderr)
+                self.socketio_client.disconnect()
+                print("Flask-SocketIO test_client disconnected in tearDown.", file=sys.stderr)
+            else:
+                print("Flask-SocketIO test_client existed in tearDown but was not connected.", file=sys.stderr)
+        else:
+            print("No socketio_client found in tearDown.", file=sys.stderr)
 
 
         with self.app.app_context():  # Ensure app context for DB operations
@@ -477,7 +481,7 @@ class AppTestCase(unittest.TestCase):
             # Attempt an explicit connect if auto-connect failed.
             # This was part of the previous logic that still led to errors, but keeping it for one more try with other changes.
             print(f"DEBUG: Attempting explicit connect for {username}.", file=sys.stderr)
-            self.socketio_client.connect(namespace='/', headers=connect_headers, wait_timeout=5) # Use connect_headers
+            self.socketio_client.connect(namespace='/', headers=connect_headers) # Use connect_headers
             time.sleep(0.1)
             if not self.socketio_client.is_connected(namespace='/') or not getattr(self.socketio_client, 'sid', None):
                 eio_sid_val = "N/A"

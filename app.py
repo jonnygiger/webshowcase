@@ -833,6 +833,7 @@ def login():
             )
             session["user_id"] = user.id
             session["username"] = user.username  # Keep for convenience
+            login_user(user)  # <<< ADDED THIS LINE
             flash("You are now logged in!", "success")
             return redirect(
                 url_for("hello_world")
@@ -2446,6 +2447,9 @@ def handle_edit_post_content(data):
     user_id = None
     token = data.get("token")
 
+    app.logger.debug(f"handle_edit_post_content invoked. Data received: {data}, SID: {request.sid}")
+    app.logger.debug(f"Session content at handler: {dict(session)}")
+
     if token:
         try:
             # Assuming token is passed in data when session might not be available (e.g., pure WebSocket client or test client)
@@ -2473,11 +2477,16 @@ def handle_edit_post_content(data):
     app.logger.debug(f"User ID from token: {user_id}")
 
     if not user_id:  # If token auth failed or no token was provided
-        user_id = session.get("user_id")  # Fallback to session
-        app.logger.debug(f"User ID from session: {user_id}")
+        user_id_from_session = session.get("user_id")
+        app.logger.debug(f"Attempting to use User ID from session: {user_id_from_session}")
+        if user_id_from_session:
+            user_id = user_id_from_session
+        else:
+            app.logger.debug(f"No user_id in session either. SID: {request.sid}")
+
 
     if not user_id:
-        app.logger.debug("Authentication failed (no token or session user_id).")
+        app.logger.debug(f"Authentication failed (no token or session user_id). SID: {request.sid}")
         emit(
             "edit_error",
             {
@@ -2664,14 +2673,15 @@ import sys # Add sys import for stderr
 
 @socketio.on("connect", namespace="/")
 def handle_connect():
-    print(f"SERVER: SocketIO connect attempt. SID: {request.sid}. Request cookies: {request.cookies}", file=sys.stderr)
     app.logger.info(f"SERVER: SocketIO connect attempt. SID: {request.sid}. Request cookies: {request.cookies}")
+    flask_request_session = request.environ.get('werkzeug.request').session if request.environ.get('werkzeug.request') else None
+    app.logger.info(f"SERVER: Flask session via werkzeug.request.session: {flask_request_session}")
+    app.logger.info(f"SERVER: Flask session via flask.session: {dict(session)}") # Direct flask.session
+
     if hasattr(current_user, 'is_authenticated'):
-        print(f"SERVER: current_user has is_authenticated. Value: {current_user.is_authenticated}", file=sys.stderr)
-        app.logger.info(f"SERVER: current_user.is_authenticated: {current_user.is_authenticated}")
+        app.logger.info(f"SERVER: current_user has is_authenticated. Value: {current_user.is_authenticated}")
         if current_user.is_authenticated:
-            print(f"SERVER: Authenticated user ID: {current_user.id}, Username: {current_user.username}. SID: {request.sid}", file=sys.stderr)
-            app.logger.info(f"SERVER: Authenticated user ID: {current_user.id}, Username: {current_user.username}")
+            app.logger.info(f"SERVER: Authenticated user ID: {current_user.id}, Username: {current_user.username}. SID: {request.sid}")
             join_room(f"user_{current_user.id}")
             app.logger.info(
                 f"User {current_user.username} (SID: {request.sid}) connected to global namespace and joined room user_{current_user.id}"

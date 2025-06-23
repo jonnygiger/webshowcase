@@ -382,33 +382,31 @@ class AppTestCase(unittest.TestCase):
             print(f"DEBUG: SocketIO client (for {username}) connecting to namespace '/' with headers: {connect_headers}")
             socket_client_to_connect.connect(namespace='/', headers=connect_headers) # Pass headers here
 
-            # Wait for the connection to be fully established and initial messages processed.
-            # The connect() call itself is blocking for the transport.
-            # This period is for the server to complete its internal setup for the namespace and session.
-            connection_establishment_time = 0.0
-            max_wait_time = 0.75  # Increased total wait time
-            poll_interval = 0.05
-            initial_settle_heuristic = 0.2 # Time after which we consider breaking if no messages
+            # Wait for the server to confirm the namespace connection.
+            connection_confirmed = False
+            wait_start_time = time.time()
+            max_wait_duration = 5.0  # seconds
 
-            print(f"DEBUG: SocketIO client (for {username}) entering post-connect settling loop (max {max_wait_time}s).")
-            while connection_establishment_time < max_wait_time:
-                # Try to receive any pending messages (e.g., connect acknowledgements from server)
-                # This also serves as a small delay and allows I/O processing.
-                received_messages = socket_client_to_connect.get_received(namespace='/')
+            print(f"DEBUG: SocketIO client (for {username}) waiting for 'confirm_namespace_connected' event (max {max_wait_duration}s).")
+            while time.time() - wait_start_time < max_wait_duration:
+                received = socket_client_to_connect.get_received(namespace='/')
+                for msg in received:
+                    if msg['name'] == 'confirm_namespace_connected':
+                        args = msg['args'][0]
+                        print(f"DEBUG: Received 'confirm_namespace_connected': {args}")
+                        if args.get('sid') == socket_client_to_connect.sid: # Check if confirmation is for this client
+                            connection_confirmed = True
+                            break
+                if connection_confirmed:
+                    break
+                time.sleep(0.05) # Poll interval
 
-                # Optional: print if messages were received to see activity
-                # if received_messages:
-                #     print(f"DEBUG: SocketIO client (for {username}) received during settle: {received_messages}")
+            if not connection_confirmed:
+                raise TimeoutError(
+                    f"SocketIO client for {username} did not receive 'confirm_namespace_connected' event for its SID {socket_client_to_connect.sid} within {max_wait_duration}s."
+                )
 
-                time.sleep(poll_interval)
-                connection_establishment_time += poll_interval
-                # Optional: print if messages were received to see activity
-                # if received_messages:
-                #     print(f"DEBUG: SocketIO client (for {username}) received during settle: {received_messages}")
-
-            if connection_establishment_time >= max_wait_time:
-                print(f"DEBUG: SocketIO client (for {username}) connection settling loop finished after {connection_establishment_time:.2f}s (max was {max_wait_time}s).")
-            # No explicit final sleep needed here as the loop itself provides that delay
+            print(f"DEBUG: SocketIO client (for {username}) received 'confirm_namespace_connected' after {time.time() - wait_start_time:.2f}s.")
 
         return login_response # Return the login_response
 

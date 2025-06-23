@@ -7,3 +7,4 @@ Flask-Migrate
 
 Flask-RESTful
 Flask-JWT-Extended
+Flask-Login

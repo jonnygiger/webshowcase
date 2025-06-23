@@ -446,6 +446,9 @@ class TestCollaborativeEditing(AppTestCase):
             # Clear mock calls from lock acquisition
             mock_socketio_emit.reset_mock() # Use the correct mock name
 
+            # Ensure socketio_client is authenticated as collaborator for this event emission
+            self.login(self.collaborator.username, "password")
+
             # 2. Prepare for SocketIO event emission
             # Ensure self.socketio_client is connected (it's usually handled by AppTestCase.setUp)
             if not self.socketio_client or not self.socketio_client.is_connected():

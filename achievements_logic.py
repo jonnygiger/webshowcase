@@ -33,7 +33,10 @@ def get_user_stat(user, stat_type):
     elif stat_type == "num_polls_voted":
         # Counts distinct polls a user has voted in
         return (
-            PollVote.query.filter_by(user_id=user.id).distinct(PollVote.poll_id).count()
+            db.session.query(PollVote.poll_id)
+            .filter_by(user_id=user.id)
+            .distinct()
+            .count()
         )
     elif stat_type == "num_likes_received":
         # Sum of likes on all posts by the user

@@ -137,7 +137,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 migrate.init_app(app, db)
 app.config["SECRET_KEY"] = "test-secret-key"  # Align with test_base.py for session consistency
-app.config["JWT_SECRET_KEY"] = "your-jwt-secret-key"  # Moved Up
+app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"  # Align with test_base.py
 
 socketio = SocketIO(app, async_mode='threading') # Reverted manage_session to default (True)
 api = Api(app)

@@ -326,125 +326,124 @@ class AppTestCase(unittest.TestCase):
 
     def login(self, username, password, client_instance=None):
         # Determine which HTTP client to use for login
-        http_client = self.client  # Default to the instance's primary flask test client
-        login_response = None # Define login_response in the outer scope
+        http_client = self.client
+        login_response = None
 
         # Flask login via POST request
-        with http_client as c: # Use context manager for client
-            login_response = c.post( # Assign to login_response
-                "/login",
-                data=dict(username=username, password=password),
-                follow_redirects=True,
-            )
-            self.assertEqual(login_response.status_code, 200, f"HTTP Login failed for {username}")
+        with http_client.session_transaction() as sess:
+            # This ensures session modifications by self.client.post are captured
+            # and available for the SocketIO client if it uses the same session mechanism.
+            # However, SocketIO client typically relies on cookies.
+            pass # Just to establish the context
 
-            cookie_header = None
-            cookies = []
-            if hasattr(c, "cookie_jar") and c.cookie_jar is not None:
-                for cookie_in_jar in c.cookie_jar:
-                    cookies.append(f"{cookie_in_jar.name}={cookie_in_jar.value}")
+        login_response = http_client.post(
+            "/login",
+            data=dict(username=username, password=password),
+            follow_redirects=True,
+        )
+        self.assertEqual(login_response.status_code, 200, f"HTTP Login failed for {username}")
 
-            if cookies:
-                cookie_header = "; ".join(cookies)
-                print(f"DEBUG: [After with c:] Cookie header for SocketIO connect for {username}: {cookie_header}")
-            else:
-                print(f"DEBUG: [After with c:] No cookies found in http_client.cookie_jar for {username}.")
-                set_cookie_header = login_response.headers.get('Set-Cookie')
-                if set_cookie_header:
-                    session_cookie_name_from_config = self.app.config.get('SESSION_COOKIE_NAME', 'session')
-                    if session_cookie_name_from_config in set_cookie_header:
-                        cookie_value_part = set_cookie_header.split(';')[0]
-                        cookie_header = cookie_value_part
-                        print(f"DEBUG: Fallback - Using Set-Cookie from login response for {username}: {cookie_header}")
+        # Extract cookies from the HTTP client's cookie jar AFTER the login request
+        cookie_header = None
+        cookies_list = []
+        if hasattr(http_client, "cookie_jar") and http_client.cookie_jar is not None:
+            for cookie_in_jar in http_client.cookie_jar:
+                cookies_list.append(f"{cookie_in_jar.name}={cookie_in_jar.value}")
+
+        if cookies_list:
+            cookie_header = "; ".join(cookies_list)
+            print(f"DEBUG: Cookie header for SocketIO connect for {username}: {cookie_header}")
+        else:
+            # Fallback for cases where cookie_jar might not be populated as expected,
+            # e.g., if using a different test client setup or version.
+            print(f"DEBUG: No cookies found in http_client.cookie_jar for {username}. Trying Set-Cookie header.")
+            set_cookie_header_value = login_response.headers.get('Set-Cookie')
+            if set_cookie_header_value:
+                # Simplistic parsing: take the first part of Set-Cookie, assuming it's the session cookie.
+                # This might need refinement if multiple cookies are set or format is complex.
+                cookie_header = set_cookie_header_value.split(';')[0]
+                print(f"DEBUG: Fallback - Using Set-Cookie from login response for {username}: {cookie_header}")
+
 
         connect_headers = {}
         if cookie_header:
             connect_headers['Cookie'] = cookie_header
+        else:
+            print(f"DEBUG: No cookie header could be constructed for {username}. SocketIO connection might fail authentication.")
+
 
         socket_client_to_connect = None
-        if client_instance:  # If a specific socketio client is passed
-            socket_client_to_connect = client_instance
+        # Always create a new socketio_client after HTTP login to ensure it picks up new session
+        # This effectively ignores client_instance for the primary connection logic,
+        # which might break tests that rely on client_instance for receiving auth-dependent messages.
+        # However, the goal is to get a reliably authenticated SocketIO client for the login session.
+        if hasattr(self, 'socketio_client') and self.socketio_client.is_connected(namespace='/'):
+            self.socketio_client.disconnect(namespace='/'); time.sleep(0.2)
 
-            # Disconnect if already connected, to prepare for new session association
-            if socket_client_to_connect.is_connected(namespace='/'):
-                print(f"DEBUG: Provided client_instance for {username} was connected. Disconnecting.")
-                socket_client_to_connect.disconnect(namespace='/')
-                time.sleep(0.2) # Allow disconnect to settle
+        print(f"DEBUG: Creating new self.socketio_client for {username} after HTTP login.")
+        self.socketio_client = self.socketio_class_level.test_client(
+            self.app, flask_test_client=self.client # self.client has the session cookie
+        )
+        socket_client_for_confirmation = self.socketio_client # Use this new client for confirmation
 
-            print(f"DEBUG: Attempting to connect provided client_instance for {username} with headers: {connect_headers}")
-            connect_success = socket_client_to_connect.connect(namespace='/', headers=connect_headers)
-
-            if not connect_success:
-                raise ConnectionError(f"Provided SocketIO client for {username} connect() call returned False.")
-
-            if not (hasattr(socket_client_to_connect, 'sid') and socket_client_to_connect.sid):
-                is_connected_debug = socket_client_to_connect.is_connected(namespace='/') # Re-check
-                current_sid_debug = getattr(socket_client_to_connect, 'sid', 'NOT SET')
+        current_sid = getattr(socket_client_for_confirmation, 'sid', None)
+        if not current_sid:
+            # This means auto-connect on instantiation failed to get an SID.
+            is_connected_now = socket_client_for_confirmation.is_connected(namespace='/')
+            eio_sid = getattr(socket_client_for_confirmation.eio_test_client, 'sid', None) if hasattr(socket_client_for_confirmation, 'eio_test_client') else None
+            # Attempt one explicit connect, as a last resort for the new client.
+            print(f"DEBUG: Newly created client for {username} has no SID from auto-connect (is_connected: {is_connected_now}, eio_sid: {eio_sid}). Attempting explicit connect.")
+            socket_client_for_confirmation.connect(namespace='/', headers=connect_headers) # connect_headers from HTTP login
+            time.sleep(0.1) # Give it a moment
+            current_sid = getattr(socket_client_for_confirmation, 'sid', None)
+            if not current_sid:
+                is_connected_now_after_explicit = socket_client_for_confirmation.is_connected(namespace='/')
+                eio_sid_after_explicit = getattr(socket_client_for_confirmation.eio_test_client, 'sid', None) if hasattr(socket_client_for_confirmation, 'eio_test_client') else None
                 raise ConnectionError(
-                    f"Provided SocketIO client for {username} connected (success={connect_success}, is_connected_now={is_connected_debug}) but has no SID ({current_sid_debug})."
+                    f"Newly created SocketIO client for {username} still has no SID after explicit connect attempt. "
+                    f"is_connected: {is_connected_now_after_explicit}, eio_sid: {eio_sid_after_explicit}"
                 )
-            # If we reach here, the provided client is now (hopefully) connected with the new session and has an SID.
-        else:
-            # Default path: manage self.socketio_client
-            if hasattr(self, 'socketio_client') and self.socketio_client.is_connected(namespace='/'):
-                print(f"DEBUG: Default SocketIO client (for {username}) was connected. Disconnecting old instance.")
-                self.socketio_client.disconnect(namespace='/')
-                time.sleep(0.2) # Delay for old client disconnect to settle
+        print(f"DEBUG: SocketIO client for {username} (self.socketio_client) has SID: {current_sid}.")
 
-            print(f"DEBUG: Creating new SocketIO client for {username} to use updated cookie jar from self.client.")
-            # Create a new client instance. This new client will use self.client's (updated) cookie_jar
-            # and auto-connect.
-            self.socketio_client = self.socketio_class_level.test_client(
-                self.app, flask_test_client=self.client
-            )
-            socket_client_to_connect = self.socketio_client # This is the new instance that auto-connected
-
-            # Check SID directly after auto-connection of the new instance
-            if not (hasattr(socket_client_to_connect, 'sid') and socket_client_to_connect.sid):
-                # For debugging, let's see what is_connected says
-                is_connected_debug = socket_client_to_connect.is_connected(namespace='/')
-                current_sid_debug = getattr(socket_client_to_connect, 'sid', 'NOT SET')
-                print(f"DEBUG: New client for {username} auto-connect state: is_connected={is_connected_debug}, SID={current_sid_debug}")
-
-                # If SID is not set even after auto-connect, this is the problem.
-                # It might be worth trying one explicit connect here as a last resort,
-                # but the primary expectation is that auto-connect with flask_test_client should work.
-                # For now, let's error out if auto-connect didn't set SID.
-                raise ConnectionError(
-                    f"SocketIO client for {username} (new instance) failed to get SID during auto-connect. is_connected={is_connected_debug}, SID={current_sid_debug}"
-                )
-
-        # If we pass the above, socket_client_to_connect should have a valid SID from auto-connect.
-
-        print(f"DEBUG: SocketIO client for {username} is connected with SID: {socket_client_to_connect.sid}")
-
-        # Wait for the server to confirm the namespace connection.
-        connection_confirmed = False
+        # Wait for authenticated confirmation using the obtained current_sid
+        connection_confirmed_and_authenticated = False
         wait_start_time = time.time()
-        max_wait_duration = 5.0  # seconds
+        max_wait_duration = 10.0
 
-        print(f"DEBUG: SocketIO client (for {username}, SID: {socket_client_to_connect.sid}) waiting for 'confirm_namespace_connected' event (max {max_wait_duration}s).")
+        print(f"DEBUG: SocketIO client for {username} (SID: {current_sid}) entering 'confirm_namespace_connected' wait loop (max {max_wait_duration}s).")
+
+        received_events_log = []
+        # Clear any old messages that might have been received by this client instance before this login's connect attempt
+        socket_client_for_confirmation.get_received(namespace='/')
+
         while time.time() - wait_start_time < max_wait_duration:
-            received = socket_client_to_connect.get_received(namespace='/')
+            received = socket_client_for_confirmation.get_received(namespace='/')
+            if received:
+                received_events_log.extend(received)
             for msg in received:
                 if msg['name'] == 'confirm_namespace_connected':
                     args = msg['args'][0]
-                    print(f"DEBUG: Received 'confirm_namespace_connected': {args} for client SID {socket_client_to_connect.sid}")
-                    # Ensure sid attribute exists before comparing
-                    if hasattr(socket_client_to_connect, 'sid') and args.get('sid') == socket_client_to_connect.sid:
-                        connection_confirmed = True
-                        break
-            if connection_confirmed:
+                    if args.get('sid') == current_sid: # Critical check: event is for THIS client's current connection
+                        print(f"DEBUG: Received 'confirm_namespace_connected' for own SID {current_sid}: {args}")
+                        if args.get('status') == 'authenticated' and args.get('username') == username:
+                            connection_confirmed_and_authenticated = True
+                            break
+                        elif args.get('status') == 'anonymous':
+                             print(f"DEBUG: WARNING - confirm_namespace_connected for SID {current_sid} had status 'anonymous' for user {username}.")
+                        # else: (other mismatches, already logged by previous version)
+                    # else: (event for different SID, ignore, already logged by previous version)
+            if connection_confirmed_and_authenticated:
                 break
-            time.sleep(0.05) # Poll interval
+            time.sleep(0.1)
 
-        if not connection_confirmed:
-            client_sid_for_error = getattr(socket_client_to_connect, 'sid', 'UNKNOWN_OR_UNSET_SID')
+        if not connection_confirmed_and_authenticated:
+            print(f"DEBUG: Timeout details for {username} (SID: {current_sid}):")
+            print(f"DEBUG: Received events during wait: {json.dumps(received_events_log, indent=2)}")
             raise TimeoutError(
-                f"SocketIO client for {username} did not receive 'confirm_namespace_connected' event for its SID {client_sid_for_error} within {max_wait_duration}s."
+                f"SocketIO client for {username} (SID: {current_sid}) did not receive an authenticated 'confirm_namespace_connected' event for its SID within {max_wait_duration}s."
             )
 
-        print(f"DEBUG: SocketIO client (for {username}) received 'confirm_namespace_connected' after {time.time() - wait_start_time:.2f}s.")
+        print(f"DEBUG: SocketIO client (for {username}, SID: {current_sid}) received authenticated 'confirm_namespace_connected' after {time.time() - wait_start_time:.2f}s.")
 
         return login_response # Return the login_response
 

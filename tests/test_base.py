@@ -382,19 +382,33 @@ class AppTestCase(unittest.TestCase):
             print(f"DEBUG: SocketIO client (for {username}) connecting to namespace '/' with headers: {connect_headers}")
             socket_client_to_connect.connect(namespace='/', headers=connect_headers) # Pass headers here
 
-            # After connecting, give a moment for server to process and clear any connect messages
-            time.sleep(0.1) # Pause for server to handle connect
+            # Wait for the connection to be fully established and initial messages processed.
+            # The connect() call itself is blocking for the transport.
+            # This period is for the server to complete its internal setup for the namespace and session.
+            connection_establishment_time = 0.0
+            max_wait_time = 0.75  # Increased total wait time
+            poll_interval = 0.05
+            initial_settle_heuristic = 0.2 # Time after which we consider breaking if no messages
 
-            # Clear out any messages received immediately after connect (e.g., connect acknowledgement)
-            connect_receive_start_time = time.time()
-            while time.time() - connect_receive_start_time < 0.3: # Max 0.3s to clear connect acks
-                if not socket_client_to_connect.get_received(namespace='/'):
-                    break
-                time.sleep(0.01)
+            print(f"DEBUG: SocketIO client (for {username}) entering post-connect settling loop (max {max_wait_time}s).")
+            while connection_establishment_time < max_wait_time:
+                # Try to receive any pending messages (e.g., connect acknowledgements from server)
+                # This also serves as a small delay and allows I/O processing.
+                received_messages = socket_client_to_connect.get_received(namespace='/')
 
-            # Final brief pause to ensure server-side state (like session association) is settled
-            # Increased from 0.1 to 0.25 to give more time for server to process connection fully.
-            time.sleep(0.25)
+                # Optional: print if messages were received to see activity
+                # if received_messages:
+                #     print(f"DEBUG: SocketIO client (for {username}) received during settle: {received_messages}")
+
+                time.sleep(poll_interval)
+                connection_establishment_time += poll_interval
+                # Optional: print if messages were received to see activity
+                # if received_messages:
+                #     print(f"DEBUG: SocketIO client (for {username}) received during settle: {received_messages}")
+
+            if connection_establishment_time >= max_wait_time:
+                print(f"DEBUG: SocketIO client (for {username}) connection settling loop finished after {connection_establishment_time:.2f}s (max was {max_wait_time}s).")
+            # No explicit final sleep needed here as the loop itself provides that delay
 
         return login_response # Return the login_response
 

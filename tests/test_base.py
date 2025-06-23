@@ -370,23 +370,31 @@ class AppTestCase(unittest.TestCase):
             socket_client_to_connect = self.socketio_client
 
         if socket_client_to_connect:
-            if not socket_client_to_connect.is_connected(namespace='/'): # Check the specific namespace
-                print(f"DEBUG: SocketIO client (for {username}) connecting to namespace '/' with headers: {connect_headers}")
-                socket_client_to_connect.connect(namespace='/', headers=connect_headers) # Pass headers here
-                # After connecting, give a moment for server to process and clear any connect messages
-                time.sleep(0.1) # Initial pause for server to handle connect
-                # Clear out any messages received immediately after connect (e.g., connect acknowledgement)
-                # Loop for a short duration to ensure any connect-related packets are processed
-                connect_receive_start_time = time.time()
-                while time.time() - connect_receive_start_time < 0.3: # Max 0.3s to clear connect acks
-                    if not socket_client_to_connect.get_received(namespace='/'):
-                        break
-                    time.sleep(0.01)
-            else:
-                print(f"DEBUG: SocketIO client (for {username}) already connected to namespace '/'")
+            # If client is already connected (e.g. from test_client() auto-connect),
+            # disconnect it first to ensure the new connect call uses the correct headers.
+            if socket_client_to_connect.is_connected(namespace='/'):
+                print(f"DEBUG: SocketIO client (for {username}) was already connected. Disconnecting before reconnecting with session.")
+                socket_client_to_connect.disconnect(namespace='/')
+                # Add a small delay to ensure disconnection is processed server-side
+                time.sleep(0.15) # Increased from 0.05 to 0.15
+
+            # Now connect with the headers that include the session cookie
+            print(f"DEBUG: SocketIO client (for {username}) connecting to namespace '/' with headers: {connect_headers}")
+            socket_client_to_connect.connect(namespace='/', headers=connect_headers) # Pass headers here
+
+            # After connecting, give a moment for server to process and clear any connect messages
+            time.sleep(0.1) # Pause for server to handle connect
+
+            # Clear out any messages received immediately after connect (e.g., connect acknowledgement)
+            connect_receive_start_time = time.time()
+            while time.time() - connect_receive_start_time < 0.3: # Max 0.3s to clear connect acks
+                if not socket_client_to_connect.get_received(namespace='/'):
+                    break
+                time.sleep(0.01)
 
             # Final brief pause to ensure server-side state (like session association) is settled
-            time.sleep(0.1)
+            # Increased from 0.1 to 0.25 to give more time for server to process connection fully.
+            time.sleep(0.25)
 
         return login_response # Return the login_response
 

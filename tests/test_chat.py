@@ -184,6 +184,8 @@ class ChatTestCase(AppTestCase):
             self.login(
                 self.user1.username, "password"
             )  # Simulate login for User1's socket client
+            import time # Make sure time is imported
+            time.sleep(0.5) # Allow server to fully process the connection established in login
             self.socketio_client.emit("join_chat_room", {"room_name": socket_room_name}, namespace="/")
             # Clear any initial messages from User1 joining
             self.socketio_client.get_received()

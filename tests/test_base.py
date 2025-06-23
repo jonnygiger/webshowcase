@@ -467,37 +467,48 @@ class AppTestCase(unittest.TestCase):
         # This new client becomes the primary self.socketio_client for subsequent actions in the test.
         self.socketio_client = self.socketio_class_level.test_client(
             self.app,
-            flask_test_client=self.client # This is key for sharing cookie jar
+            flask_test_client=self.client, # Use the main test client
+            headers=connect_headers # Pass extracted cookies if available
         )
-        # The test_client should attempt to connect automatically when created with flask_test_client.
-        # No need for an explicit .connect() here unless testing specific connection scenarios.
+        # The test_client attempts to connect automatically when created with flask_test_client.
+        # The headers argument ensures this initial connection attempt uses the session cookie.
 
-        # Simplified: Check if connection was successful and SID assigned.
-        # The wait for 'confirm_namespace_connected' is removed for now to isolate SID assignment.
-        time.sleep(0.1) # Give a brief moment for connection to establish.
-        if not self.socketio_client.is_connected(namespace='/') or not getattr(self.socketio_client, 'sid', None):
-            print(f"DEBUG: SocketIO client for {username} did not connect or get an SID automatically.", file=sys.stderr)
-            print(f"DEBUG: is_connected: {self.socketio_client.is_connected(namespace='/')}, sid: {getattr(self.socketio_client, 'sid', None)}", file=sys.stderr)
-            # Attempt an explicit connect if auto-connect failed.
-            # This was part of the previous logic that still led to errors, but keeping it for one more try with other changes.
-            print(f"DEBUG: Attempting explicit connect for {username}.", file=sys.stderr)
-            self.socketio_client.connect(namespace='/', headers=connect_headers) # Use connect_headers
-            time.sleep(0.1)
-            if not self.socketio_client.is_connected(namespace='/') or not getattr(self.socketio_client, 'sid', None):
-                eio_sid_val = "N/A"
-                if hasattr(self.socketio_client, 'eio_test_client') and self.socketio_client.eio_test_client:
-                    eio_sid_val = getattr(self.socketio_client.eio_test_client, 'sid', "N/A (eio_test_client has no sid)")
+        time.sleep(0.1) # Give a brief moment for connection to establish and SID to be assigned.
 
+        if not getattr(self.socketio_client, 'sid', None):
+            # If SID is still not assigned, the connection with authentication failed.
+            eio_sid_val = "N/A"
+            if hasattr(self.socketio_client, 'eio_test_client') and self.socketio_client.eio_test_client:
+                eio_sid_val = getattr(self.socketio_client.eio_test_client, 'sid', "N/A (eio_test_client has no sid)")
+
+            # Check is_connected status for more detailed error reporting
+            is_connected_status = self.socketio_client.is_connected(namespace='/')
+            print(f"DEBUG: SocketIO client for {username} failed to get SID. "
+                  f"is_connected: {is_connected_status}, sid: None, eio_sid: {eio_sid_val}", file=sys.stderr)
+
+            # It's possible the client thinks it's connected but didn't get an SID,
+            # or the connection failed more fundamentally.
+            if not is_connected_status and eio_sid_val == "N/A (eio_test_client has no sid)":
+                 # This suggests a more fundamental Engine.IO connection failure.
+                 # Try a more forceful explicit connect, though it might be redundant if the constructor's attempt failed.
+                 print(f"DEBUG: Attempting a more explicit connect for {username} due to fundamental connection failure indication.", file=sys.stderr)
+                 self.socketio_client.connect(namespace='/', headers=connect_headers)
+                 time.sleep(0.1) # Wait again after explicit connect
+                 if not getattr(self.socketio_client, 'sid', None):
+                    raise ConnectionError(
+                        f"SocketIO client for {username} still failed to connect or get SID after explicit attempt. "
+                        f"is_connected: {self.socketio_client.is_connected(namespace='/')}, "
+                        f"sid: {getattr(self.socketio_client, 'sid', None)}, eio_sid: {eio_sid_val}"
+                    )
+            elif not getattr(self.socketio_client, 'sid', None) : # SID still missing even if is_connected might be true
                 raise ConnectionError(
-                    f"SocketIO client for {username} failed to connect or get SID. "
-                    f"is_connected: {self.socketio_client.is_connected(namespace='/')}, "
-                    f"sid: {getattr(self.socketio_client, 'sid', None)}, eio_sid: {eio_sid_val}"
+                    f"SocketIO client for {username} failed to get SID despite connection attempt. "
+                    f"is_connected: {is_connected_status}, "
+                    f"sid: None, eio_sid: {eio_sid_val}"
                 )
 
-        print(f"DEBUG: SocketIO client for {username} appears connected with SID: {self.socketio_client.sid}", file=sys.stderr)
 
-        # TODO: Re-add wait for 'confirm_namespace_connected' once basic SID assignment is verified.
-        # For now, this simplified login checks basic connectivity + SID.
+        print(f"DEBUG: SocketIO client for {username} connected with SID: {self.socketio_client.sid}", file=sys.stderr)
 
         return login_response # Return the login_response
 

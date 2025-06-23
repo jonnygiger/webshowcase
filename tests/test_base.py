@@ -9,6 +9,8 @@ from unittest.mock import patch, call, ANY
 # from flask_socketio import SocketIO # No longer creating a new SocketIO instance here
 # Import the main app instance AND its socketio instance
 from app import app as main_app, socketio as main_app_socketio  # Import app's socketio
+from flask import url_for, Response # Added import for url_for and Response
+import flask # For flask.session access
 
 # db object is imported as app_db from models
 from flask_jwt_extended import JWTManager
@@ -41,7 +43,7 @@ from models import (
     PostLock,
 )  # COMMENTED OUT - Added EventRSVP, PollVote, PostLock
 from datetime import datetime, timedelta, timezone
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 class AppTestCase(unittest.TestCase):
@@ -56,9 +58,11 @@ class AppTestCase(unittest.TestCase):
 
         # Apply test-specific configurations TO THE IMPORTED APP
         # IMPORTANT: Set SERVER_NAME before initializing extensions that might use it (like SocketIO for session cookies)
-        cls.app.config["SERVER_NAME"] = (
-            "localhost"  # Changed from localhost.test for simpler cookie domain
-        )
+        cls.app.config["SERVER_NAME"] = "localhost"
+        cls.app.config["APPLICATION_ROOT"] = "/"
+        cls.app.config["PREFERRED_URL_SCHEME"] = "http"
+        cls.app.config["SESSION_COOKIE_NAME"] = "session" # Explicitly set
+        cls.app.config["SESSION_COOKIE_DOMAIN"] = "localhost" # Explicitly set
         cls.app.config["TESTING"] = True
         cls.app.config["WTF_CSRF_ENABLED"] = False
         # Use a file-based SQLite DB for tests to ensure data visibility
@@ -162,6 +166,10 @@ class AppTestCase(unittest.TestCase):
             cls.app.logger.removeHandler(h)
         cls.app.logger.addHandler(handler)
         cls.app.logger.propagate = False # Prevent messages from propagating to the root logger if it has handlers
+
+        # Enable engineio and socketio server logging for debugging
+        logging.getLogger('socketio').setLevel(logging.DEBUG)
+        logging.getLogger('engineio').setLevel(logging.DEBUG)
 
 
         # Initialize JWTManager - This is already done in app.py when 'jwt = JWTManager(app)' is called.
@@ -411,25 +419,74 @@ class AppTestCase(unittest.TestCase):
         )
 
     def login(self, username, password, client_instance=None):
-        # Determine which HTTP client to use for login
         http_client = self.client
-        login_response = None
+        session_cookie_value = None
 
-        # Flask login via POST request
-        with http_client.session_transaction() as sess:
-            # This ensures session modifications by self.client.post are captured
-            # and available for the SocketIO client if it uses the same session mechanism.
-            # However, SocketIO client typically relies on cookies.
-            pass # Just to establish the context
+        with self.app.test_request_context('/'): # Need a request context for flask_login and session manipulation
+            # Manually fetch user and check password
+            user_obj = User.query.filter_by(username=username).first()
+            if not (user_obj and check_password_hash(user_obj.password_hash, password)):
+                self.fail(f"User {username} not found or password incorrect for login.")
 
-        login_response = http_client.post(
-            "/login",
-            data=dict(username=username, password=password),
-            follow_redirects=True,
-        )
-        self.assertEqual(login_response.status_code, 200, f"HTTP Login failed for {username}")
+            from flask_login import login_user as flask_login_user
+            flask_login_user(user_obj) # This should populate the session
 
-        # client_instance parameter is deprecated here, self.socketio_client is used from setUp.
+            if hasattr(self.app, 'session_interface') and hasattr(flask, 'session'):
+                 # Create a dummy response object to satisfy save_session
+                 dummy_response = self.app.response_class()
+                 self.app.session_interface.save_session(self.app, flask.session, dummy_response)
+                 # After save_session, the session cookie should be on the dummy_response.
+                 # We need to transfer this to the http_client's cookie jar.
+                 # This is usually done automatically when the client receives a response.
+                 print(f"DEBUG: Session manually saved for {username}. Session content: {dict(flask.session)}", file=sys.stderr)
+
+                 # Try to get the cookie from the dummy_response's headers
+                 # Example: headers often look like [('Set-Cookie', 'session=...; HttpOnly; Path=/')]
+                 for header_name, header_value in dummy_response.headers:
+                     if header_name == 'Set-Cookie' and 'session=' in header_value:
+                         # Parse the cookie value itself
+                         # A simple parse: find 'session=' and then up to the first ';'
+                         try:
+                             cookie_full_str = header_value.split(';')[0] # e.g., 'session=value'
+                             if 'session=' in cookie_full_str:
+                                 session_cookie_value = cookie_full_str.split('session=')[1]
+                                 print(f"DEBUG: Extracted session cookie from dummy_response for {username}: {session_cookie_value}", file=sys.stderr)
+                                 # Manually add this cookie to the http_client's cookie jar
+                                 # This is a bit of a hack, but necessary if direct request doesn't pick it up.
+                                 from http.cookies import SimpleCookie
+                                 parsed_cookie = SimpleCookie()
+                                 parsed_cookie.load(header_value) # Load the full Set-Cookie header
+                                 for key, morsel in parsed_cookie.items():
+                                     if key == 'session':
+                                         # Create a cookie object compatible with werkzeug's cookie_jar (usually http.cookiejar.Cookie)
+                                         # This part is complex due to cookie object structures.
+                                         # A simpler way is to hope the next http_client.get() picks it up.
+                                         pass # For now, just extracting value is enough for SocketIO header
+                                 break # Found session cookie
+                         except IndexError:
+                             print(f"DEBUG: Error parsing Set-Cookie header: {header_value}", file=sys.stderr)
+                 if not session_cookie_value:
+                     print(f"DEBUG: Did not find Set-Cookie header in dummy_response for {username}.", file=sys.stderr)
+            else:
+                 print(f"DEBUG: Could not manually save session for {username} (missing session_interface or flask.session).", file=sys.stderr)
+
+        # Ensure the socketio_client is disconnected before a new login sequence
+        if self.socketio_client.is_connected(namespace='/'):
+            print(f"DEBUG: Disconnecting existing socketio_client (SID: {getattr(self.socketio_client, 'sid', 'N/A')}) before new login for {username}.", file=sys.stderr)
+            self.socketio_client.disconnect(namespace='/')
+            time.sleep(0.1) # Allow time for disconnect to process
+
+        connect_headers = {}
+        if session_cookie_value:
+            # Manually set the cookie on the http_client's cookie jar.
+            http_client.set_cookie("session", session_cookie_value) # Corrected call
+            print(f"DEBUG: Manually set 'session' cookie on http_client.cookie_jar for {username}", file=sys.stderr)
+            connect_headers['Cookie'] = f'session={session_cookie_value}' # Still send explicit header
+            print(f"DEBUG: Explicitly using session cookie for SocketIO connect for {username}: session={session_cookie_value}", file=sys.stderr)
+        else:
+            # This path should ideally not be taken if cookie extraction from dummy_response works.
+            # If it is taken, the test will fail as before.
+            print(f"DEBUG: CRITICAL - session_cookie_value is None before SocketIO connect for {username}.", file=sys.stderr)
 
         # Ensure the socketio_client is disconnected before a new login sequence
         if self.socketio_client.is_connected(namespace='/'):

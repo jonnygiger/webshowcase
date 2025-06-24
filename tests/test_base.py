@@ -185,6 +185,7 @@ class AppTestCase(unittest.TestCase):
             print(f"DEBUG: CRITICAL - session_cookie_value is None. Cannot set cookie for SocketIO connect for {username}.", file=sys.stderr)
 
         socketio_client_to_use.connect(namespace='/', headers=connect_headers)
+        time.sleep(0.5) # Added delay
 
         retry_count = 0
         max_retries = 20
@@ -194,6 +195,7 @@ class AppTestCase(unittest.TestCase):
             if not socketio_client_to_use.is_connected(namespace='/') and retry_count < max_retries / 2 :
                 print(f"DEBUG: SocketIO client for {username} not connected, retrying connect (attempt {retry_count}).", file=sys.stderr)
                 socketio_client_to_use.connect(namespace='/', headers=connect_headers)
+                time.sleep(0.5) # Added delay
 
         if not getattr(socketio_client_to_use, 'sid', None):
             eio_sid_val = "N/A"

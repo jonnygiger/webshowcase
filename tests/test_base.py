@@ -139,71 +139,57 @@ class AppTestCase(unittest.TestCase):
         self.user3_id = self.user3.id
 
     def login(self, username, password, client_instance=None):
-        http_client = self.client
-        session_cookie_value = None
-        login_response = None
-
-        with self.app.test_request_context('/'):
-            user_obj = User.query.filter_by(username=username).first()
-            if not (user_obj and check_password_hash(user_obj.password_hash, password)):
-                self.fail(f"User {username} not found or password incorrect for login.")
-
-            from flask_login import login_user as flask_login_user
-            flask_login_user(user_obj)
-
-            if hasattr(self.app, 'session_interface') and hasattr(flask, 'session'):
-                 dummy_response = self.app.response_class()
-                 self.app.session_interface.save_session(self.app, flask.session, dummy_response)
-                 print(f"DEBUG: Session manually saved for {username}. Session content: {dict(flask.session)}", file=sys.stderr)
-                 for header_name, header_value in dummy_response.headers:
-                     if header_name == 'Set-Cookie' and 'session=' in header_value:
-                         try:
-                             cookie_full_str = header_value.split(';')[0]
-                             if 'session=' in cookie_full_str:
-                                 session_cookie_value = cookie_full_str.split('session=')[1]
-                                 print(f"DEBUG: Extracted session cookie from dummy_response for {username}: {session_cookie_value[:20]}...", file=sys.stderr)
-                                 break
-                         except IndexError:
-                             print(f"DEBUG: Error parsing Set-Cookie header: {header_value}", file=sys.stderr)
-                 if not session_cookie_value:
-                     print(f"DEBUG: Did not find Set-Cookie header in dummy_response for {username}.", file=sys.stderr)
-            else:
-                 print(f"DEBUG: Could not manually save session for {username} (missing session_interface or flask.session).", file=sys.stderr)
+        # Use the standard Flask test client to log in, which sets the session cookie
+        login_response = self.client.post('/login', data=dict(
+            username=username,
+            password=password
+        ), follow_redirects=True)
+        self.assertEqual(login_response.status_code, 200)
+        # Verify that 'user_id' is in the session after login via HTTP client
+        with self.client.session_transaction() as http_session:
+            self.assertIn('user_id', http_session, "user_id not in session after HTTP login.")
+            print(f"DEBUG: User {username} (ID: {http_session['user_id']}) session set by HTTP client. Session content: {dict(http_session)}", file=sys.stderr)
 
         socketio_client_to_use = client_instance if client_instance else self.socketio_client
 
+        # Disconnect if already connected, to ensure a fresh connection attempt
         if socketio_client_to_use.is_connected(namespace='/'):
             print(f"DEBUG: Disconnecting existing socketio_client (SID: {getattr(socketio_client_to_use, 'sid', 'N/A')}) before new login for {username}.", file=sys.stderr)
             socketio_client_to_use.disconnect(namespace='/')
-            time.sleep(0.1)
+            time.sleep(0.2) # Short delay for disconnect to process
 
-        connect_headers = {}
-        if session_cookie_value:
-            connect_headers['Cookie'] = f'session={session_cookie_value}'
-            print(f"DEBUG: Using explicit 'Cookie' header for SocketIO connect for {username}: session={session_cookie_value[:20]}...", file=sys.stderr)
-        else:
-            print(f"DEBUG: CRITICAL - session_cookie_value is None. Cannot set cookie for SocketIO connect for {username}.", file=sys.stderr)
+        # The SocketIO test client, when initialized with the Flask test client,
+        # should automatically use the cookies from the Flask test client's cookie jar.
+        # No explicit headers with cookies should be needed here.
+        print(f"DEBUG: Attempting SocketIO connect for {username} without explicit cookie headers.", file=sys.stderr)
+        socketio_client_to_use.connect(namespace='/') # Removed headers=connect_headers
 
-        socketio_client_to_use.connect(namespace='/', headers=connect_headers)
-        time.sleep(0.5) # Added delay
-
+        # Increased sleep and retry logic for SID acquisition
+        time.sleep(0.5)
         retry_count = 0
-        max_retries = 20
+        max_retries = 30 # Increased max_retries
+        wait_interval = 0.2 # Slightly longer wait interval
+
         while not getattr(socketio_client_to_use, 'sid', None) and retry_count < max_retries:
-            time.sleep(0.1)
+            time.sleep(wait_interval)
             retry_count += 1
-            if not socketio_client_to_use.is_connected(namespace='/') and retry_count < max_retries / 2 :
-                print(f"DEBUG: SocketIO client for {username} not connected, retrying connect (attempt {retry_count}).", file=sys.stderr)
-                socketio_client_to_use.connect(namespace='/', headers=connect_headers)
-                time.sleep(0.5) # Added delay
+            if not socketio_client_to_use.is_connected(namespace='/') and retry_count < (max_retries / 2) :
+                 print(f"DEBUG: SocketIO client for {username} not connected during SID wait, retrying connect (attempt {retry_count}).", file=sys.stderr)
+                 socketio_client_to_use.connect(namespace='/')
+                 time.sleep(0.5)
+
 
         if not getattr(socketio_client_to_use, 'sid', None):
             eio_sid_val = "N/A"
             if hasattr(socketio_client_to_use, 'eio_test_client') and socketio_client_to_use.eio_test_client:
                 eio_sid_val = getattr(socketio_client_to_use.eio_test_client, 'sid', "N/A (eio_test_client has no sid)")
             is_connected_status = socketio_client_to_use.is_connected(namespace='/')
-            print(f"DEBUG: SocketIO client for {username} failed to get SID after {max_retries * 0.1:.1f}s wait. "
+            print(f"DEBUG: SocketIO client for {username} failed to get SID after {max_retries * wait_interval:.1f}s wait. "
                   f"is_connected: {is_connected_status}, sid: None, eio_sid: {eio_sid_val}", file=sys.stderr)
+            # Log session state from the server side perspective during the failing connect attempt
+            with self.app.test_request_context('/socket.io'): # Simulate a socket.io context for session access
+                 print(f"DEBUG: Flask session state during SID failure for {username}: {dict(flask.session)}", file=sys.stderr)
+
             raise ConnectionError(
                 f"SocketIO client for {username} failed to get SID after waiting. "
                 f"is_connected: {is_connected_status}, sid: None, eio_sid: {eio_sid_val}. "
@@ -211,7 +197,7 @@ class AppTestCase(unittest.TestCase):
             )
 
         print(f"DEBUG: SocketIO client for {username} connected with SID: {socketio_client_to_use.sid}", file=sys.stderr)
-        return login_response
+        return login_response # Return the HTTP login response
 
 
     def logout(self, client_instance=None):

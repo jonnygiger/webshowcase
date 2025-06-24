@@ -32,7 +32,7 @@ class TestSocketIOEvents(AppTestCase):
             import time
 
             # Client for post_author to receive notifications
-            author_socket_client = self.create_socketio_client()
+            author_socket_client = self.socketio_class_level.test_client(self.app)
 
             # Log in post_author. This will:
             # 1. Associate author_socket_client with post_author's session (due to client_instance arg).
@@ -99,7 +99,7 @@ class TestSocketIOEvents(AppTestCase):
             post_to_lock = self._create_db_post(user_id=locking_user.id, title="Post for Lock Release Test")
 
             # Client to listen on the post's room
-            listener_client = self.create_socketio_client()
+            listener_client = self.socketio_class_level.test_client(self.app)
             # Log in a user with this client to ensure it's properly connected.
             # The user performing the login for this listener client doesn't strictly matter
             # as it's just joining a room to listen. We can use locking_user.

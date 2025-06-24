@@ -35,7 +35,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         # with app.app_context():
         # 1. Setup Data
         # Friendships: user1 is friends with user2
-        self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+        self._create_db_friendship(self.user1, self.user2, status="accepted") # Changed to use user objects
 
         # Posts:
         # Post by user3 (not friend), liked by user2 (friend of user1) -> should be recommended
@@ -198,7 +198,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
 
     def test_personalized_feed_excludes_own_content_interacted_by_friends(self):
         # 1. Establish friendship
-        self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+        self._create_db_friendship(self.user1, self.user2, status="accepted") # Changed to use user objects
 
         # --- Items created by user1, interacted by user2 (friend) ---
         # These SHOULD NOT appear in user1's feed
@@ -366,7 +366,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         # Users are available from AppTestCase setUp: self.user1_id, self.user2_id, self.user3_id
 
         # 2. Establish friendship between user1 and user2
-        self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+        self._create_db_friendship(self.user1, self.user2, status="accepted") # Changed to use user objects
 
         # 3. user3 creates a post
         post_by_user3 = self._create_db_post(
@@ -454,7 +454,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
 
     def test_feed_excludes_posts_from_removed_friend(self):
         # 1. Establish an 'accepted' friendship between self.user1_id and self.user2_id
-        self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+        self._create_db_friendship(self.user1, self.user2, status="accepted") # Changed to use user objects
 
         # 2. Have self.user2 create a post
         post_by_user2 = self._create_db_post(

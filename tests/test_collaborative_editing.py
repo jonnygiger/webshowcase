@@ -578,7 +578,6 @@ class TestCollaborativeEditing(AppTestCase):
 
             # Clear any old received messages
             self.socketio_client.get_received()
-
             self.socketio_client.emit("edit_post_content", edit_data)
 
             # Give a moment for the server to process and respond.

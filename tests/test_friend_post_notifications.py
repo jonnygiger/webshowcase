@@ -15,6 +15,20 @@ from tests.test_base import AppTestCase
 
 class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for setup
 
+    def _make_post_via_route(self, username, password, title, content, hashtags=""):
+        """Logs in a user, creates a post via the /blog/create route, and logs out."""
+        self.login(username, password)
+        response = self.client.post(
+            "/blog/create",
+            data={"title": title, "content": content, "hashtags": hashtags},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200) # Assuming successful post creation redirects and results in 200
+        # Add more assertions here if needed, e.g., check for flash message
+        self.logout()
+        # Note: This helper doesn't return the post object directly.
+        # Tests will need to query for the post if its details are needed.
+
     @patch("app.socketio.emit")  # Patch socketio.emit from the app instance
     def test_notification_creation_and_socketio_emit(self, mock_socketio_emit):
         with self.app.app_context():

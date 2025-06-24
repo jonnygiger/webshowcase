@@ -160,9 +160,9 @@ class TestRecommendationAPI(AppTestCase):
         # The _create_friendship helper in AppTestCase creates one side of the friendship.
         # For a mutual friendship, it might need to be called twice or the helper might handle it.
         # Assuming helper creates user_id -> friend_id link.
-        self._create_friendship(self.user1_id, self.user3_id, status="accepted")
-        self._create_friendship(
-            self.user3_id, self.user1_id, status="accepted"
+        self._create_db_friendship(self.user1, self.user3, status="accepted")
+        self._create_db_friendship(
+            self.user3, self.user1, status="accepted"
         )  # Ensure mutual friendship
 
         # 3. Create a post by self.user2
@@ -208,9 +208,9 @@ class TestRecommendationAPI(AppTestCase):
         # user1_id, user2_id, user3_id are also available
 
         # 2. Create a friendship between self.user1 and self.user3
-        self._create_friendship(self.user1_id, self.user3_id, status="accepted")
-        self._create_friendship(
-            self.user3_id, self.user1_id, status="accepted"
+        self._create_db_friendship(self.user1, self.user3, status="accepted")
+        self._create_db_friendship(
+            self.user3, self.user1, status="accepted"
         )  # Ensure mutual friendship
 
         # 3. Create a post by self.user2
@@ -268,8 +268,8 @@ class TestRecommendationAPI(AppTestCase):
         # 1. Create friendship between user1 and user2
         # Assuming _create_friendship helper creates a mutual 'accepted' friendship or needs to be called twice.
         # Based on test_recommend_post_liked_by_friend, it seems it needs to be mutual for suggestions.
-        self._create_friendship(self.user1_id, self.user2_id, status="accepted")
-        self._create_friendship(self.user2_id, self.user1_id, status="accepted")
+        self._create_db_friendship(self.user1, self.user2, status="accepted")
+        self._create_db_friendship(self.user2, self.user1, status="accepted")
 
         # 2. Create a group by user3
         group_by_user3 = self._create_db_group(

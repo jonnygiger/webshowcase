@@ -4831,17 +4831,5 @@ def login_required_socketio(f):
         return f(*args, **kwargs)
     return decorated_function
 
-
-@socketio.on("connect", namespace="/")
-def handle_connect():
-    # current_user is available here if the connection carries session cookies
-    # or if a token was used and authenticated by Flask-SocketIO's connection hook (if configured)
-    if current_user.is_authenticated: # Flask-SocketIO's current_user
-        join_room(f"user_{current_user.id}")
-        print(
-            f"User {current_user.username} (SID: {request.sid}) connected to global namespace and joined room user_{current_user.id}"
-        )
-        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': current_user.username})
-    else:
-        print(f"Anonymous user (SID: {request.sid}) connected to global namespace.")
-        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous'})
+# Removed the second, simpler handle_connect that was shadowing the more detailed one.
+# The more detailed one is already present earlier in the file.

@@ -2709,24 +2709,25 @@ if __name__ == "__main__":
     # Start the scheduler only once, even with Flask reloader
     # The os.environ.get('WERKZEUG_RUN_MAIN') check ensures this runs in the main Flask process,
     # not the reloader's process.
-    if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-        if not scheduler.running:  # Ensure scheduler is not started more than once
-            # Add the job before starting the scheduler
-            scheduler.add_job(
-                func=generate_activity_summary, trigger="interval", minutes=1
-            )
-            scheduler.add_job(
-                func=update_trending_hashtags, trigger="interval", minutes=10
-            )  # Add new job
-            scheduler.start()
-            print(
-                "Scheduler started with generate_activity_summary and update_trending_hashtags jobs."
-            )
-            # It's good practice to shut down the scheduler when the app exits
-            import atexit
+    if not app.config.get("TESTING", False): # Do not run scheduler in test mode
+        if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            if not scheduler.running:  # Ensure scheduler is not started more than once
+                # Add the job before starting the scheduler
+                scheduler.add_job(
+                    func=generate_activity_summary, trigger="interval", minutes=1
+                )
+                scheduler.add_job(
+                    func=update_trending_hashtags, trigger="interval", minutes=10
+                )  # Add new job
+                scheduler.start()
+                print(
+                    "Scheduler started with generate_activity_summary and update_trending_hashtags jobs."
+                )
+                # It's good practice to shut down the scheduler when the app exits
+                import atexit
 
-            atexit.register(lambda: scheduler.shutdown())
-            print("Scheduler shutdown registered.")
+                atexit.register(lambda: scheduler.shutdown())
+                print("Scheduler shutdown registered.")
     socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
 
 
@@ -3411,6 +3412,10 @@ def send_friend_request(target_user_id):
     # 2. Has target_user blocked current_user?
     is_blocked_by_current_user = UserBlock.query.filter_by(blocker_id=current_user_id, blocked_id=target_user_id).first()
     is_blocked_by_target_user = UserBlock.query.filter_by(blocker_id=target_user_id, blocked_id=current_user_id).first()
+
+    app.logger.debug(f"Block check for send_friend_request: current_user_id={current_user_id}, target_user_id={target_user_id}")
+    app.logger.debug(f"is_blocked_by_current_user: {is_blocked_by_current_user}")
+    app.logger.debug(f"is_blocked_by_target_user: {is_blocked_by_target_user}")
 
     if is_blocked_by_current_user or is_blocked_by_target_user:
         flash("You cannot send a friend request to this user as they have blocked you or you have blocked them.", "warning")

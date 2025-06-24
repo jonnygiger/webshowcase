@@ -2678,35 +2678,31 @@ def handle_connect():
     app.logger.info(f"SERVER: Flask session via werkzeug.request.session: {flask_request_session}")
     app.logger.info(f"SERVER: Flask session via flask.session: {dict(session)}") # Direct flask.session
 
-    if hasattr(current_user, 'is_authenticated'):
-        app.logger.info(f"SERVER: current_user has is_authenticated. Value: {current_user.is_authenticated}")
-        if current_user.is_authenticated:
-            app.logger.info(f"SERVER: Authenticated user ID: {current_user.id}, Username: {current_user.username}. SID: {request.sid}")
-            join_room(f"user_{current_user.id}")
-            app.logger.info(
-                f"User {current_user.username} (SID: {request.sid}) connected to global namespace and joined room user_{current_user.id}"
-            )
-            emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': current_user.username})
+    user_to_auth = None
+    if hasattr(current_user, 'is_authenticated') and current_user.is_authenticated:
+        user_to_auth = current_user
+        app.logger.info(f"SERVER: User authenticated via Flask-Login current_user: {user_to_auth.username}")
+    elif 'user_id' in session:
+        # Attempt to load user manually from session if Flask-Login's current_user is not set
+        user_id_from_session = session['user_id']
+        app.logger.info(f"SERVER: current_user not authenticated, trying to load user_id {user_id_from_session} from session manually for SocketIO.")
+        user_from_session = db.session.get(User, user_id_from_session)
+        if user_from_session:
+            user_to_auth = user_from_session
+            app.logger.info(f"SERVER: User manually loaded from session for SocketIO: {user_to_auth.username}")
         else:
-            print(f"SERVER: current_user is not authenticated. SID: {request.sid}", file=sys.stderr)
-            app.logger.info(f"SERVER: current_user is not authenticated. SID: {request.sid}")
-            emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous'})
-    else:
-        print(f"SERVER: current_user object does not have is_authenticated. Type: {type(current_user)}. SID: {request.sid}", file=sys.stderr)
-        app.logger.warning(f"SERVER: current_user object does not have is_authenticated. Type: {type(current_user)}. SID: {request.sid}")
-        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous_error_current_user'})
+            app.logger.warning(f"SERVER: user_id {user_id_from_session} found in session, but no user found in DB.")
 
-    # current_user is available here if the connection carries session cookies
-    # or if a token was used and authenticated by Flask-SocketIO's connection hook (if configured)
-    # if current_user.is_authenticated: # Flask-SocketIO's current_user # Original logic commented out for new logging
-    #     join_room(f"user_{current_user.id}")
-    #     print(
-    #         f"User {current_user.username} (SID: {request.sid}) connected to global namespace and joined room user_{current_user.id}"
-    #     )
-    #     emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': current_user.username})
-    # else:
-    #     print(f"Anonymous user (SID: {request.sid}) connected to global namespace.")
-    #     emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous'})
+    if user_to_auth and user_to_auth.is_authenticated: # Check is_authenticated on the user object we have
+        app.logger.info(f"SERVER: Authenticated user ID: {user_to_auth.id}, Username: {user_to_auth.username}. SID: {request.sid}")
+        join_room(f"user_{user_to_auth.id}")
+        app.logger.info(
+            f"User {user_to_auth.username} (SID: {request.sid}) connected to global namespace and joined room user_{user_to_auth.id}"
+        )
+        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': user_to_auth.username})
+    else:
+        app.logger.info(f"SERVER: User could not be authenticated for SocketIO. SID: {request.sid}")
+        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous_after_manual_check'})
 
 
 if __name__ == "__main__":

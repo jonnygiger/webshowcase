@@ -52,8 +52,8 @@ class TestLiveActivityFeed(AppTestCase):
         super().setUp()
         # self.user1, self.user2, self.user3 are created by AppTestCase
         # These helpers require live db and models. Commented out for now.
-        self._create_friendship(self.user2.id, self.user1.id, status="accepted")
-        self._create_friendship(self.user2.id, self.user3.id, status="accepted")
+        self._create_db_friendship(self.user2, self.user1, status="accepted")
+        self._create_db_friendship(self.user2, self.user3, status="accepted")
 
     @patch("app.socketio.emit")
     @patch("app.check_and_award_achievements")  # Mock achievements function
@@ -79,9 +79,9 @@ class TestLiveActivityFeed(AppTestCase):
                 db.session.commit()
 
             # _create_friendship now returns an ID
-            friend_request_id = self._create_friendship(
-                self.user1.id, self.user2.id, status="pending"
-            )
+                friend_request_id = self._create_db_friendship(
+                    self.user1, self.user2, status="pending"
+                ).id
             self.assertIsNotNone(
                 friend_request_id, "Failed to create pending friend request"
             )

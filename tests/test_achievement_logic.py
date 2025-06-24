@@ -63,8 +63,8 @@ class AchievementLogicTests(AppTestCase):
         with app.app_context():
             user = self.user1
             print(f"DEBUG_JULES: attributes of self in AchievementLogicTests: {dir(self)}")
-            self._jules_create_db_post_helper(user_id=user.id, title="Post 1")
-            self._jules_create_db_post_helper(user_id=user.id, title="Post 2")
+            self._create_db_post(user_id=user.id, title="Post 1")
+            self._create_db_post(user_id=user.id, title="Post 2")
             stat = get_user_stat(user, "num_posts")
             self.assertEqual(stat, 2)
 
@@ -73,7 +73,7 @@ class AchievementLogicTests(AppTestCase):
             ach_ids = seed_test_achievements()  # Helper defined above
             user = self.user2
             print(f"DEBUG_JULES: attributes of self in AchievementLogicTests: {dir(self)}")
-            self._jules_create_db_post_helper(user_id=user.id, title="First Post by User2")
+            self._create_db_post(user_id=user.id, title="First Post by User2")
             check_and_award_achievements(user.id)
             first_post_ach_id = ach_ids["Test First Post"]
             user_ach = UserAchievement.query.filter_by(
@@ -93,7 +93,7 @@ class AchievementLogicTests(AppTestCase):
             five_posts_ach_id = ach_ids["Test 5 Posts"]
 
             # First stage (1 post)
-            self._jules_create_db_post_helper(user_id=user.id, title="Incremental Post 1")
+            self._create_db_post(user_id=user.id, title="Incremental Post 1")
             check_and_award_achievements(user.id)
 
             user_ach_first = UserAchievement.query.filter_by(
@@ -112,7 +112,7 @@ class AchievementLogicTests(AppTestCase):
 
             # Second stage (5 posts)
             for i in range(2, 6):  # Create 4 more posts
-                self._jules_create_db_post_helper(user_id=user.id, title=f"Incremental Post {i}")
+                self._create_db_post(user_id=user.id, title=f"Incremental Post {i}")
             check_and_award_achievements(user.id)
 
             user_ach_five_updated = UserAchievement.query.filter_by(
@@ -136,7 +136,7 @@ class AchievementLogicTests(AppTestCase):
             first_post_ach_id = ach_ids["Test First Post"]
 
             # First call to award
-            self._jules_create_db_post_helper(user_id=user.id, title="Duplicate Test Post 1")
+            self._create_db_post(user_id=user.id, title="Duplicate Test Post 1")
             check_and_award_achievements(user.id)
 
             count_initial = UserAchievement.query.filter_by(
@@ -303,7 +303,7 @@ class AchievementLogicTests(AppTestCase):
             bookmarker_user = self._create_db_user("bookworm_user", "pass", "bw@example.com")
 
             # Create 5 posts (can be by anyone for this test)
-            posts_to_bookmark = [self._jules_create_db_post_helper(self.user1_id, f"Bookmark Post {i+1}") for i in range(5)]
+            posts_to_bookmark = [self._create_db_post(self.user1_id, f"Bookmark Post {i+1}") for i in range(5)]
 
             # User bookmarks 4 posts
             for i in range(4):

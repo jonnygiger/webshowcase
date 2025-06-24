@@ -267,7 +267,7 @@ class AppTestCase(unittest.TestCase):
             self.db.session.commit()
             return self.db.session.get(Poll, poll.id)
 
-    def _jules_create_db_post_helper(self, user_id, title="Test Post", content="Test Content", timestamp=None): # Renamed
+    def _create_db_post(self, user_id, title="Test Post", content="Test Content", timestamp=None):
         with self.app.app_context():
             post = Post(
                 user_id=user_id,

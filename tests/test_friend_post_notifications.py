@@ -19,7 +19,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
     def test_notification_creation_and_socketio_emit(self, mock_socketio_emit):
         with self.app.app_context():
             # 1. User A and User B are friends.
-            self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+            self._create_db_friendship(self.user1, self.user2, status="accepted")
 
             # 2. User A creates a new post.
             post_title = "User A's Exciting Post"
@@ -76,9 +76,9 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
     def test_view_friend_post_notifications_page(self):
         with self.app.app_context():
             # User1 and User2 are friends. User1 posts. User2 gets a notification.
-            self._create_friendship(self.user1_id, self.user2_id)
+            self._create_db_friendship(self.user1, self.user2)
             # _create_db_post returns the post object directly
-            post1_obj_by_user1 = self._create_db_post(
+            post1_obj_by_user1 = self._jules_create_db_post_helper(
                 user_id=self.user1_id,
                 title="Post 1 by User1",
                 timestamp=datetime.now(timezone.utc) - timedelta(minutes=10),
@@ -97,8 +97,8 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             )
 
             # User3 and User2 are friends. User3 posts. User2 gets another notification (newer).
-            self._create_friendship(self.user3_id, self.user2_id)
-            post2_obj_by_user3 = self._create_db_post(
+            self._create_db_friendship(self.user3, self.user2)
+            post2_obj_by_user3 = self._jules_create_db_post_helper(
                 user_id=self.user3_id,
                 title="Post 2 by User3",
                 timestamp=datetime.now(timezone.utc) - timedelta(minutes=5),
@@ -140,8 +140,8 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
 
     def test_mark_one_notification_as_read(self):
         with self.app.app_context():
-            self._create_friendship(self.user1_id, self.user2_id)
-            post_obj_by_user1 = self._create_db_post(user_id=self.user1_id)
+            self._create_db_friendship(self.user1, self.user2)
+            post_obj_by_user1 = self._jules_create_db_post_helper(user_id=self.user1_id)
             # post_by_user1 = self.db.session.get(Post, post_obj_by_user1.id) # Not needed if post_obj_by_user1 is used directly
             self.assertIsNotNone(
                 post_obj_by_user1, "Post object by User1 should not be None."
@@ -212,9 +212,9 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
 
     def test_mark_all_notifications_as_read(self):
         with self.app.app_context():
-            self._create_friendship(self.user1_id, self.user2_id)
-            post1_obj = self._create_db_post(user_id=self.user1_id, title="Post1")
-            post2_obj = self._create_db_post(user_id=self.user1_id, title="Post2")
+            self._create_db_friendship(self.user1, self.user2)
+            post1_obj = self._jules_create_db_post_helper(user_id=self.user1_id, title="Post1")
+            post2_obj = self._jules_create_db_post_helper(user_id=self.user1_id, title="Post2")
             # post1 = self.db.session.get(Post, post1_obj.id) # Not needed
             # post2 = self.db.session.get(Post, post2_obj.id) # Not needed
             self.assertIsNotNone(post1_obj, "Post1 object should not be None.")
@@ -400,7 +400,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
     def test_no_notification_if_poster_is_blocked(self, mock_socketio_emit):
         with self.app.app_context():
             # 1. User1 and User2 are friends
-            self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+            self._create_db_friendship(self.user1, self.user2, status="accepted")
 
             # 2. User2 blocks User1
             user_block = UserBlock(blocker_id=self.user2_id, blocked_id=self.user1_id)
@@ -452,7 +452,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
     def test_notification_persists_after_unfriend(self, mock_socketio_emit_unfriend):
         with self.app.app_context():
             # 1. User A (user1) and User B (user2) are friends.
-            self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+            self._create_db_friendship(self.user1, self.user2, status="accepted")
 
             # 2. User A creates a new post.
             post_title = "User A's Post Before Unfriend"

@@ -62,7 +62,6 @@ class AchievementLogicTests(AppTestCase):
     def test_get_user_stat_num_posts(self):
         with app.app_context():
             user = self.user1
-            print(f"DEBUG_JULES: attributes of self in AchievementLogicTests: {dir(self)}")
             self._create_db_post(user_id=user.id, title="Post 1")
             self._create_db_post(user_id=user.id, title="Post 2")
             stat = get_user_stat(user, "num_posts")
@@ -72,7 +71,6 @@ class AchievementLogicTests(AppTestCase):
         with app.app_context():
             ach_ids = seed_test_achievements()  # Helper defined above
             user = self.user2
-            print(f"DEBUG_JULES: attributes of self in AchievementLogicTests: {dir(self)}")
             self._create_db_post(user_id=user.id, title="First Post by User2")
             check_and_award_achievements(user.id)
             first_post_ach_id = ach_ids["Test First Post"]

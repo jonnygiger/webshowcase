@@ -52,25 +52,30 @@ class AppTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Create an app instance for testing
-        cls.app = create_app('testing') # Assuming a 'testing' config or modify create_app
-        # cls.app.config["SERVER_NAME"] = "localhost" # Usually set by testing config
+        cls.app = create_app('testing') # Config is now handled by 'testing' string
+
+        # The following configurations are now set by TestingConfig via create_app('testing')
+        # cls.app.config["SERVER_NAME"] = "localhost"
         # cls.app.config["APPLICATION_ROOT"] = "/"
-        cls.app.config["PREFERRED_URL_SCHEME"] = "http"
-        cls.app.config["SESSION_COOKIE_NAME"] = "session"
-        cls.app.config["SESSION_COOKIE_DOMAIN"] = "localhost"
-        cls.app.config["TESTING"] = True
-        cls.app.config["WTF_CSRF_ENABLED"] = False
-        # cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///test_site.db" # Set in testing config
-        # cls.app.config["SECRET_KEY"] = "test-secret-key" # Set in testing config
-        # cls.app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key" # Set in testing config
-        # cls.app.config["SOCKETIO_MESSAGE_QUEUE"] = None # Set in testing config
+        # cls.app.config["PREFERRED_URL_SCHEME"] = "http"
+        # cls.app.config["SESSION_COOKIE_NAME"] = "session"
+        # cls.app.config["SESSION_COOKIE_DOMAIN"] = "localhost"
+        # cls.app.config["TESTING"] = True
+        # cls.app.config["WTF_CSRF_ENABLED"] = False
+        # cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///test_site.db"
+        # cls.app.config["SECRET_KEY"] = "test-secret-key"
+        # cls.app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"
+        # cls.app.config["SOCKETIO_MESSAGE_QUEUE"] = None
+        # cls.app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-        # Ensure SHARED_FILES_UPLOAD_FOLDER is set for tests if not in default testing config
-        shared_folder_path = cls.app.config.setdefault("SHARED_FILES_UPLOAD_FOLDER", "shared_files_test_folder")
-        if not os.path.exists(shared_folder_path):
-            os.makedirs(shared_folder_path)
+        # SHARED_FILES_UPLOAD_FOLDER is defined in TestingConfig.
+        # The create_app function handles folder creation for UPLOAD_FOLDER,
+        # PROFILE_PICS_FOLDER, and SHARED_FILES_UPLOAD_FOLDER.
+        # So, manual creation here is no longer needed.
+        # shared_folder_path = cls.app.config.setdefault("SHARED_FILES_UPLOAD_FOLDER", "shared_files_test_folder")
+        # if not os.path.exists(shared_folder_path):
+        #     os.makedirs(shared_folder_path)
 
-        # cls.app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False # Set in testing config
         cls.db = app_db # app_db is imported from social_app
 
         # SocketIO is initialized within create_app. We use the instance from social_app.

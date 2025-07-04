@@ -1,7 +1,7 @@
 from flask import current_app
 
 # from app import db # Removed this line
-from models import (
+from ..models.db_models import ( # Corrected model import path
     User,
     Post,
     Group,
@@ -14,8 +14,9 @@ from models import (
     Comment,
     SharedPost,
     TrendingHashtag,
-    db,  # Added db import
-)  # Added SharedPost and TrendingHashtag
+    # db, # db should be imported from social_app package level
+)
+from .. import db # Import db from social_app package
 from sqlalchemy import func, or_, extract
 from collections import defaultdict, Counter
 from datetime import (

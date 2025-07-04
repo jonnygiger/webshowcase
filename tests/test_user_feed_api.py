@@ -6,11 +6,12 @@ from werkzeug.security import (
     generate_password_hash,
 )  # For new user creation in one test
 
-# from app import app, db, socketio # COMMENTED OUT
-from models import User  # Added User import
-
-# from models import Post, Like, Friendship # COMMENTED OUT - Added Friendship
+# Updated commented-out imports for future reference:
+# from social_app import create_app, db, socketio
+from social_app.models.db_models import User # Updated model import paths
+# from social_app.models.db_models import Post, Like, Friendship # If needed later
 from tests.test_base import AppTestCase
+from flask import url_for # Import url_for
 
 
 class TestUserFeedAPI(AppTestCase):
@@ -25,14 +26,14 @@ class TestUserFeedAPI(AppTestCase):
         # Obtain a token for an existing user to authenticate the request
         token = self._get_jwt_token(self.user1.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
-        response = self.client.get("/api/users/99999/feed", headers=headers)
+        response = self.client.get(url_for('userfeedresource', user_id=99999), headers=headers) # Use url_for
         self.assertEqual(
             response.status_code, 404
-        )  # Now it should hit the user not found logic
+        )
 
     @patch(
-        "api.get_personalized_feed_posts"
-    )  # Reverted patch target to where it's looked up
+        "social_app.api.routes.get_personalized_feed_posts" # Corrected patch target
+    )
     def test_get_feed_empty_for_new_user_no_relevant_content(
         self, mock_get_feed_posts_func
     ):
@@ -86,7 +87,7 @@ class TestUserFeedAPI(AppTestCase):
             target_user_id_for_api = target_user_instance.id
 
         response = self.client.get(
-            f"/api/users/{target_user_id_for_api}/feed", headers=headers
+            url_for('userfeedresource', user_id=target_user_id_for_api), headers=headers # Use url_for
         )
         self.assertEqual(response.status_code, 200)
         data = response.get_json()

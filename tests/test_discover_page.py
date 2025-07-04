@@ -2,19 +2,16 @@ import unittest
 from unittest.mock import patch, ANY, MagicMock
 from datetime import datetime, timezone  # Removed timedelta
 
-# from app import app, db, socketio # COMMENTED OUT
-from models import (
-    User,
-    Post,
-)  # COMMENTED OUT (add other models if this class uses them)
+# Updated commented-out imports for future reference:
+# from social_app import create_app, db, socketio
+# from social_app.models.db_models import User, Post # Add other models if needed
 from tests.test_base import AppTestCase
 
 
 class TestDiscoverPageViews(AppTestCase):
-
     @patch(
-        "app.get_personalized_feed_posts"
-    )  # Assuming get_personalized_feed_posts is in app.py
+        "social_app.services.recommendations_service.get_personalized_feed_posts" # Corrected patch target
+    )
     def test_discover_page_shows_recommendation_reasons(
         self, mock_get_personalized_feed_posts
     ):
@@ -76,7 +73,7 @@ class TestDiscoverPageViews(AppTestCase):
 
         self.logout()
 
-    @patch("app.get_personalized_feed_posts")
+    @patch("social_app.services.recommendations_service.get_personalized_feed_posts") # Corrected patch target
     def test_discover_page_handles_post_with_image(
         self, mock_get_personalized_feed_posts
     ):
@@ -138,7 +135,7 @@ class TestDiscoverPageViews(AppTestCase):
 
         self.logout()
 
-    @patch("app.get_personalized_feed_posts")
+    @patch("social_app.services.recommendations_service.get_personalized_feed_posts") # Corrected patch target
     def test_discover_page_handles_special_characters_in_posts(
         self, mock_get_personalized_feed_posts
     ):
@@ -197,7 +194,7 @@ class TestDiscoverPageViews(AppTestCase):
 
         self.logout()
 
-    @patch("app.get_personalized_feed_posts")
+    @patch("social_app.services.recommendations_service.get_personalized_feed_posts") # Corrected patch target
     def test_discover_page_handles_posts_without_optional_data(
         self, mock_get_personalized_feed_posts
     ):
@@ -258,7 +255,7 @@ class TestDiscoverPageViews(AppTestCase):
 
         self.logout()
 
-    @patch("app.get_personalized_feed_posts")
+    @patch("social_app.services.recommendations_service.get_personalized_feed_posts") # Corrected patch target
     def test_discover_page_empty_state(self, mock_get_personalized_feed_posts):
         # Setup: Login as a user
         self.login(self.user1.username, "password")

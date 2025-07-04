@@ -3,15 +3,17 @@ import json
 from unittest.mock import patch, ANY, MagicMock
 from datetime import datetime  # Removed timedelta
 
-# from app import app, db, socketio # COMMENTED OUT
-# from models import User, Post # COMMENTED OUT
-from app import broadcast_new_post, app as main_app_module
+# Updated commented-out imports for future reference:
+# from social_app import create_app, db, socketio
+# from social_app.models.db_models import User, Post
+# Updated import for broadcast_new_post and app context usage
+from social_app.services.notifications_service import broadcast_new_post
+# main_app_module for app_context will be self.app from AppTestCase
 from tests.test_base import AppTestCase
-
 
 class TestRealtimePostNotifications(AppTestCase):
 
-    @patch("api.broadcast_new_post")  # MODIFIED: Patch where it's called
+    @patch("social_app.api.routes.broadcast_new_post")  # Corrected: Patch where it's imported and used
     def test_create_post_api_triggers_broadcast(self, mock_broadcast_new_post_func):
         """
         Tests that creating a new post via the API correctly calls the
@@ -63,10 +65,10 @@ class TestRealtimePostNotifications(AppTestCase):
         self, mock_url_for_obj, mock_new_post_sse_queues_list_obj
     ):  # MODIFIED SIGNATURE
         # Access the logger from the pre-configured mock current_app
-        # Need to import notifications to access notifications.current_app
-        import notifications
+        # Need to import notifications_service to access its current_app mock
+        from social_app.services import notifications_service
 
-        mock_logger = notifications.current_app.logger
+        mock_logger = notifications_service.current_app.logger # Use the mocked current_app
 
         # Setup: Add a mock queue to our patched list
         mock_queue = MagicMock()
@@ -79,7 +81,7 @@ class TestRealtimePostNotifications(AppTestCase):
         post_data = {"id": 123, "title": "Test Post with URL"}
 
         # Call the function under test
-        with main_app_module.app_context():
+        with self.app.app_context(): # Use self.app from AppTestCase
             broadcast_new_post(post_data)
 
         # Assertions
@@ -108,25 +110,25 @@ class TestRealtimePostNotifications(AppTestCase):
         self.assertIn("url", broadcasted_data)
         self.assertEqual(broadcasted_data["url"], expected_url)
 
-    @patch("notifications.new_post_sse_queues", new_callable=list)
-    # Note: No @patch('notifications.url_for') here, as it should not be called if 'id' is missing
-    @patch("notifications.current_app", MagicMock(logger=MagicMock()))  # MODIFIED
+    @patch("social_app.services.notifications_service.new_post_sse_queues", new_callable=list) # Corrected
+    # Note: No @patch for url_for here, as it should not be called if 'id' is missing
+    @patch("social_app.services.notifications_service.current_app", MagicMock(logger=MagicMock())) # Corrected
     def test_broadcast_new_post_missing_id(
         self, mock_new_post_sse_queues_list_obj
-    ):  # MODIFIED SIGNATURE
-        import notifications  # Need this to access notifications.current_app.logger
+    ):
+        from social_app.services import notifications_service # Corrected import
 
-        mock_logger = notifications.current_app.logger
+        mock_logger = notifications_service.current_app.logger # Use the mocked current_app
 
         # Setup: Add a mock queue to our patched list
         mock_queue = MagicMock()
-        mock_new_post_sse_queues_list_obj.append(mock_queue)  # MODIFIED
+        mock_new_post_sse_queues_list_obj.append(mock_queue)
 
         post_data = {"title": "Test Post Missing ID"}
 
         # Call the function under test
-        with main_app_module.app_context():  # MODIFIED: Use main_app_module for app_context
-            broadcast_new_post(post_data)  # broadcast_new_post is imported from app
+        with self.app.app_context(): # Use self.app from AppTestCase
+            broadcast_new_post(post_data)
 
         # Assertions
         # 1. Check if app.logger.warning was called with the specific message
@@ -163,33 +165,33 @@ class TestRealtimePostNotifications(AppTestCase):
         )  # id was not in original, should not be added
         self.assertNotIn("url", broadcasted_data)  # url should not be present
 
-    @patch("notifications.new_post_sse_queues", new_callable=list)
-    @patch("notifications.url_for")
-    @patch("notifications.current_app", MagicMock(logger=MagicMock()))
+    @patch("social_app.services.notifications_service.new_post_sse_queues", new_callable=list) # Corrected
+    @patch("social_app.services.notifications_service.url_for") # Corrected
+    @patch("social_app.services.notifications_service.current_app", MagicMock(logger=MagicMock())) # Corrected
     def test_broadcast_new_post_url_for_exception(
         self, mock_url_for_obj, mock_new_post_sse_queues_list_obj
-    ):  # MODIFIED SIGNATURE
-        import notifications
+    ):
+        from social_app.services import notifications_service # Corrected import
 
-        mock_logger = notifications.current_app.logger
+        mock_logger = notifications_service.current_app.logger # Use the mocked current_app
 
         # Setup: Add a mock queue to our patched list
         mock_queue = MagicMock()
-        mock_new_post_sse_queues_list_obj.append(mock_queue)  # MODIFIED
+        mock_new_post_sse_queues_list_obj.append(mock_queue)
 
         # Configure flask.url_for mock to raise an exception
-        mock_url_for_obj.side_effect = Exception("Test url_for error")  # MODIFIED
+        mock_url_for_obj.side_effect = Exception("Test url_for error")
 
         post_data = {"id": 456, "title": "Test Post URL Exception"}
 
         # Call the function under test
-        with main_app_module.app_context():
+        with self.app.app_context(): # Use self.app from AppTestCase
             broadcast_new_post(post_data)
 
         # Assertions
         mock_url_for_obj.assert_called_once_with(
-            "view_post", post_id=456, _external=True
-        )  # MODIFIED
+            "core.view_post", post_id=456, _external=True # Corrected route name
+        )
 
         mock_logger.error.assert_called_once()
         args, _ = mock_logger.error.call_args
@@ -210,32 +212,30 @@ class TestRealtimePostNotifications(AppTestCase):
         self.assertEqual(broadcasted_data["title"], post_data["title"])
         self.assertNotIn("url", broadcasted_data)
 
-    @patch("notifications.url_for")  # This will be mock_url_for_obj
-    @patch(
-        "notifications.current_app", MagicMock(logger=MagicMock())
-    )  # No arg for this
+    @patch("social_app.services.notifications_service.url_for") # Corrected
+    @patch("social_app.services.notifications_service.current_app", MagicMock(logger=MagicMock())) # Corrected
     def test_broadcast_new_post_with_no_queues(
-        self, mock_url_for_obj
-    ):  # MODIFIED SIGNATURE
-        import notifications  # For logger and new_post_sse_queues
+        self, mock_url_for_obj # Patched object is passed
+    ):
+        from social_app.services import notifications_service # Corrected import
 
-        mock_logger = notifications.current_app.logger
+        mock_logger = notifications_service.current_app.logger # Use the mocked current_app
 
         original_queues = list(
-            notifications.new_post_sse_queues
-        )  # MODIFIED: Use notifications directly
-        notifications.new_post_sse_queues.clear()  # MODIFIED: Use notifications directly
+            notifications_service.new_post_sse_queues # Use imported module
+        )
+        notifications_service.new_post_sse_queues.clear() # Use imported module
 
         try:
             # Confirm the list is empty before the call
-            self.assertEqual(len(notifications.new_post_sse_queues), 0)  # MODIFIED
+            self.assertEqual(len(notifications_service.new_post_sse_queues), 0) # Use imported module
 
-            with main_app_module.app_context():  # MODIFIED: Use main_app_module for app_context
+            with self.app.app_context(): # Use self.app from AppTestCase
                 broadcast_new_post({"title": "Test No Queues"})  # 'id' is missing
 
             # Check for both warnings
             expected_warning_id_missing = "Post data missing 'id' field in broadcast_new_post, cannot generate URL for SSE notification. Sending notification without URL."
-            expected_warning_no_queues = "No SSE queues in new_post_sse_queues to send new post notifications to."  # MODIFIED
+            expected_warning_no_queues = "No SSE queues in new_post_sse_queues to send new post notifications to."
 
             called_warnings = [c[0][0] for c in mock_logger.warning.call_args_list]
             self.assertIn(expected_warning_id_missing, called_warnings)
@@ -247,62 +247,62 @@ class TestRealtimePostNotifications(AppTestCase):
             mock_url_for_obj.assert_not_called()
         finally:
             # Restore original list
-            notifications.new_post_sse_queues.clear()
-            notifications.new_post_sse_queues.extend(original_queues)  # MODIFIED
+            notifications_service.new_post_sse_queues.clear() # Use imported module
+            notifications_service.new_post_sse_queues.extend(original_queues) # Use imported module
 
-    @patch("notifications.new_post_sse_queues", new_callable=list)
-    @patch("notifications.url_for")
-    @patch("notifications.current_app", MagicMock(logger=MagicMock()))
+    @patch("social_app.services.notifications_service.new_post_sse_queues", new_callable=list) # Corrected
+    @patch("social_app.services.notifications_service.url_for") # Corrected
+    @patch("social_app.services.notifications_service.current_app", MagicMock(logger=MagicMock())) # Corrected
     def test_broadcast_new_post_empty_data_no_queues(
         self, mock_url_for_obj, mock_new_post_sse_queues_list_obj
-    ):  # MODIFIED SIGNATURE
-        import notifications
+    ):
+        from social_app.services import notifications_service # Corrected import
 
-        mock_logger = notifications.current_app.logger
+        mock_logger = notifications_service.current_app.logger # Use the mocked current_app
         """
         Tests broadcast_new_post with empty data and no SSE queues.
         Checks for appropriate logging and no flask.url_for call.
         """
         # Ensure new_post_sse_queues is empty (handled by new_callable=list)
-        self.assertEqual(len(mock_new_post_sse_queues_list_obj), 0)  # MODIFIED
+        self.assertEqual(len(mock_new_post_sse_queues_list_obj), 0)
 
-        with main_app_module.app_context():
+        with self.app.app_context(): # Use self.app from AppTestCase
             broadcast_new_post({})
 
         # Assert that flask.url_for was not called
-        mock_url_for_obj.assert_not_called()  # MODIFIED
+        mock_url_for_obj.assert_not_called()
 
         # Assert logger warnings
         expected_warning_id_missing = "Post data missing 'id' field in broadcast_new_post, cannot generate URL for SSE notification. Sending notification without URL."
-        expected_warning_no_queues = "No SSE queues in new_post_sse_queues to send new post notifications to."  # MODIFIED
+        expected_warning_no_queues = "No SSE queues in new_post_sse_queues to send new post notifications to."
 
         # Check all calls to warning
         called_warnings = [c[0][0] for c in mock_logger.warning.call_args_list]
         self.assertIn(expected_warning_id_missing, called_warnings)
         self.assertIn(expected_warning_no_queues, called_warnings)
 
-    @patch("notifications.new_post_sse_queues", new_callable=list)
-    @patch("notifications.url_for")
-    @patch("notifications.current_app", MagicMock(logger=MagicMock()))
+    @patch("social_app.services.notifications_service.new_post_sse_queues", new_callable=list) # Corrected
+    @patch("social_app.services.notifications_service.url_for") # Corrected
+    @patch("social_app.services.notifications_service.current_app", MagicMock(logger=MagicMock())) # Corrected
     def test_broadcast_new_post_empty_data_with_queue(
         self, mock_url_for_obj, mock_new_post_sse_queues_list_obj
-    ):  # MODIFIED SIGNATURE
-        import notifications
+    ):
+        from social_app.services import notifications_service # Corrected import
 
-        mock_logger = notifications.current_app.logger
+        mock_logger = notifications_service.current_app.logger # Use the mocked current_app
         """
         Tests broadcast_new_post with empty data but with an SSE queue.
         Checks for appropriate logging, no flask.url_for call, and queue interaction.
         """
         # Add a mock queue
         mock_queue = MagicMock()
-        mock_new_post_sse_queues_list_obj.append(mock_queue)  # MODIFIED
+        mock_new_post_sse_queues_list_obj.append(mock_queue)
 
-        with main_app_module.app_context():
+        with self.app.app_context(): # Use self.app from AppTestCase
             broadcast_new_post({})
 
         # Assert that flask.url_for was not called
-        mock_url_for_obj.assert_not_called()  # MODIFIED
+        mock_url_for_obj.assert_not_called()
 
         # Assert logger warnings
         expected_warning_id_missing = "Post data missing 'id' field in broadcast_new_post, cannot generate URL for SSE notification. Sending notification without URL."

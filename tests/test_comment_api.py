@@ -1,11 +1,12 @@
 import unittest
 import json
-from models import (
+# Updated model import paths
+from social_app.models.db_models import (
     User,
     Post,
     Comment,
     UserBlock,
-)  # Ensure User is imported for user creation
+)
 from tests.test_base import AppTestCase
 from werkzeug.security import generate_password_hash  # For creating user password
 

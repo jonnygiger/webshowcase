@@ -1,5 +1,4 @@
-from models import (
-    db,
+from ..models.db_models import ( # Corrected model import path
     User,
     Post,
     Comment,
@@ -12,7 +11,8 @@ from models import (
     Poll,
     Bookmark,
 )
-from sqlalchemy import func
+from .. import db # Import db from social_app package
+from sqlalchemy import func # Ensure func is imported
 
 
 def get_user_stat(user, stat_type):

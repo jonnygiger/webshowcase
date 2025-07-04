@@ -1,8 +1,10 @@
 import unittest
-from app import app, db
-from models import User, Event
+# Updated imports: app is self.app from AppTestCase, db from social_app
+from social_app import db
+from social_app.models.db_models import User, Event # Updated model import paths
 from tests.test_base import AppTestCase
 from datetime import datetime
+from flask import url_for # Import url_for
 
 
 class TestEventRendering(AppTestCase):
@@ -43,7 +45,7 @@ class TestEventRendering(AppTestCase):
         #    to see the event, only for RSVP status etc.
 
         # 4. Make a GET request to the event view page
-        response = self.client.get(f"/event/{event_id}")  # Use stored event_id
+        response = self.client.get(url_for('core.view_event', event_id=event_id)) # Use url_for
 
         # 5. Assert that the response status code is 200
         self.assertEqual(response.status_code, 200)

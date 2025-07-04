@@ -6,14 +6,14 @@ from unittest.mock import (
 )  # ANY is kept as tests are commented out but might use it
 from datetime import datetime, timedelta, timezone
 
-# from app import app, db, socketio # COMMENTED OUT
-# from models import User, Post, Event # COMMENTED OUT
-# from recommendations import get_on_this_day_posts_and_events # Potentially used by API
+# Updated commented-out imports for future reference:
+# from social_app import create_app, db, socketio
+# from social_app.models.db_models import User, Post, Event
+# from social_app.services.recommendations_service import get_on_this_day_content
 from tests.test_base import AppTestCase
-from models import User  # Needed for direct user creation
+from social_app.models.db_models import User  # Updated model import path
 from werkzeug.security import generate_password_hash  # Needed for hashing password
-
-# from flask import url_for # Conditional import is good practice
+from flask import url_for # Ensure url_for is imported
 
 
 class TestOnThisDayPage(AppTestCase):
@@ -48,20 +48,20 @@ class TestOnThisDayPage(AppTestCase):
         # Commits are handled by AppTestCase helpers
 
     def test_on_this_day_page_unauthorized(self):
-        response = self.client.get("/onthisday", follow_redirects=False)
+        response = self.client.get(url_for('core.on_this_day_page'), follow_redirects=False) # Use url_for
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(response.location.endswith("/login"))
+        self.assertTrue(response.location.endswith(url_for('core.login'))) # Use url_for
 
-    @patch("app.datetime")
-    @patch("recommendations.datetime")
-    def test_on_this_day_page_no_content(self, mock_reco_datetime, mock_app_datetime):
+    @patch("social_app.core.views.datetime") # Patching datetime where view might use it
+    @patch("social_app.services.recommendations_service.datetime") # Patching datetime where service might use it
+    def test_on_this_day_page_no_content(self, mock_reco_datetime, mock_views_datetime):
         no_content_date = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-        mock_app_datetime.now.return_value = no_content_date  # Changed from utcnow
-        mock_reco_datetime.now.return_value = no_content_date  # Changed from utcnow
-        mock_reco_datetime.strptime = datetime.strptime
+        mock_views_datetime.now.return_value = no_content_date
+        mock_reco_datetime.now.return_value = no_content_date
+        mock_reco_datetime.strptime = datetime.strptime # Ensure strptime is not mocked away if service uses it
 
         self.login(self.test_user.username, "password")
-        response = self.client.get("/onthisday")
+        response = self.client.get(url_for('core.on_this_day_page')) # Use url_for
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
@@ -74,19 +74,19 @@ class TestOnThisDayPage(AppTestCase):
         )
         self.logout()
 
-    @patch("app.datetime")
-    @patch("recommendations.datetime")
+    @patch("social_app.core.views.datetime") # Patching datetime where view might use it
+    @patch("social_app.services.recommendations_service.datetime") # Patching datetime where service might use it
     def test_on_this_day_page_with_content_and_filtering(
-        self, mock_reco_datetime, mock_app_datetime
+        self, mock_reco_datetime, mock_views_datetime
     ):
-        from flask import url_for
+        # from flask import url_for # Already imported at top
 
-        mock_app_datetime.now.return_value = self.fixed_today  # Changed from utcnow
-        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+        mock_views_datetime.now.return_value = self.fixed_today
+        mock_reco_datetime.now.return_value = self.fixed_today
         mock_reco_datetime.strptime = datetime.strptime
 
         self.login(self.test_user.username, "password")
-        response = self.client.get("/onthisday")
+        response = self.client.get(url_for('core.on_this_day_page')) # Use url_for
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
@@ -103,11 +103,11 @@ class TestOnThisDayPage(AppTestCase):
         self.assertNotIn(self.event_different_day_web.title, response_data)
         self.logout()
 
-    @patch("app.datetime")
-    @patch("recommendations.datetime")
-    def test_on_this_day_page_only_posts(self, mock_reco_datetime, mock_app_datetime):
-        mock_app_datetime.now.return_value = self.fixed_today  # Changed from utcnow
-        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+    @patch("social_app.core.views.datetime") # Patching datetime where view might use it
+    @patch("social_app.services.recommendations_service.datetime") # Patching datetime where service might use it
+    def test_on_this_day_page_only_posts(self, mock_reco_datetime, mock_views_datetime):
+        mock_views_datetime.now.return_value = self.fixed_today
+        mock_reco_datetime.now.return_value = self.fixed_today
         mock_reco_datetime.strptime = datetime.strptime
 
         # Create a new user for this test to ensure no other events interfere
@@ -134,7 +134,7 @@ class TestOnThisDayPage(AppTestCase):
         )
 
         self.login(test_user_for_only_posts.username, "password")
-        response = self.client.get("/onthisday")
+        response = self.client.get(url_for('core.on_this_day_page')) # Use url_for
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
@@ -150,11 +150,11 @@ class TestOnThisDayPage(AppTestCase):
 
         self.logout()
 
-    @patch("app.datetime")
-    @patch("recommendations.datetime")
-    def test_on_this_day_page_only_events(self, mock_reco_datetime, mock_app_datetime):
-        mock_app_datetime.now.return_value = self.fixed_today  # Changed from utcnow
-        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+    @patch("social_app.core.views.datetime") # Patching datetime where view might use it
+    @patch("social_app.services.recommendations_service.datetime") # Patching datetime where service might use it
+    def test_on_this_day_page_only_events(self, mock_reco_datetime, mock_views_datetime):
+        mock_views_datetime.now.return_value = self.fixed_today
+        mock_reco_datetime.now.return_value = self.fixed_today
         mock_reco_datetime.strptime = datetime.strptime
 
         # Create a new user for this test to ensure no other posts interfere
@@ -179,7 +179,7 @@ class TestOnThisDayPage(AppTestCase):
         )
 
         self.login(test_user_for_only_events.username, "password")
-        response = self.client.get("/onthisday")
+        response = self.client.get(url_for('core.on_this_day_page')) # Use url_for
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
@@ -195,14 +195,14 @@ class TestOnThisDayPage(AppTestCase):
 
         self.logout()
 
-    @patch("app.datetime")
-    @patch("recommendations.datetime")
+    @patch("social_app.core.views.datetime") # Patching datetime where view might use it
+    @patch("social_app.services.recommendations_service.datetime") # Patching datetime where service might use it
     def test_on_this_day_page_current_year_and_wrong_day_content_only(
-        self, mock_reco_datetime, mock_app_datetime
+        self, mock_reco_datetime, mock_views_datetime
     ):
         # 1. Mock datetime BEFORE any logic that might use it
-        mock_app_datetime.now.return_value = self.fixed_today  # Changed from utcnow
-        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+        mock_views_datetime.now.return_value = self.fixed_today
+        mock_reco_datetime.now.return_value = self.fixed_today
         # Ensure that strptime used by recommendations.py is the real one
         mock_reco_datetime.strptime = datetime.strptime
 
@@ -256,7 +256,7 @@ class TestOnThisDayPage(AppTestCase):
 
         # Perform login and request
         self.login(self.no_otd_content_user.username, "password")
-        response = self.client.get("/onthisday")
+        response = self.client.get(url_for('core.on_this_day_page')) # Use url_for
 
         # Assert status code
         self.assertEqual(response.status_code, 200)
@@ -284,14 +284,14 @@ class TestOnThisDayPage(AppTestCase):
 
         self.logout()
 
-    @patch("app.datetime")
-    @patch("recommendations.datetime")
+    @patch("social_app.core.views.datetime") # Patching datetime where view might use it
+    @patch("social_app.services.recommendations_service.datetime") # Patching datetime where service might use it
     def test_on_this_day_page_content_from_wrong_day_only(
-        self, mock_reco_datetime, mock_app_datetime
+        self, mock_reco_datetime, mock_views_datetime
     ):
         # Mock datetime objects and set fixed_today
-        mock_app_datetime.now.return_value = self.fixed_today  # Changed from utcnow
-        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+        mock_views_datetime.now.return_value = self.fixed_today
+        mock_reco_datetime.now.return_value = self.fixed_today
         mock_reco_datetime.strptime = datetime.strptime
 
         # Create a new unique user
@@ -329,7 +329,7 @@ class TestOnThisDayPage(AppTestCase):
         self.login(self.wrong_day_user.username, "password")
 
         # Access the /onthisday page
-        response = self.client.get("/onthisday")
+        response = self.client.get(url_for('core.on_this_day_page')) # Use url_for
 
         # Assert that the response status code is 200
         self.assertEqual(response.status_code, 200)
@@ -429,19 +429,19 @@ class TestOnThisDayAPI(AppTestCase):
         # )
         # Commits are handled by AppTestCase helpers
 
-    @patch("recommendations.datetime")
-    @patch("api.datetime")
+    @patch("social_app.services.recommendations_service.datetime") # Corrected patch target
+    @patch("social_app.api.routes.datetime") # Corrected patch target
     def test_on_this_day_with_content_and_filtering(
-        self, mock_api_datetime, mock_reco_datetime
+        self, mock_api_routes_datetime, mock_reco_datetime # Renamed mock params
     ):
-        mock_reco_datetime.now.return_value = self.fixed_today  # Changed from utcnow
-        mock_reco_datetime.strptime = datetime.strptime
-        mock_api_datetime.now.return_value = self.fixed_today  # Changed from utcnow
+        mock_reco_datetime.now.return_value = self.fixed_today
+        mock_reco_datetime.strptime = datetime.strptime # Ensure strptime from datetime module is used
+        mock_api_routes_datetime.now.return_value = self.fixed_today
 
         token = self._get_jwt_token(self.test_user.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = self.client.get("/api/onthisday", headers=headers)
+        response = self.client.get(url_for('onthisdayresource'), headers=headers) # Use url_for with resource name
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
 
@@ -473,18 +473,18 @@ class TestOnThisDayAPI(AppTestCase):
         self.assertNotIn(self.event_current_year.id, event_ids_in_response)
         # ... (other assertions for filtering)
 
-    @patch("recommendations.datetime")
-    @patch("api.datetime")
-    def test_on_this_day_no_content_api(self, mock_api_datetime, mock_reco_datetime):
+    @patch("social_app.services.recommendations_service.datetime") # Corrected patch target
+    @patch("social_app.api.routes.datetime") # Corrected patch target
+    def test_on_this_day_no_content_api(self, mock_api_routes_datetime, mock_reco_datetime): # Renamed mock params
         no_content_date = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-        mock_reco_datetime.now.return_value = no_content_date  # Changed from utcnow
+        mock_reco_datetime.now.return_value = no_content_date
         mock_reco_datetime.strptime = datetime.strptime
-        mock_api_datetime.now.return_value = no_content_date  # Changed from utcnow
+        mock_api_routes_datetime.now.return_value = no_content_date
 
         token = self._get_jwt_token(self.test_user.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = self.client.get("/api/onthisday", headers=headers)
+        response = self.client.get(url_for('onthisdayresource'), headers=headers) # Use url_for
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
 
@@ -492,7 +492,7 @@ class TestOnThisDayAPI(AppTestCase):
         self.assertEqual(len(data["on_this_day_events"]), 0)
 
     def test_on_this_day_unauthenticated(self):
-        response = self.client.get("/api/onthisday")
+        response = self.client.get(url_for('onthisdayresource')) # Use url_for
         self.assertEqual(response.status_code, 401)
         data = json.loads(response.data)
         self.assertEqual(data["msg"], "Missing Authorization Header")

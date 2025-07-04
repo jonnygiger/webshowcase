@@ -2,8 +2,9 @@ import unittest
 from unittest.mock import patch, ANY
 from datetime import datetime, timedelta, timezone
 
-# from app import app, db, socketio # COMMENTED OUT - app, db, socketio likely from AppTestCase
-from models import (
+# Updated commented-out imports for future reference:
+# from social_app import create_app, db, socketio
+from social_app.models.db_models import ( # Updated model import paths
     User,
     Post,
     FriendPostNotification,
@@ -31,7 +32,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
         # Note: This helper doesn't return the post object directly.
         # Tests will need to query for the post if its details are needed.
 
-    @patch("app.socketio.emit")  # Patch socketio.emit from the app instance
+    @patch("social_app.socketio.emit")  # Corrected patch target
     def test_notification_creation_and_socketio_emit(self, mock_socketio_emit):
         with self.app.app_context():
             # 1. User A and User B are friends.
@@ -346,8 +347,8 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             # Let's refine the socketio assertion to be very specific:
             # No call to emit for 'new_friend_post' to user1's room for this specific post.
             called_for_own_post = False
-            for call_args in mock_socketio_emit.call_args_list:
-                args, kwargs = call_args
+            for call_args_item in mock_socketio_emit.call_args_list: # Renamed call_args
+                args, kwargs = call_args_item # Use call_args_item
                 # args[0] is event name, args[1] is payload, kwargs['room'] is the room
                 if (
                     args[0] == "new_friend_post"
@@ -361,7 +362,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
                 "socketio.emit was called for the user's own post notification.",
             )
 
-    @patch("app.socketio.emit")
+    @patch("social_app.socketio.emit") # Corrected patch target
     def test_no_notification_for_post_before_friendship(self, mock_socketio_emit):
         with self.app.app_context():
             # 1. User1 creates a post
@@ -397,8 +398,8 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
 
             # 4. Assert socketio.emit was not called for User2 for this specific post
             called_for_user2 = False
-            for call_args in mock_socketio_emit.call_args_list:
-                args, kwargs = call_args
+            for call_args_item in mock_socketio_emit.call_args_list: # Renamed call_args
+                args, kwargs = call_args_item # Use call_args_item
                 # args[0] is event name, args[1] is payload, kwargs['room'] is the room
                 if (
                     args[0] == "new_friend_post"
@@ -412,7 +413,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
                 "socketio.emit was called for user2 for a post made before friendship.",
             )
 
-    @patch("app.socketio.emit")
+    @patch("social_app.socketio.emit") # Corrected patch target
     def test_no_notification_if_poster_is_blocked(self, mock_socketio_emit):
         with self.app.app_context():
             # 1. User1 and User2 are friends
@@ -449,8 +450,8 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
 
             # 5. Assert that no new_friend_post socket.io event is emitted to User2's room for this specific post
             called_for_user2 = False
-            for call_args in mock_socketio_emit.call_args_list:
-                args, kwargs = call_args
+            for call_args_item in mock_socketio_emit.call_args_list: # Renamed call_args
+                args, kwargs = call_args_item # Use call_args_item
                 # args[0] is event name, args[1] is payload, kwargs['room'] is the room
                 if (
                     args[0] == "new_friend_post"
@@ -464,7 +465,7 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
                 "socketio.emit was called for User2 for a post from a blocked user.",
             )
 
-    @patch("app.socketio.emit")
+    @patch("social_app.socketio.emit") # Corrected patch target
     def test_notification_persists_after_unfriend(self, mock_socketio_emit_unfriend):
         with self.app.app_context():
             # 1. User A (user1) and User B (user2) are friends.

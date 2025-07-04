@@ -2,8 +2,9 @@ import unittest
 import json
 from flask import url_for
 from tests.test_base import AppTestCase  # Assuming this sets up app context and db
-from models import (
-    db,
+# Updated imports: db is handled by AppTestCase or imported from social_app
+from social_app import db # app will be self.app from AppTestCase
+from social_app.models.db_models import ( # Updated model import paths
     User,
     Post,
     Poll,

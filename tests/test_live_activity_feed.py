@@ -12,8 +12,9 @@ from werkzeug.security import (
 
 from io import BytesIO  # Added for file uploads
 from flask import url_for  # Added for url_for in tests
-from app import app, db, socketio
-from models import User, UserActivity, Friendship, Post  # User is already here
+# Updated imports: app is self.app from AppTestCase, db and socketio from social_app
+from social_app import db, socketio
+from social_app.models.db_models import User, UserActivity, Friendship, Post # Updated model import paths
 from tests.test_base import AppTestCase
 
 
@@ -55,8 +56,8 @@ class TestLiveActivityFeed(AppTestCase):
         self._create_db_friendship(self.user2, self.user1, status="accepted")
         self._create_db_friendship(self.user2, self.user3, status="accepted")
 
-    @patch("app.socketio.emit")
-    @patch("app.check_and_award_achievements")  # Mock achievements function
+    @patch("social_app.socketio.emit") # Corrected patch target
+    @patch("social_app.services.achievements.check_and_award_achievements")  # Corrected patch target
     def test_new_follow_activity_logging_and_socketio(
         self, mock_check_achievements, mock_socketio_emit
     ):
@@ -89,7 +90,7 @@ class TestLiveActivityFeed(AppTestCase):
         # User2 logs in and accepts the friend request from User1
         self.login(self.user2.username, "password")
         response = self.client.post(
-            f"/friend_request/{friend_request_id}/accept", follow_redirects=True
+            url_for('core.accept_friend_request', request_id=friend_request_id), follow_redirects=True # Use url_for
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn(
@@ -208,9 +209,9 @@ class TestLiveActivityFeed(AppTestCase):
         self.logout()
 
     def test_live_feed_unauthorized_access(self):
-        response = self.client.get("/live_feed", follow_redirects=False)
+        response = self.client.get(url_for('core.live_feed'), follow_redirects=False) # Use url_for
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/login", response.location)
+        self.assertIn(url_for('core.login'), response.location) # Use url_for for login route
 
     def test_live_feed_authorized_access_and_data(self):
         # user1 will log in. user2 will be their friend and have activities.
@@ -278,7 +279,7 @@ class TestLiveActivityFeed(AppTestCase):
             )
 
         self.login(self.user1.username, "password")
-        response = self.client.get("/live_feed")
+        response = self.client.get(url_for('core.live_feed')) # Use url_for
         self.assertEqual(response.status_code, 200)
 
         response_data = response.get_data(as_text=True)
@@ -322,7 +323,7 @@ class TestLiveActivityFeed(AppTestCase):
             )
 
         # Re-fetch the page after adding self-activity to ensure it's not included
-        response_after_self_activity = self.client.get("/live_feed")
+        response_after_self_activity = self.client.get(url_for('core.live_feed')) # Use url_for
         response_data_after_self_activity = response_after_self_activity.get_data(
             as_text=True
         )
@@ -334,9 +335,9 @@ class TestLiveActivityFeed(AppTestCase):
 
         self.logout()
 
-    @patch("app.socketio.emit")
+    @patch("social_app.socketio.emit") # Corrected patch target
     def test_emit_new_activity_event_helper_direct(self, mock_socketio_emit):
-        from app import emit_new_activity_event  # Import the helper directly
+        from social_app.core.views import emit_new_activity_event # Corrected import path
 
         with self.app.app_context():
             # user2 is friends with user1 and user3 from TestLiveActivityFeed.setUp()
@@ -414,8 +415,8 @@ class TestLiveActivityFeed(AppTestCase):
                     "Activity event should not be emitted to the actor's own room.",
                 )
 
-    @patch("app.socketio.emit")
-    @patch("app.check_and_award_achievements")  # Mock achievements function
+    @patch("social_app.socketio.emit") # Corrected patch target
+    @patch("social_app.services.achievements.check_and_award_achievements") # Corrected patch target
     def test_new_post_activity_logging_and_socketio(
         self, mock_check_achievements, mock_socketio_emit
     ):
@@ -425,7 +426,7 @@ class TestLiveActivityFeed(AppTestCase):
         post_hashtags = "test,activity"
 
         response = self.client.post(
-            "/blog/create",
+            url_for('core.create_post'), # Use url_for
             data={
                 "title": post_title,
                 "content": post_content,
@@ -505,8 +506,8 @@ class TestLiveActivityFeed(AppTestCase):
 
         self.logout()
 
-    @patch("app.socketio.emit")
-    @patch("app.check_and_award_achievements")
+    @patch("social_app.socketio.emit") # Corrected patch target
+    @patch("social_app.services.achievements.check_and_award_achievements") # Corrected patch target
     def test_new_comment_activity_logging_and_socketio(
         self, mock_check_achievements, mock_socketio_emit
     ):
@@ -515,7 +516,6 @@ class TestLiveActivityFeed(AppTestCase):
             post_by_user1_obj = self._create_db_post(
                 user_id=self.user1.id, title="Post to be commented on"
             )
-            # post_by_user1 = Post.query.get(post_by_user1_obj.id) # Not needed if post_by_user1_obj is used directly
             self.assertIsNotNone(
                 post_by_user1_obj, "Post object by User1 should not be None."
             )
@@ -524,7 +524,7 @@ class TestLiveActivityFeed(AppTestCase):
         self.login(self.user2.username, "password")
         comment_content = "This is a test comment on user1's post."
         response = self.client.post(
-            f"/blog/post/{post_by_user1_obj.id}/comment",
+            url_for('core.add_comment', post_id=post_by_user1_obj.id), # Use url_for
             data={"comment_content": comment_content},
             follow_redirects=True,
         )
@@ -594,10 +594,10 @@ class TestLiveActivityFeed(AppTestCase):
 
         self.logout()
 
-    @patch("app.socketio.emit")
+    @patch("social_app.socketio.emit") # Corrected patch target
     @patch(
-        "app.check_and_award_achievements"
-    )  # Mock achievements, though liking doesn't trigger one by default
+        "social_app.services.achievements.check_and_award_achievements" # Corrected patch target
+    )
     def test_new_like_activity_logging_and_socketio(
         self, mock_check_achievements, mock_socketio_emit
     ):
@@ -606,7 +606,6 @@ class TestLiveActivityFeed(AppTestCase):
             post_by_user1_obj = self._create_db_post(
                 user_id=self.user1.id, title="Post to be liked by user2"
             )
-            # post_by_user1 = Post.query.get(post_by_user1_obj.id) # Not needed if post_by_user1_obj is used directly
             self.assertIsNotNone(
                 post_by_user1_obj, "Post object by User1 should not be None."
             )
@@ -614,7 +613,7 @@ class TestLiveActivityFeed(AppTestCase):
         # user2 logs in and likes user1's post
         self.login(self.user2.username, "password")
         response = self.client.post(
-            f"/blog/post/{post_by_user1_obj.id}/like", follow_redirects=True
+            url_for('core.like_post', post_id=post_by_user1_obj.id), follow_redirects=True # Use url_for
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("Post liked!", response.get_data(as_text=True))
@@ -909,8 +908,8 @@ class TestLiveActivityFeed(AppTestCase):
 
         self.logout()  # Ensure logout at the end
 
-    @patch("app.socketio.emit")
-    @patch("app.check_and_award_achievements")
+    @patch("social_app.socketio.emit") # Corrected patch target
+    @patch("social_app.services.achievements.check_and_award_achievements") # Corrected patch target
     def test_updated_profile_picture_activity_logging_and_socketio(
         self, mock_check_achievements, mock_socketio_emit
     ):
@@ -930,7 +929,7 @@ class TestLiveActivityFeed(AppTestCase):
 
         # 3. Make the POST request to /upload_profile_picture
         response = self.client.post(
-            "/upload_profile_picture",  # Route defined in app.py
+            url_for('core.upload_profile_picture'),  # Use url_for
             data=data,
             content_type="multipart/form-data",  # Necessary for file uploads
             follow_redirects=True,

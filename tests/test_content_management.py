@@ -1,7 +1,9 @@
 import unittest
 from flask import url_for, jsonify
 from tests.test_base import AppTestCase
-from models import db, User, Post, Series, SeriesPost
+# Updated imports: db is handled by AppTestCase or imported from social_app
+from social_app import db # app will be self.app from AppTestCase
+from social_app.models.db_models import User, Post, Series, SeriesPost # Updated model import paths
 from datetime import datetime, timezone, timedelta
 
 
@@ -24,15 +26,15 @@ class TestContentManagement(AppTestCase):
 
             # Add Post1 to series
             self.client.post(
-                url_for("add_post_to_series", series_id=series_obj.id, post_id=post1.id)
+                url_for("core.add_post_to_series", series_id=series_obj.id, post_id=post1.id) # Added blueprint name
             )
             # Add Post2 to series
             self.client.post(
-                url_for("add_post_to_series", series_id=series_obj.id, post_id=post2.id)
+                url_for("core.add_post_to_series", series_id=series_obj.id, post_id=post2.id) # Added blueprint name
             )
             # Add Post3 to series
             self.client.post(
-                url_for("add_post_to_series", series_id=series_obj.id, post_id=post3.id)
+                url_for("core.add_post_to_series", series_id=series_obj.id, post_id=post3.id) # Added blueprint name
             )
 
             series_reloaded = db.session.get(Series, series_obj.id)
@@ -44,7 +46,7 @@ class TestContentManagement(AppTestCase):
             # Remove Post2 (the middle one)
             self.client.post(
                 url_for(
-                    "remove_post_from_series", series_id=series_obj.id, post_id=post2.id
+                    "core.remove_post_from_series", series_id=series_obj.id, post_id=post2.id # Added blueprint name
                 )
             )
 
@@ -102,7 +104,7 @@ class TestContentManagement(AppTestCase):
             # New order: post3, post1, post2
             new_order_ids = [post3.id, post1.id, post2.id]
             response = self.client.post(
-                url_for("reorder_series_posts", series_id=series_obj.id),
+                url_for("core.reorder_series_posts", series_id=series_obj.id), # Added blueprint name
                 json={"post_ids": new_order_ids},
             )
             self.assertEqual(response.status_code, 200)
@@ -169,7 +171,7 @@ class TestContentManagement(AppTestCase):
 
             # Delete the series
             response = self.client.post(
-                url_for("delete_series", series_id=series_id), follow_redirects=True
+                url_for("core.delete_series", series_id=series_id), follow_redirects=True # Added blueprint name
             )
             self.assertEqual(response.status_code, 200)  # Redirects to user profile
             # Ensure the redirect went to the correct user's profile page
@@ -201,7 +203,7 @@ class TestContentManagement(AppTestCase):
 
             response = self.client.post(
                 url_for(
-                    "add_post_to_series",
+                    "core.add_post_to_series", # Added blueprint name
                     series_id=series_obj.id,
                     post_id=post_by_other.id,
                 ),
@@ -251,7 +253,7 @@ class TestContentManagement(AppTestCase):
             time_before_edit = datetime.now(timezone.utc) - timedelta(seconds=1)
 
             response = self.client.post(
-                url_for("edit_post", post_id=post_id),
+                url_for("core.edit_post", post_id=post_id), # Added blueprint name
                 data={
                     "title": new_title,
                     "content": new_content,

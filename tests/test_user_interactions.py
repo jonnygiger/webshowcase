@@ -1,14 +1,15 @@
 import unittest
 from flask import url_for
 from tests.test_base import AppTestCase
-from models import (
-    db,
+# Updated imports: db from social_app, models from social_app.models.db_models
+from social_app import db
+from social_app.models.db_models import (
     User,
     Post,
     Comment,
     UserBlock,
     Friendship,
-)  # Assuming UserBlock and Friendship are in models
+)
 import os  # Import the os module
 
 
@@ -29,7 +30,7 @@ class TestUserInteractions(AppTestCase):
 
             # Blocker blocks the user via the new route
             response_block = self.client.post(
-                url_for("block_user_route", username_to_block=blocked_user.username),
+                url_for("core.block_user_route", username_to_block=blocked_user.username), # Added core. prefix
                 follow_redirects=True,
             )
             self.assertEqual(
@@ -83,7 +84,7 @@ class TestUserInteractions(AppTestCase):
             self.login(blocker.username, "password")
 
             response = self.client.post(
-                url_for("unblock_user", username_to_unblock=blocked_user.username),
+                url_for("core.unblock_user", username_to_unblock=blocked_user.username), # Added core. prefix
                 follow_redirects=True,
             )
             self.assertEqual(
@@ -104,7 +105,7 @@ class TestUserInteractions(AppTestCase):
                 user_id=blocked_user.id, title="Unblocked User's Post"
             )
             response = self.client.get(
-                url_for("user_profile", username=blocked_user.username)
+                url_for("core.user_profile", username=blocked_user.username) # Added core. prefix
             )
             self.assertEqual(response.status_code, 200)
             self.assertIn(
@@ -128,9 +129,8 @@ class TestUserInteractions(AppTestCase):
             self.login(blocked_user.username, "password")
 
             # Blocked_user attempts to send friend request to Blocker
-            # Assuming `send_friend_request` is the route name and it takes target_user_id
             response = self.client.post(
-                url_for("send_friend_request", target_user_id=blocker.id)
+                url_for("core.send_friend_request", target_user_id=blocker.id) # Added core. prefix
             )
 
             # Check that the request was denied (e.g., redirect with flash, or specific status code)
@@ -173,7 +173,7 @@ class TestUserInteractions(AppTestCase):
 
             # Requester attempts to send friend request to Blocker
             response = self.client.post(
-                url_for("send_friend_request", target_user_id=blocker.id)
+                url_for("core.send_friend_request", target_user_id=blocker.id) # Added core. prefix
             )
             self.assertEqual(response.status_code, 302)  # Assuming redirect
             with self.client.session_transaction() as sess:
@@ -203,7 +203,7 @@ class TestUserInteractions(AppTestCase):
             # Simulate file upload
             new_pic_filename = "new_test_profile.png"
             # Ensure the URL is generated within the app context for url_for to work correctly
-            new_pic_url = url_for(
+            new_pic_url = url_for( # Assuming static is at app level
                 "static", filename=f"profile_pics/{new_pic_filename}", _external=False
             )
 
@@ -228,7 +228,7 @@ class TestUserInteractions(AppTestCase):
 
             # Visit profile page
             response = self.client.get(
-                url_for("user_profile", username=user_to_update.username)
+                url_for("core.user_profile", username=user_to_update.username) # Added core. prefix
             )
             self.assertEqual(response.status_code, 200)
 
@@ -252,7 +252,7 @@ class TestUserInteractions(AppTestCase):
 
             new_bio_text = "This is my new awesome bio!"
             response = self.client.post(
-                url_for("edit_profile"),
+                url_for("core.edit_profile"), # Added core. prefix
                 data={
                     "username": user_to_edit.username,  # Keep username same
                     "email": user_to_edit.email,  # Keep email same

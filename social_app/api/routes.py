@@ -6,8 +6,9 @@ from datetime import datetime, timedelta, timezone
 import os
 
 # import app as main_app  # Removed to break circular dependency
-from notifications import broadcast_new_post  # Import the moved function
-from models import (
+# Import from the new service locations
+from ..services.notifications_service import broadcast_new_post
+from ..models.db_models import ( # Corrected model import path
     User,
     Post,
     Comment,
@@ -18,11 +19,13 @@ from models import (
     Poll,
     PollOption,
     PollVote,
-    db,
+    db, # db should be imported from social_app's __init__
     PostLock,
     SharedFile,
     UserBlock,
 )
+# db will be available via from social_app import db if routes are registered within create_app
+# For now, assuming db is correctly accessed or will be passed/imported via social_app
 
 
 # Placeholder for UserListResource
@@ -408,13 +411,15 @@ class RecommendationResource(Resource):
             return {"message": f"User {user_id} not found"}, 404
 
         # Import recommendation functions
-        from recommendations import (
+        # Import recommendation functions from the new service location
+        from ..services.recommendations_service import (
             suggest_posts_to_read,
             suggest_groups_to_join,
             suggest_events_to_attend,
             suggest_users_to_follow,
-            suggest_polls_to_vote,
+            # suggest_polls_to_vote, # This was noted as possibly undefined/removed earlier
         )
+        # If suggest_polls_to_vote is indeed used and defined, it should be in recommendations_service
 
         # Call recommendation functions
         limit = 5
@@ -498,8 +503,8 @@ class RecommendationResource(Resource):
 
 
 # Need User model for UserFeedResource, already imported at the top
-# from models import User
-from recommendations import get_personalized_feed_posts  # Import for UserFeedResource
+# from ..models.db_models import User # Already imported
+from ..services.recommendations_service import get_personalized_feed_posts
 
 
 class UserFeedResource(Resource):
@@ -774,10 +779,14 @@ class PersonalizedFeedResource(Resource):
 # Placeholder for TrendingHashtagsResource
 class TrendingHashtagsResource(Resource):
     def get(self):
+        # Actual implementation might use:
+        # from ..services.recommendations_service import get_trending_hashtags
+        # trending_data = get_trending_hashtags()
+        # return trending_data, 200
         return {"message": "Trending hashtags resource placeholder"}, 200
 
 
-from recommendations import get_on_this_day_content  # Import the function
+from ..services.recommendations_service import get_on_this_day_content
 
 
 # OnThisDayResource Implementation
@@ -921,7 +930,7 @@ class SharedFileResource(Resource):
 
 
 # Chat API Resources
-from models import ChatRoom, ChatMessage  # Ensure models are imported
+# from ..models.db_models import ChatRoom, ChatMessage # Already imported at the top
 
 
 class ChatRoomListResource(Resource):
@@ -1010,3 +1019,24 @@ class ChatRoomMessagesResource(Resource):
     # POST to this resource (i.e., sending a message to a room) is typically handled via SocketIO
     # for real-time communication. If a RESTful way to post messages is also desired,
     # it could be implemented here, but it's often redundant with SocketIO.
+
+# JWT Based API Login Resource (moved from app.py's /api/login route)
+from flask_jwt_extended import create_access_token
+from werkzeug.security import check_password_hash
+
+class ApiLoginResource(Resource):
+    def post(self):
+        data = request.get_json()
+        username = data.get("username")
+        password = data.get("password")
+
+        if not username or not password:
+            return {"message": "Username and password are required"}, 400
+
+        user = User.query.filter_by(username=username).first()
+
+        if user and check_password_hash(user.password_hash, password):
+            access_token = create_access_token(identity=str(user.id))
+            return {"access_token": access_token}, 200
+        else:
+            return {"message": "Invalid credentials"}, 401

@@ -2,8 +2,9 @@ import unittest
 import json
 from flask_jwt_extended import create_access_token
 
-from app import db
-from models import User, ChatRoom, ChatMessage  # Correctly import ChatMessage
+# Updated imports: db is handled by AppTestCase or imported from social_app
+from social_app import db # app will be self.app from AppTestCase
+from social_app.models.db_models import User, ChatRoom, ChatMessage # Updated model import paths
 from tests.test_base import AppTestCase  # Assuming this sets up app context and db
 
 

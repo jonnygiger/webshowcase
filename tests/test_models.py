@@ -1,8 +1,9 @@
 import unittest
 from datetime import datetime, timezone, timedelta
 
-from app import db
-from models import (
+# Updated imports: db from social_app
+from social_app import db
+from social_app.models.db_models import ( # Updated model import paths
     User,
     Post,
     PostLock,
@@ -511,7 +512,7 @@ class TestPollVoteModel(AppTestCase):
             if len(poll.options) > 1:
                 option2 = poll.options[1]
             else:  # If only one option, create another one for the test.
-                from models import PollOption
+                from social_app.models.db_models import PollOption # Corrected import
 
                 # Ensure operations on 'poll' use the session-bound instance
                 option2_obj = PollOption(text="Option 2 For UC Test", poll_id=poll.id)

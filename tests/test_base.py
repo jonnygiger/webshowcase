@@ -55,9 +55,8 @@ class AppTestCase(unittest.TestCase):
         cls.socketio_class_level = main_app_socketio
 
         if hasattr(cls.socketio_class_level, "app") and cls.socketio_class_level.app:
-            print(
-                f"DEBUG: SocketIO App's SECRET_KEY in setUpClass after init_app: {cls.socketio_class_level.app.secret_key}"
-            , file=sys.stderr)
+            # Removed debug print statement about SocketIO App's SECRET_KEY
+            pass
 
         import logging
         cls.app.logger.setLevel(logging.DEBUG)
@@ -147,20 +146,20 @@ class AppTestCase(unittest.TestCase):
         # Verify that 'user_id' is in the session after login via HTTP client
         with self.client.session_transaction() as http_session:
             self.assertIn('user_id', http_session, "user_id not in session after HTTP login.")
-            print(f"DEBUG: User {username} (ID: {http_session['user_id']}) session set by HTTP client. Session content: {dict(http_session)}", file=sys.stderr)
+            # Removed debug print statement about user session
 
         socketio_client_to_use = client_instance if client_instance else self.socketio_client
 
         # Disconnect if already connected, to ensure a fresh connection attempt
         if socketio_client_to_use.is_connected(namespace='/'):
-            print(f"DEBUG: Disconnecting existing socketio_client (SID: {getattr(socketio_client_to_use, 'sid', 'N/A')}) before new login for {username}.", file=sys.stderr)
+            # Removed debug print statement about disconnecting existing socketio_client
             socketio_client_to_use.disconnect(namespace='/')
             time.sleep(0.2) # Short delay for disconnect to process
 
         # The SocketIO test client, when initialized with the Flask test client,
         # should automatically use the cookies from the Flask test client's cookie jar.
         # No explicit headers with cookies should be needed here.
-        print(f"DEBUG: Attempting SocketIO connect for {username} without explicit cookie headers.", file=sys.stderr)
+        # Removed debug print statement about attempting SocketIO connect
         socketio_client_to_use.connect(namespace='/') # Removed headers=connect_headers
 
         # Increased sleep and retry logic for SID acquisition
@@ -173,7 +172,7 @@ class AppTestCase(unittest.TestCase):
             time.sleep(wait_interval)
             retry_count += 1
             if not socketio_client_to_use.is_connected(namespace='/') and retry_count < (max_retries / 2) :
-                 print(f"DEBUG: SocketIO client for {username} not connected during SID wait, retrying connect (attempt {retry_count}).", file=sys.stderr)
+                 # Removed debug print statement about SocketIO client not connected during SID wait
                  socketio_client_to_use.connect(namespace='/')
                  time.sleep(0.5)
 
@@ -183,11 +182,11 @@ class AppTestCase(unittest.TestCase):
             if hasattr(socketio_client_to_use, 'eio_test_client') and socketio_client_to_use.eio_test_client:
                 eio_sid_val = getattr(socketio_client_to_use.eio_test_client, 'sid', "N/A (eio_test_client has no sid)")
             is_connected_status = socketio_client_to_use.is_connected(namespace='/')
-            print(f"DEBUG: SocketIO client for {username} failed to get SID after {max_retries * wait_interval:.1f}s wait. "
-                  f"is_connected: {is_connected_status}, sid: None, eio_sid: {eio_sid_val}", file=sys.stderr)
+            # Removed debug print statement about SocketIO client failed to get SID
             # Log session state from the server side perspective during the failing connect attempt
             with self.app.test_request_context('/socket.io'): # Simulate a socket.io context for session access
-                 print(f"DEBUG: Flask session state during SID failure for {username}: {dict(flask.session)}", file=sys.stderr)
+                 # Removed debug print statement about Flask session state during SID failure
+                 pass
 
             raise ConnectionError(
                 f"SocketIO client for {username} failed to get SID after waiting. "
@@ -195,7 +194,7 @@ class AppTestCase(unittest.TestCase):
                 "Ensure session cookie is correctly passed and processed by SocketIO server-side authentication."
             )
 
-        print(f"DEBUG: SocketIO client for {username} connected with SID: {socketio_client_to_use.sid}", file=sys.stderr)
+        # Removed debug print statement about SocketIO client connected with SID
         return login_response # Return the HTTP login response
 
 

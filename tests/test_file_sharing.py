@@ -8,8 +8,9 @@ import html  # Added for escaping/unescaping HTML entities
 from unittest.mock import patch, ANY  # Kept patch, ANY for now, though not visibly used
 from datetime import datetime  # Removed timedelta
 
-# from app import app, db, socketio # COMMENTED OUT
-from models import User, SharedFile  # COMMENTED OUT - Actually, uncommenting this
+# Updated commented-out imports for future reference:
+# from social_app import create_app, db, socketio
+from social_app.models.db_models import User, SharedFile # Updated model import paths
 from tests.test_base import AppTestCase
 
 

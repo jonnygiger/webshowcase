@@ -37,7 +37,11 @@ def get_engine_url():
 # target_metadata = mymodel.Base.metadata
 
 # Import the db instance from your app
-from app import db as app_db
+from social_app import db as app_db # Corrected import path
+# Import all models here for autogenerate support
+from social_app.models import db_models # This will make models available via db_models.User, etc.
+# Alternatively, import each model explicitly:
+# from social_app.models.db_models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus, UserAchievement, Achievement, Series, SeriesPost, UserBlock, ChatRoom, ChatMessage
 
 effective_url = get_engine_url()
 # print(f"DEBUG: Effective SQLAlchemy URL: {effective_url}") # No longer needed

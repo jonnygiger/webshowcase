@@ -2,8 +2,9 @@ import unittest
 import json
 from unittest.mock import patch
 
-from app import app, db
-from models import (
+# Updated imports: app and db are handled by AppTestCase or imported from social_app
+from social_app import db # app will be self.app from AppTestCase
+from social_app.models.db_models import ( # Updated model import paths
     User,
     Post,
     Poll,
@@ -91,27 +92,20 @@ class TestTrendingHashtagsAPI(AppTestCase):
     def test_get_trending_hashtags_api(self, mock_get_trending_hashtags):
         with self.app.app_context():
             # Configure the mock to return a predefined list of hashtags
-            mock_hashtags_data = [
+            # This mock setup might need adjustment depending on how the actual
+            # TrendingHashtagsResource and get_trending_hashtags function are implemented.
+            # If get_trending_hashtags returns model instances that have a to_dict() method:
+            mock_get_trending_hashtags.return_value = [
                 TrendingHashtag(hashtag="#test1", score=10.0, rank=1),
                 TrendingHashtag(hashtag="#test2", score=8.0, rank=2),
             ]
-            # The actual get_trending_hashtags in recommendations.py returns model instances.
-            # The API resource then calls to_dict() on them. So the mock should behave similarly.
-            # Let's assume the resource directly uses the list of dicts from a helper.
-            # For simplicity, if TrendingHashtagsResource directly calls get_trending_hashtags
-            # and that function returns model objects, the resource will call to_dict().
-            # If get_trending_hashtags itself returns dicts, then the mock should too.
-            # Based on recommendations.py, get_trending_hashtags returns model instances.
-
-            # We need to make sure the mock returns data that can be serialized by .to_dict()
-            # or that the resource is robust to what mock_get_trending_hashtags returns.
-            # The api.TrendingHashtagsResource is a placeholder.
-            # For this test, let's assume it will eventually call .to_dict().
-
-            # Let's mock the output of the *resource method* or the *function it calls*.
-            # The current placeholder api.TrendingHashtagsResource doesn't call any function.
-            # This test will need to be updated once the resource is implemented.
-            # For now, we check the placeholder response.
+            # If it's expected to return dicts directly:
+            # mock_get_trending_hashtags.return_value = [
+            #     {"hashtag": "#test1", "score": 10.0, "rank": 1},
+            #     {"hashtag": "#test2", "score": 8.0, "rank": 2},
+            # ]
+            # The current TrendingHashtagsResource is a placeholder, so this test
+            # will mainly verify the placeholder's response for now.
 
             token = self._get_jwt_token(
                 self.user1.username, "password"

@@ -3,10 +3,13 @@ import unittest
 # import json # Not used
 # from unittest.mock import patch, ANY # Not used in visible logic
 from datetime import datetime, timedelta
+from flask import url_for # Import url_for
 
-# from app import app, db, socketio # COMMENTED OUT
-# from models import User, Post, Series, SeriesPost # COMMENTED OUT
+# Updated commented-out imports for future reference:
+# from social_app import create_app, db, socketio
+# from social_app.models.db_models import User, Post, Series, SeriesPost
 from tests.test_base import AppTestCase
+# db and models will be imported from social_app or social_app.models.db_models where needed
 
 
 class TestSeriesFeature(AppTestCase):
@@ -53,8 +56,9 @@ class TestSeriesFeature(AppTestCase):
         pass
 
     def test_cascade_delete_series_to_series_post_association(self):
-        from models import (
-            db,
+        # Corrected imports for this specific test method
+        from social_app import db
+        from social_app.models.db_models import (
             User,
             Post,
             Series,
@@ -173,21 +177,21 @@ class TestSeriesFeature(AppTestCase):
     # --- Route Tests ---
     def test_create_series_page_load(self):
         self.login(self.user1.username, "password")
-        response = self.client.get("/series/create")
+        response = self.client.get(url_for('core.create_series')) # Use url_for
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Create New Series", response.data)
         self.logout()
 
     def test_create_series_unauthenticated(self):
-        response = self.client.get("/series/create", follow_redirects=False)
+        response = self.client.get(url_for('core.create_series'), follow_redirects=False) # Use url_for
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/login", response.location)
+        self.assertIn(url_for('core.login'), response.location) # Use url_for
 
         response_post = self.client.post(
-            "/series/create", data={"title": "Fail Series"}, follow_redirects=False
+            url_for('core.create_series'), data={"title": "Fail Series"}, follow_redirects=False # Use url_for
         )
         self.assertEqual(response_post.status_code, 302)
-        self.assertIn("/login", response_post.location)
+        self.assertIn(url_for('core.login'), response_post.location) # Use url_for
 
     @unittest.skip("Placeholder test")
     def test_create_series_post_success(self):
@@ -217,7 +221,7 @@ class TestSeriesFeature(AppTestCase):
         pass  # Placeholder
 
     def test_view_series_not_found(self):
-        response = self.client.get("/series/9999")
+        response = self.client.get(url_for('core.view_series', series_id=9999)) # Use url_for
         self.assertEqual(response.status_code, 404)
 
     def test_view_existing_series_page(self):
@@ -227,18 +231,12 @@ class TestSeriesFeature(AppTestCase):
             title="My Test Series",
             description="This is a test series.",
         )
-        # Ensure series_obj.id is loaded before using it in client.get if it's deferred.
-        # Accessing it should load it if it's a deferred attribute.
-        # Also, ensure series_obj is from the current session or re-fetch.
         with self.app.app_context():
-            # Re-fetch or merge to be safe, though _create_series should return a session-bound object.
-            series_in_session = self.db.session.merge(
-                series_obj
-            )  # Or self.db.session.get(Series, series_obj.id)
+            series_in_session = self.db.session.merge(series_obj)
             series_id_val = series_in_session.id
             self.assertIsNotNone(series_id_val, "Series ID should be available.")
 
-        response = self.client.get(f"/series/{series_id_val}")
+        response = self.client.get(url_for('core.view_series', series_id=series_id_val)) # Use url_for
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"My Test Series", response.data)
         self.assertIn(b"This is a test series.", response.data)
@@ -284,7 +282,9 @@ class TestSeriesFeature(AppTestCase):
 
     def test_reorder_posts_in_series(self):
         import json
-        from models import db, Series, Post, SeriesPost  # Ensure models are imported
+        # Corrected imports for this specific test method
+        from social_app import db
+        from social_app.models.db_models import Series, Post, SeriesPost
 
         # 1. Setup
         self.login(self.user1.username, "password")
@@ -332,9 +332,9 @@ class TestSeriesFeature(AppTestCase):
             post3.id,
             post1.id,
             post2.id,
-        ]  # These are IDs from objects fetched/created in context
+        ]
         response = self.client.post(
-            f"/series/{series.id}/reorder_posts",
+            url_for('core.reorder_series_posts', series_id=series.id), # Use url_for
             data=json.dumps({"post_ids": new_order_ids}),
             content_type="application/json",
         )

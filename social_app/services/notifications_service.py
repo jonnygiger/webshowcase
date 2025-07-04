@@ -26,7 +26,7 @@ def broadcast_new_post(post_data):
         try:
             # url_for needs an app context, which should be present if called from a request or API endpoint.
             post_data_with_url["url"] = url_for(
-                "view_post", post_id=post_data_with_url["id"], _external=True
+                "core.view_post", post_id=post_data_with_url["id"], _external=True
             )
         except Exception as e:
             logger.error(

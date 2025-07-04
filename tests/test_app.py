@@ -4,10 +4,11 @@ import json  # For checking JSON responses
 import io  # For BytesIO
 from unittest.mock import patch, call, ANY
 
-# from app import app, db, socketio # Import socketio from app ## COMMENTED OUT FOR TIMEOUT DEBUGGING
-# from models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus, Achievement, UserAchievement, Comment, Series, SeriesPost, Notification, Like # Added Series, SeriesPost, Notification, Like ## COMMENTED OUT FOR TIMEOUT DEBUGGING
-# from recommendations import update_trending_hashtags # For testing the job logic ## COMMENTED OUT FOR TIMEOUT DEBUGGING
-# from achievements_logic import check_and_award_achievements, get_user_stat ## COMMENTED OUT FOR TIMEOUT DEBUGGING
+# Corrected commented-out imports for future reference:
+# from social_app import create_app, db, socketio
+# from social_app.models.db_models import User, Message, Post, Friendship, FriendPostNotification, Group, Event, Poll, PollOption, TrendingHashtag, SharedFile, UserStatus, Achievement, UserAchievement, Comment, Series, SeriesPost, Notification, Like
+# from social_app.services.recommendations_service import update_trending_hashtags
+# from social_app.services.achievements import check_and_award_achievements, get_user_stat
 from datetime import (
     datetime,
     timedelta,

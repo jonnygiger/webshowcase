@@ -2,9 +2,11 @@ import unittest
 import json
 from unittest.mock import patch, ANY  # Kept patch and ANY
 from datetime import datetime, timedelta
+from flask import url_for # Import url_for
 
-# from app import app, db, socketio # COMMENTED OUT
-# from models import User, Post, Comment, Like, Friendship # COMMENTED OUT
+# Updated commented-out imports for future reference:
+# from social_app import create_app, db, socketio
+# from social_app.models.db_models import User, Post, Comment, Like, Friendship
 from tests.test_base import AppTestCase
 
 
@@ -44,7 +46,7 @@ class TestUserStatsAPI(AppTestCase):
         headers_user1 = {"Authorization": f"Bearer {token_user1}"}
 
         response = self.client.get(
-            f"/api/users/{self.user1_id}/stats", headers=headers_user1
+            url_for('userstatsresource', user_id=self.user1_id), headers=headers_user1 # Use url_for
         )
         self.assertEqual(response.status_code, 200)
         stats_data = json.loads(response.data)
@@ -63,7 +65,7 @@ class TestUserStatsAPI(AppTestCase):
         #         self.fail("join_date is not a valid ISO format string")
 
         # Test unauthorized access (no token)
-        response_no_token = self.client.get(f"/api/users/{self.user1_id}/stats")
+        response_no_token = self.client.get(url_for('userstatsresource', user_id=self.user1_id)) # Use url_for
         self.assertEqual(response_no_token.status_code, 401)
         data_no_token = json.loads(response_no_token.data)
         self.assertEqual(data_no_token.get("msg"), "Missing Authorization Header")
@@ -72,7 +74,7 @@ class TestUserStatsAPI(AppTestCase):
         token_user2 = self._get_jwt_token(self.user2.username, "password")
         headers_user2 = {"Authorization": f"Bearer {token_user2}"}
         response_forbidden = self.client.get(
-            f"/api/users/{self.user1_id}/stats", headers=headers_user2
+            url_for('userstatsresource', user_id=self.user1_id), headers=headers_user2 # Use url_for
         )
         self.assertEqual(response_forbidden.status_code, 403)
         data_forbidden = json.loads(response_forbidden.data)

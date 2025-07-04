@@ -6,15 +6,16 @@ import io
 import time
 from unittest.mock import patch, call, ANY
 
-from app import app as main_app, socketio as main_app_socketio
+# Updated imports for the new app structure
+from social_app import create_app, db as app_db, socketio as main_app_socketio
 from flask import url_for, Response
 import flask
 
 from flask_jwt_extended import JWTManager
 from flask_restful import Api
 
-from models import db as app_db
-from models import (
+# from models import db as app_db # app_db is now imported from social_app
+from social_app.models.db_models import ( # Updated model import paths
     User,
     Message,
     Post,
@@ -38,6 +39,7 @@ from models import (
     PollVote,
     PostLock,
 )
+# app_db is already imported from social_app, so no separate import for it from models needed.
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -49,36 +51,33 @@ class AppTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.app = main_app
-        cls.app.config["SERVER_NAME"] = "localhost"
-        cls.app.config["APPLICATION_ROOT"] = "/"
+        # Create an app instance for testing
+        cls.app = create_app('testing') # Assuming a 'testing' config or modify create_app
+        # cls.app.config["SERVER_NAME"] = "localhost" # Usually set by testing config
+        # cls.app.config["APPLICATION_ROOT"] = "/"
         cls.app.config["PREFERRED_URL_SCHEME"] = "http"
         cls.app.config["SESSION_COOKIE_NAME"] = "session"
         cls.app.config["SESSION_COOKIE_DOMAIN"] = "localhost"
         cls.app.config["TESTING"] = True
         cls.app.config["WTF_CSRF_ENABLED"] = False
-        cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///test_site.db"
-        cls.app.config["SECRET_KEY"] = "test-secret-key"
-        cls.app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"
-        cls.app.config["SOCKETIO_MESSAGE_QUEUE"] = None
-        cls.app.config["SHARED_FILES_UPLOAD_FOLDER"] = "shared_files_test_folder"
-        shared_folder = cls.app.config["SHARED_FILES_UPLOAD_FOLDER"]
-        if not os.path.exists(shared_folder):
-            os.makedirs(shared_folder)
-        cls.app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-        cls.db = app_db
+        # cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///test_site.db" # Set in testing config
+        # cls.app.config["SECRET_KEY"] = "test-secret-key" # Set in testing config
+        # cls.app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key" # Set in testing config
+        # cls.app.config["SOCKETIO_MESSAGE_QUEUE"] = None # Set in testing config
 
-        main_app_socketio.init_app(
-            cls.app,
-            async_mode=cls.app.config.get("SOCKETIO_ASYNC_MODE", "threading"),
-            message_queue=cls.app.config.get("SOCKETIO_MESSAGE_QUEUE"),
-        )
+        # Ensure SHARED_FILES_UPLOAD_FOLDER is set for tests if not in default testing config
+        shared_folder_path = cls.app.config.setdefault("SHARED_FILES_UPLOAD_FOLDER", "shared_files_test_folder")
+        if not os.path.exists(shared_folder_path):
+            os.makedirs(shared_folder_path)
+
+        # cls.app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False # Set in testing config
+        cls.db = app_db # app_db is imported from social_app
+
+        # SocketIO is initialized within create_app. We use the instance from social_app.
+        # No need to call init_app() on main_app_socketio again here.
         cls.socketio_class_level = main_app_socketio
 
-        if hasattr(cls.socketio_class_level, "app") and cls.socketio_class_level.app:
-            # Removed debug print statement about SocketIO App's SECRET_KEY
-            pass
-
+        # Configure logging for tests
         import logging
 
         cls.app.logger.setLevel(logging.DEBUG)
@@ -95,12 +94,13 @@ class AppTestCase(unittest.TestCase):
         logging.getLogger("socketio").setLevel(logging.DEBUG)
         logging.getLogger("engineio").setLevel(logging.DEBUG)
 
-        cls.api = cls.app.extensions.get("restful", None)
-        if cls.api is None:
-            cls.api = Api(cls.app)
+        # Api is initialized in create_app, no need to handle it here.
 
         with cls.app.app_context():
             cls.db.create_all()
+
+        # Ensure the test client uses the app's test config for cookies, etc.
+        # This is usually handled by app.test_client() itself.
 
     @classmethod
     def tearDownClass(cls):
@@ -380,7 +380,7 @@ class AppTestCase(unittest.TestCase):
             return self.db.session.get(Post, post.id)
 
     def _create_db_like(self, user_id, post_id, timestamp=None):
-        from models import Like
+        from social_app.models.db_models import Like # Corrected import
 
         with self.app.app_context():
             like = Like(
@@ -395,7 +395,7 @@ class AppTestCase(unittest.TestCase):
     def _create_db_comment(
         self, user_id, post_id, content="Test comment", timestamp=None
     ):
-        from models import Comment
+        from social_app.models.db_models import Comment # Corrected import
 
         with self.app.app_context():
             comment = Comment(
@@ -411,7 +411,7 @@ class AppTestCase(unittest.TestCase):
     def _create_db_event_rsvp(
         self, user_id, event_id, status="Attending", timestamp=None
     ):
-        from models import EventRSVP
+        from social_app.models.db_models import EventRSVP # Corrected import
 
         with self.app.app_context():
             rsvp = EventRSVP(
@@ -425,7 +425,7 @@ class AppTestCase(unittest.TestCase):
             return rsvp.id
 
     def _create_db_poll_vote(self, user_id, poll_id, poll_option_id, created_at=None):
-        from models import PollVote
+        from social_app.models.db_models import PollVote # Corrected import
 
         with self.app.app_context():
             vote = PollVote(
@@ -475,7 +475,7 @@ class AppTestCase(unittest.TestCase):
             self.fail("Haystack for assertInHTML was not a string.")
 
     def _create_db_lock(self, post_id, user_id, minutes_offset=0):
-        from models import PostLock
+        from social_app.models.db_models import PostLock # Corrected import
 
         with self.app.app_context():
             expires_at = datetime.now(timezone.utc) + timedelta(minutes=minutes_offset)
@@ -519,7 +519,7 @@ class AppTestCase(unittest.TestCase):
             return self.db.session.get(Series, series.id)
 
     def _create_db_bookmark(self, user_id, post_id, timestamp=None):
-        from models import Bookmark
+        from social_app.models.db_models import Bookmark # Corrected import
 
         with self.app.app_context():
             bookmark = Bookmark(
@@ -532,7 +532,7 @@ class AppTestCase(unittest.TestCase):
             return bookmark
 
     def _create_db_block(self, blocker_user_obj, blocked_user_obj, timestamp=None):
-        from models import UserBlock
+        from social_app.models.db_models import UserBlock # Corrected import
 
         with self.app.app_context():
             block = UserBlock(

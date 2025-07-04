@@ -3,10 +3,12 @@ import json
 from unittest.mock import patch, ANY
 from datetime import datetime
 from werkzeug.security import generate_password_hash
-from app import app, db, socketio
+# Updated imports for the new app structure
+from social_app import create_app, db, socketio # app will be created via factory
+# from flask import current_app # If app context is needed directly, though AppTestCase handles it
 
 # Ensure all necessary models are imported here
-from models import (
+from social_app.models.db_models import ( # Updated model import paths
     User,
     Post,
     Comment,
@@ -17,8 +19,9 @@ from models import (
     Friendship,
     Bookmark,
 )
-from achievements_logic import check_and_award_achievements, get_user_stat
-from tests.test_base import AppTestCase
+# Updated service import path
+from social_app.services.achievements import check_and_award_achievements, get_user_stat
+from tests.test_base import AppTestCase # AppTestCase itself will use create_app
 
 
 # Helper function to seed achievements for tests
@@ -71,7 +74,7 @@ class AchievementLogicTests(AppTestCase):
     # They are placeholdered for the refactoring task.
 
     def test_get_user_stat_num_posts(self):
-        with app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             user = self.user1
             self._create_db_post(user_id=user.id, title="Post 1")
             self._create_db_post(user_id=user.id, title="Post 2")
@@ -79,7 +82,7 @@ class AchievementLogicTests(AppTestCase):
             self.assertEqual(stat, 2)
 
     def test_award_first_post_achievement(self):
-        with app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             ach_ids = seed_test_achievements()  # Helper defined above
             user = self.user2
             self._create_db_post(user_id=user.id, title="First Post by User2")
@@ -95,7 +98,7 @@ class AchievementLogicTests(AppTestCase):
             self.assertEqual(user_ach.achievement.name, "Test First Post")
 
     def test_award_multiple_achievements_incrementally(self):
-        with app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             ach_ids = seed_test_achievements()
             user = self.user3  # Assuming self.user3 is setup by AppTestCase
             first_post_ach_id = ach_ids["Test First Post"]
@@ -139,7 +142,7 @@ class AchievementLogicTests(AppTestCase):
             )
 
     def test_no_duplicate_achievements_awarded(self):
-        with app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             ach_ids = seed_test_achievements()
             user = self.user1  # Assuming self.user1 is setup by AppTestCase
             first_post_ach_id = ach_ids["Test First Post"]
@@ -167,7 +170,7 @@ class AchievementLogicTests(AppTestCase):
             )
 
     def test_display_achievements_on_user_profile(self):
-        with app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             ach_ids = seed_test_achievements()
             user = User(
                 username="profile_ach_user",
@@ -195,7 +198,7 @@ class AchievementLogicTests(AppTestCase):
             # self.assertInHTML("Test First Post", response.data.decode(), "Test First Post") # Alternative
 
     def test_no_achievements_message_on_profile(self):
-        with app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             user = User(
                 username="no_ach_user_profile",
                 email="naup@example.com",
@@ -216,7 +219,7 @@ class AchievementLogicTests(AppTestCase):
             )
 
     def test_view_user_achievements_page_earned_and_all(self):
-        with app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             ach_ids = seed_test_achievements()
             user = User(
                 username="all_ach_user_page",
@@ -257,7 +260,7 @@ class AchievementLogicTests(AppTestCase):
             self.logout()
 
     def test_view_user_achievements_page_no_earned(self):
-        with app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             seed_test_achievements()
             user = User(
                 username="no_earned_ach_page",
@@ -293,7 +296,7 @@ class AchievementLogicTests(AppTestCase):
     # assertInHTML is in AppTestCase
 
     def test_bookworm_achievement_awarded(self):
-        with app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             # Ensure the "Bookworm" achievement exists or seed it
             bookworm_ach_data = {
                 "name": "Bookworm",
@@ -359,7 +362,7 @@ class AchievementLogicTests(AppTestCase):
             )
 
     def test_well_connected_achievement_awarded(self):
-        with self.app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             # Ensure the "Well-Connected" achievement exists
             wc_ach_data = {
                 "name": "Well-Connected",
@@ -421,7 +424,7 @@ class AchievementLogicTests(AppTestCase):
             )
 
     def test_opinion_leader_achievement_awarded(self):
-        with self.app.app_context():
+        with self.app.app_context(): # AppTestCase provides self.app
             # Ensure the "Opinion Leader" achievement exists
             ol_ach_data = {
                 "name": "Opinion Leader",

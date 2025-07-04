@@ -6,11 +6,13 @@ from unittest.mock import (
 )  # Kept patch and ANY for potential future use or AppTestCase interactions
 from datetime import datetime, timedelta, timezone
 
-# from app import app, db, socketio # COMMENTED OUT
-from models import Friendship  # Ensure Friendship is imported
-
-# from models import User, Post, Event, Poll, PollOption, Like, Comment, EventRSVP, PollVote # COMMENTED OUT - Added Friendship, PollOption
+# Updated commented-out imports for future reference:
+# from social_app import create_app, db, socketio
+from social_app.models.db_models import Friendship # Updated model import paths
+# Add other models used in this file if they were in the commented out line:
+from social_app.models.db_models import User, Post, Event, Poll, PollOption, Like, Comment, EventRSVP, PollVote
 from tests.test_base import AppTestCase
+from flask import url_for # Import url_for
 
 
 class TestPersonalizedFeedAPI(AppTestCase):
@@ -21,11 +23,10 @@ class TestPersonalizedFeedAPI(AppTestCase):
         # self.user1_id, self.user2_id, self.user3_id
 
     def test_personalized_feed_unauthorized(self):
-        # with app.app_context(): # Context likely handled by AppTestCase or client calls
-        response = self.client.get("/api/personalized-feed")
+        response = self.client.get(url_for('personalizedfeedresource')) # Use url_for
         self.assertEqual(
             response.status_code, 401
-        )  # JWT errors are usually 401 or 422 if malformed
+        )
         # Flask-JWT-Extended typically returns 401 for missing token
         data = json.loads(response.data)
         self.assertIn("msg", data)  # Default message key for flask-jwt-extended
@@ -109,7 +110,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         headers = {"Authorization": f"Bearer {token}"}
 
         # 3. Make request
-        response = self.client.get("/api/personalized-feed", headers=headers)
+        response = self.client.get(url_for('personalizedfeedresource'), headers=headers) # Use url_for
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertIn("feed_items", data)
@@ -192,7 +193,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         )  # user3 has no relevant activity
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = self.client.get("/api/personalized-feed", headers=headers)
+        response = self.client.get(url_for('personalizedfeedresource'), headers=headers) # Use url_for
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertIn("feed_items", data)
@@ -387,7 +388,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         token_user1 = self._get_jwt_token(self.user1.username, "password")
         headers_user1 = {"Authorization": f"Bearer {token_user1}"}
 
-        response = self.client.get("/api/personalized-feed", headers=headers_user1)
+        response = self.client.get(url_for('personalizedfeedresource'), headers=headers_user1) # Use url_for
         self.assertEqual(response.status_code, 200, "Failed to fetch feed for user1")
         data = json.loads(response.data)
 
@@ -436,7 +437,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         # 4. Verify post no longer appears in user1's feed
         # Use the same token and headers for user1
         response_after_unfriend = self.client.get(
-            "/api/personalized-feed", headers=headers_user1
+            url_for('personalizedfeedresource'), headers=headers_user1 # Use url_for
         )
         self.assertEqual(
             response_after_unfriend.status_code,
@@ -477,7 +478,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         headers_user1 = {"Authorization": f"Bearer {token_user1}"}
 
         # 4. Fetch self.user1's personalized feed
-        response = self.client.get("/api/personalized-feed", headers=headers_user1)
+        response = self.client.get(url_for('personalizedfeedresource'), headers=headers_user1) # Use url_for
 
         # 5. Assert that the response status code is 200
         self.assertEqual(
@@ -543,7 +544,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
 
         # 2. Fetch user1's personalized feed again (using the same token)
         response_after_unfriend = self.client.get(
-            "/api/personalized-feed", headers=headers_user1
+            url_for('personalizedfeedresource'), headers=headers_user1 # Use url_for
         )
         self.assertEqual(
             response_after_unfriend.status_code,

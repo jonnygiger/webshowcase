@@ -2468,73 +2468,64 @@ def handle_send_group_message_event(data):
 
 @socketio.on("edit_post_content")
 def handle_edit_post_content(data):
+    # Entry point logging
+    app.logger.debug(f"DEBUG: handle_edit_post_content invoked. SID: {request.sid}. Data: {data}")
+    app.logger.debug(f"DEBUG: Session content at handler entry: {dict(session)}") # Added for verbosity
+
     user_id = None
     token = data.get("token")
 
-    app.logger.debug(
-        f"handle_edit_post_content invoked. Data received: {data}, SID: {request.sid}"
-    )
-    app.logger.debug(f"Session content at handler: {dict(session)}")
+    # Authentication logging
+    app.logger.debug(f"DEBUG: Attempting authentication. Token present: {bool(token)}")
 
     if token:
         try:
-            # Assuming token is passed in data when session might not be available (e.g., pure WebSocket client or test client)
-            decoded_token = decode_token(
-                token
-            )  # Decodes and verifies signature, expiry, etc.
-            identity = decoded_token[
-                "sub"
-            ]  # 'sub' is standard claim for identity in JWT
-            # Ensure user_id is int if your DB expects it and JWT stores it as string
+            decoded_token = decode_token(token)
+            identity = decoded_token["sub"]
             if isinstance(identity, str) and identity.isdigit():
                 user_id = int(identity)
             elif isinstance(identity, int):
                 user_id = identity
             else:
                 app.logger.warning(
-                    f"Token for edit_post_content yielded non-integer, non-numeric-string sub: {identity}"
+                    f"DEBUG: Token for edit_post_content yielded non-integer, non-numeric-string sub: {identity}"
                 )
-                user_id = None  # Treat as invalid user_id
-        except Exception as e:  # Catches expired, invalid signature, etc.
-            app.logger.error(f"Token validation failed for edit_post_content: {e}")
-            app.logger.debug(f"Token validation failed: {e}")
+                user_id = None
+            app.logger.debug(f"DEBUG: Token decoded. User ID from token: {user_id}")
+        except Exception as e:
+            app.logger.error(f"DEBUG: Token validation failed: {e}") # Keep existing log, added DEBUG prefix for consistency
             emit("edit_error", {"message": f"Token error: {str(e)}"}, room=request.sid)
             return
-    app.logger.debug(f"User ID from token: {user_id}")
 
-    if not user_id:  # If token auth failed or no token was provided
+    app.logger.debug(f"DEBUG: User ID after token processing: {user_id}") # Log user_id state after token attempt
+
+    if not user_id:
         user_id_from_session = session.get("user_id")
-        app.logger.debug(
-            f"Attempting to use User ID from session: {user_id_from_session}"
-        )
+        # Log session user ID check
+        app.logger.debug(f"DEBUG: No valid token user_id. Attempting User ID from session: {user_id_from_session}")
         if user_id_from_session:
             user_id = user_id_from_session
         else:
-            app.logger.debug(f"No user_id in session either. SID: {request.sid}")
+            # Log authentication failure
+            app.logger.debug(f"DEBUG: Authentication failed (no token or session user_id). Emitting auth error. SID: {request.sid}")
+            emit(
+                "edit_error",
+                {
+                    "message": "Authentication required. Please log in or provide a valid token."
+                },
+                room=request.sid,
+            )
+            return
 
-    if not user_id:
-        app.logger.debug(
-            f"Authentication failed (no token or session user_id). SID: {request.sid}"
-        )
-        emit(
-            "edit_error",
-            {
-                "message": "Authentication required. Please log in or provide a valid token."
-            },
-            room=request.sid,
-        )
-        return
-    app.logger.debug(
-        f"Authenticated user_id for edit: {user_id}, type: {type(user_id)}"
-    )
+    app.logger.debug(f"DEBUG: Authenticated user_id for edit: {user_id}, type: {type(user_id)}")
 
     post_id = data.get("post_id")
-    new_content = data.get("new_content")  # Frontend should send this
+    new_content = data.get("new_content")
 
-    if not post_id or new_content is None:  # new_content can be an empty string
-        app.logger.debug(
-            f"Invalid data: post_id={post_id}, new_content is None: {new_content is None}"
-        )
+    # Data validation logging
+    app.logger.debug(f"DEBUG: Validating data. post_id: {post_id}, new_content is None: {new_content is None}")
+    if not post_id or new_content is None: # new_content can be an empty string
+        app.logger.debug(f"DEBUG: Invalid data (post_id or new_content missing). Emitting data error. SID: {request.sid}")
         emit(
             "edit_error",
             {"message": "Invalid data: Post ID and new content are required."},
@@ -2542,40 +2533,49 @@ def handle_edit_post_content(data):
         )
         return
 
+    # Post existence logging
+    app.logger.debug(f"DEBUG: Fetching post with ID: {post_id}")
     post = db.session.get(Post, post_id)
+    app.logger.debug(f"DEBUG: Post found status for ID {post_id}: {bool(post)}") # Log whether post is found
     if not post:
-        app.logger.debug(f"Post not found for post_id={post_id}")
+        app.logger.debug(f"DEBUG: Post not found for post_id={post_id}. Emitting post not found error. SID: {request.sid}")
         emit("edit_error", {"message": "Post not found."}, room=request.sid)
         return
-    app.logger.debug(f"Post found: {post.id}")
+    app.logger.debug(f"DEBUG: Post found: ID {post.id}, Title: {post.title}")
 
-    # Verify lock status
+    # Lock check logging
     lock = post.lock_info
-    if not lock:
-        app.logger.debug(
-            f"No lock found for post_id={post_id}. Post lock_info: {post.lock_info}"
-        )
-        app.logger.debug(
-            f"Emitting edit_error to SID: {request.sid}"
-        )  # Log request.sid
+    # Log lock status before check
+    app.logger.debug(f"DEBUG: Checking lock for post {post_id}. Lock object: {lock}. request.sid: {request.sid}")
+    if hasattr(lock, 'user_id') and hasattr(lock, 'expires_at'): # Check attributes before logging them
+        app.logger.debug(f"DEBUG: Lock details: user_id={lock.user_id}, expires_at={lock.expires_at}")
+    elif lock is not None: # Lock object exists but doesn't have expected attributes
+        app.logger.warning(f"DEBUG: Lock object for post {post_id} exists but lacks user_id or expires_at attributes: {lock}")
+
+    # Explicitly check if lock is None
+    if lock is None:
+        app.logger.debug(f"DEBUG: Post {post_id} has no lock object (lock is None). Emitting 'edit_error'. SID: {request.sid}")
+        if request.sid is None:
+            app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_error' for not locked post {post_id}.")
         emit(
             "edit_error",
             {"message": "Post is not locked for editing. Please acquire a lock first."},
-            room=request.sid,  # Emit to the sender
+            room=request.sid,
         )
         return
 
-    app.logger.debug(
-        f"Lock details: lock.user_id={lock.user_id} (type: {type(lock.user_id)}), lock.expires_at={lock.expires_at}"
-    )
-
+    # If lock is not None, then proceed with other checks (owner, expiry)
+    # Log lock user ID and current user ID before comparison
+    app.logger.debug(f"DEBUG: Lock user_id: {lock.user_id} (type: {type(lock.user_id)}), Authenticated user_id: {user_id} (type: {type(user_id)})")
     if lock.user_id != user_id:
-        app.logger.debug(
-            f"Lock user_id ({lock.user_id}) does not match authenticated user_id ({user_id})."
-        )
-        # Check if lock is expired. If so, another user might be able to take it.
-        if lock.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
-            app.logger.debug("Lock is expired.")
+        # Log lock user ID mismatch and lock expiry check
+        app.logger.debug(f"DEBUG: Lock user_id ({lock.user_id}) does not match authenticated user_id ({user_id}).")
+        lock_expired = lock.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc)
+        app.logger.debug(f"DEBUG: Lock expired status: {lock_expired}")
+        if lock_expired:
+            app.logger.debug("DEBUG: Lock is expired. Emitting 'edit_error' for expired lock by another user.")
+            if request.sid is None: # Specific log for request.sid is None
+                 app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_error' for expired lock by another user on post {post_id}.")
             emit(
                 "edit_error",
                 {
@@ -2584,7 +2584,9 @@ def handle_edit_post_content(data):
                 room=request.sid,
             )
         else:
-            app.logger.debug("Lock is held by another user and is not expired.")
+            app.logger.debug("DEBUG: Lock is held by another user and is not expired. Emitting 'edit_error'.")
+            if request.sid is None: # Specific log for request.sid is None
+                 app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_error' for lock held by another user on post {post_id}.")
             emit(
                 "edit_error",
                 {"message": "Post is locked by another user."},
@@ -2592,27 +2594,33 @@ def handle_edit_post_content(data):
             )
         return
 
-    if lock.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(
-        timezone.utc
-    ):  # This line was already fixed, no change needed
-        app.logger.debug("User's own lock has expired.")
-        # Though the current user holds the lock, it has expired.
+    # Log current time vs lock expiry time before checking user's own lock expiry
+    current_time_utc = datetime.now(timezone.utc)
+    lock_expires_at_utc = lock.expires_at.replace(tzinfo=timezone.utc)
+    app.logger.debug(f"DEBUG: Checking user's own lock expiry. Current UTC time: {current_time_utc}, Lock expires at UTC: {lock_expires_at_utc}")
+    if lock_expires_at_utc <= current_time_utc:
+        app.logger.debug("DEBUG: User's own lock has expired. Attempting to delete lock.")
         db.session.delete(lock)
         try:
             db.session.commit()
-            app.logger.debug("Expired lock deleted from DB.")
+            app.logger.debug(f"DEBUG: Expired lock for post {post_id} deleted from DB.")
+            # Emit post_lock_released for consistency
             socketio.emit(
                 "post_lock_released",
                 {
                     "post_id": post_id,
-                    "released_by_user_id": None,
+                    "released_by_user_id": None, # System action
                     "username": "System (Expired)",
                 },
-                room=f"post_{post_id}",
+                room=f"post_{post_id}", # Broadcast to post room
             )
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"Error deleting expired lock during edit attempt: {e}")
+            app.logger.error(f"DEBUG: Error deleting expired lock for post {post_id} during edit attempt: {e}")
+
+        app.logger.debug("DEBUG: Emitting 'edit_error' for user's expired lock.")
+        if request.sid is None: # Specific log for request.sid is None
+            app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_error' for user's own expired lock on post {post_id}.")
         emit(
             "edit_error",
             {
@@ -2622,30 +2630,33 @@ def handle_edit_post_content(data):
         )
         return
 
-    app.logger.debug("All checks passed. Proceeding with update.")
-    # All checks passed, proceed with update
+    app.logger.debug(f"DEBUG: All checks passed for post {post_id}. Proceeding with update.")
     post.content = new_content
-    post.last_edited = datetime.now(timezone.utc)  # Update last_edited timestamp
+    post.last_edited = datetime.now(timezone.utc)
 
     try:
-        app.logger.debug(f"Attempting to commit changes for post {post.id}")
+        app.logger.debug(f"DEBUG: Attempting to commit content changes for post {post.id}")
         db.session.commit()
-        app.logger.debug(f"Commit successful for post {post.id}")
-        # Broadcast to all clients in the post's room
+        app.logger.debug(f"DEBUG: Commit successful for post {post.id}. Broadcasting update.")
+
+        edited_by_user = db.session.get(User, user_id) # Fetch user for username
+        edited_by_username = edited_by_user.username if edited_by_user else "Unknown User"
+
         update_payload = {
             "post_id": post.id,
             "new_content": post.content,
-            "last_edited": post.last_edited.isoformat(),
-            "edited_by_user_id": user_id,  # Optionally send who edited
-            "edited_by_username": db.session.get(
-                User, user_id
-            ).username,  # Optionally send who edited
+            "last_edited": post.last_edited.isoformat(), # Use isoformat for consistency
+            "edited_by_user_id": user_id,
+            "edited_by_username": edited_by_username,
         }
         socketio.emit("post_content_updated", update_payload, room=f"post_{post.id}")
         app.logger.info(
-            f"User {user_id} successfully updated post {post.id}. New content broadcasted."
+            f"DEBUG: User {user_id} ({edited_by_username}) successfully updated post {post.id}. New content broadcasted to room post_{post.id}."
         )
-        # Optionally, send a success ack to the editor
+
+        app.logger.debug(f"DEBUG: Emitting 'edit_success' to SID: {request.sid} for post {post.id}")
+        if request.sid is None: # Specific log for request.sid is None
+            app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_success' for post {post.id}.")
         emit(
             "edit_success",
             {"message": "Content updated successfully.", "post_id": post.id},
@@ -2655,8 +2666,11 @@ def handle_edit_post_content(data):
     except Exception as e:
         db.session.rollback()
         app.logger.error(
-            f"Error committing post content update by user {user_id} for post {post.id}: {e}"
+            f"DEBUG: Error committing post content update by user {user_id} for post {post.id}: {e}"
         )
+        app.logger.debug(f"DEBUG: Emitting 'edit_error' due to commit failure to SID: {request.sid} for post {post.id}")
+        if request.sid is None: # Specific log for request.sid is None
+            app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_error' for commit failure on post {post.id}.")
         emit(
             "edit_error",
             {

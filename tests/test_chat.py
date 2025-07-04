@@ -105,7 +105,9 @@ class ChatTestCase(AppTestCase):
             # 2. User1 connects and joins the room
             # The AppTestCase's self.socketio_client is already connected implicitly
             # when it's created. We need to simulate login for session context.
-            self.login(self.user1.username, "password")  # Login user1 to set session for self.socketio_client
+            self.login(
+                self.user1.username, "password"
+            )  # Login user1 to set session for self.socketio_client
             # import time # This time.sleep is no longer needed due to improvements in login()
             # time.sleep(0.5) # Allow server to fully process the connection established in login
 
@@ -186,7 +188,9 @@ class ChatTestCase(AppTestCase):
             )  # Simulate login for User1's socket client
             # import time # This time.sleep is no longer needed
             # time.sleep(0.5) # Allow server to fully process the connection established in login
-            self.socketio_client.emit("join_chat_room", {"room_name": socket_room_name}, namespace="/")
+            self.socketio_client.emit(
+                "join_chat_room", {"room_name": socket_room_name}, namespace="/"
+            )
             # Clear any initial messages from User1 joining
             self.socketio_client.get_received()
             # We keep user1's socketio_client connected.

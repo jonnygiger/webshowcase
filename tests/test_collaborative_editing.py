@@ -429,7 +429,7 @@ class TestCollaborativeEditing(AppTestCase):
     # These tests are more complex and depend heavily on live app, socketio, and db.
     @patch("flask_socketio.SocketIO.emit")  # Changed patch target
     def test_socketio_edit_post_by_lock_owner(
-        self, mock_socketio_emit # Changed mock name
+        self, mock_socketio_emit  # Changed mock name
     ):
         with self.app.app_context():
             # 1. Setup: Collaborator acquires lock
@@ -444,7 +444,7 @@ class TestCollaborativeEditing(AppTestCase):
                 "Failed to acquire lock for collaborator.",
             )
             # Clear mock calls from lock acquisition
-            mock_socketio_emit.reset_mock() # Use the correct mock name
+            mock_socketio_emit.reset_mock()  # Use the correct mock name
 
             # Ensure socketio_client is authenticated as collaborator for this event emission
             self.login(self.collaborator.username, "password")
@@ -467,7 +467,7 @@ class TestCollaborativeEditing(AppTestCase):
             self.socketio_client.emit(
                 "edit_post_content", edit_data, namespace="/"
             )  # Restored event emit
-            time.sleep(0.2) # Allow time for event to be processed by server
+            time.sleep(0.2)  # Allow time for event to be processed by server
 
             # 4. Assert database changes
             # Ensure self.test_post is associated with the current session before refreshing
@@ -495,7 +495,7 @@ class TestCollaborativeEditing(AppTestCase):
             # Check if 'post_content_updated' event was broadcast.
             # UNCOMMENTED the assertion block
             found_call = False
-            for call_args in mock_socketio_emit.call_args_list: # Use correct mock name
+            for call_args in mock_socketio_emit.call_args_list:  # Use correct mock name
                 event_name_called = call_args[0][0]
                 event_data_called = call_args[0][1]
                 event_room_called = call_args[1].get("room")
@@ -529,7 +529,7 @@ class TestCollaborativeEditing(AppTestCase):
                 found_call,
                 f"Expected 'post_content_updated' event with data matching {expected_broadcast_data} "
                 f"to room f'post_{self.test_post.id}' not found or 'last_edited' invalid. "
-                f"Actual calls: {mock_socketio_emit.call_args_list}", # Use correct mock name
+                f"Actual calls: {mock_socketio_emit.call_args_list}",  # Use correct mock name
             )
 
             # 6. Clean up (socketio_client disconnect is handled in tearDown)
@@ -588,13 +588,15 @@ class TestCollaborativeEditing(AppTestCase):
             # 3. Assert 'edit_error' was received by the client
             # Instead of checking self.socketio_client.get_received(), check mock_flask_socketio_emit calls
 
-            time.sleep(0.1) # Give a moment for emit to be called
+            time.sleep(0.1)  # Give a moment for emit to be called
 
             found_edit_error_call = False
             received_error_message = None
-            all_server_emits = mock_emit.call_args_list # Renamed for clarity
+            all_server_emits = mock_emit.call_args_list  # Renamed for clarity
 
-            self.app.logger.debug(f"Test '{self.id()}': Checking server emits for 'edit_error'. All mock_emit calls: {all_server_emits}")
+            self.app.logger.debug(
+                f"Test '{self.id()}': Checking server emits for 'edit_error'. All mock_emit calls: {all_server_emits}"
+            )
 
             for call_args in all_server_emits:
                 event_name = call_args[0][0]
@@ -609,13 +611,17 @@ class TestCollaborativeEditing(AppTestCase):
                     # For now, let's be a bit more lenient and just check if *any* 'edit_error' was emitted
                     # and log its contents. The SID issue might mean `call_args[1].get('room')` isn't matching.
 
-                    error_data_emitted = call_args[0][1] # The data dict
+                    error_data_emitted = call_args[0][1]  # The data dict
                     received_error_message = error_data_emitted.get("message")
-                    self.app.logger.debug(f"Test '{self.id()}': Found 'edit_error' emit. Data: {error_data_emitted}, Room: {call_args[1].get('room')}, Expected SID for comparison: {self.socketio_client.sid}")
-
+                    self.app.logger.debug(
+                        f"Test '{self.id()}': Found 'edit_error' emit. Data: {error_data_emitted}, Room: {call_args[1].get('room')}, Expected SID for comparison: {self.socketio_client.sid}"
+                    )
 
                     # Check if the message is the one we expect for "not locked"
-                    if received_error_message == "Post is not locked for editing. Please acquire a lock first.":
+                    if (
+                        received_error_message
+                        == "Post is not locked for editing. Please acquire a lock first."
+                    ):
                         # And if it was sent to the correct client (if SID is available)
                         # This check is problematic if self.socketio_client.sid is None due to connection issues
                         # For now, if the message matches, assume it's the one we're looking for,
@@ -623,15 +629,19 @@ class TestCollaborativeEditing(AppTestCase):
                         found_edit_error_call = True
                         break
                     # If not the "not locked" message, it might be an auth error, log it.
-                    elif "Token error" in (received_error_message or "") or "Authentication required" in (received_error_message or ""):
-                         self.app.logger.warning(f"Test '{self.id()}': Received an auth-related 'edit_error': '{received_error_message}' instead of 'not locked' error. This indicates the SID/auth issue is primary.")
-                         # We won't set found_edit_error_call = True for this, as it's not the expected error type for this test logic.
-                         # The assertion below will fail, pointing out that the specific "not locked" error wasn't found.
+                    elif "Token error" in (
+                        received_error_message or ""
+                    ) or "Authentication required" in (received_error_message or ""):
+                        self.app.logger.warning(
+                            f"Test '{self.id()}': Received an auth-related 'edit_error': '{received_error_message}' instead of 'not locked' error. This indicates the SID/auth issue is primary."
+                        )
+                        # We won't set found_edit_error_call = True for this, as it's not the expected error type for this test logic.
+                        # The assertion below will fail, pointing out that the specific "not locked" error wasn't found.
 
             self.assertTrue(
                 found_edit_error_call,
                 f"'edit_error' with message 'Post is not locked for editing. Please acquire a lock first.' not found or not correctly targeted. "
-                f"Last received 'edit_error' message (if any): '{received_error_message}'. All server calls: {all_server_emits}"
+                f"Last received 'edit_error' message (if any): '{received_error_message}'. All server calls: {all_server_emits}",
             )
 
             # 4. Assert database content is unchanged
@@ -648,19 +658,23 @@ class TestCollaborativeEditing(AppTestCase):
             # 5. Assert no 'post_content_updated' broadcast occurred
             # Check that 'post_content_updated' was not in any of the all_calls
             # that were intended as broadcasts
-            for call_args in all_calls: # Use all_calls here as well
+            for call_args in all_calls:  # Use all_calls here as well
                 event_name_called = call_args[0][0]
-                is_broadcast_like = 'room' not in call_args[1] or call_args[1]['room'] != self.socketio_client.eio_sid # Use eio_sid
+                is_broadcast_like = (
+                    "room" not in call_args[1]
+                    or call_args[1]["room"] != self.socketio_client.eio_sid
+                )  # Use eio_sid
                 if event_name_called == "post_content_updated" and is_broadcast_like:
-                    self.fail(f"'post_content_updated' should not have been broadcast. Calls: {all_calls}")
-
+                    self.fail(
+                        f"'post_content_updated' should not have been broadcast. Calls: {all_calls}"
+                    )
 
             # Clean up listener
             # self.socketio_client.remove_event_handler('edit_error', on_edit_error) # .on is not available
 
-    @patch("flask_socketio.SocketIO.emit") # Changed patch target
+    @patch("flask_socketio.SocketIO.emit")  # Changed patch target
     def test_socketio_lock_acquired_broadcast_from_api(
-        self, mock_socketio_emit # Changed mock name
+        self, mock_socketio_emit  # Changed mock name
     ):
         token = self._get_jwt_token(self.collaborator.username, "password")
         headers = {"Authorization": f"Bearer {token}"}

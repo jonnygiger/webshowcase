@@ -19,7 +19,12 @@ from functools import wraps
 from datetime import datetime, timezone
 from collections import Counter  # Added for reaction counts
 from flask_socketio import SocketIO, emit, join_room
-from flask_login import LoginManager, current_user, login_user, logout_user # Import LoginManager and other necessary components
+from flask_login import (
+    LoginManager,
+    current_user,
+    login_user,
+    logout_user,
+)  # Import LoginManager and other necessary components
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_  # Added for inbox query
@@ -123,29 +128,36 @@ app.user_notification_queues = {}
 # new_post_sse_queues and broadcast_new_post are now imported from notifications.py
 # to break a circular dependency with api.py
 
+
 # Custom Jinja2 filter for nl2br
 def nl2br(value):
     """Converts newlines in a string to HTML <br> tags."""
     if not isinstance(value, str):
         return value
-    return value.replace('\n', '<br>\n')
+    return value.replace("\n", "<br>\n")
 
-app.jinja_env.filters['nl2br'] = nl2br
+
+app.jinja_env.filters["nl2br"] = nl2br
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///site.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 migrate.init_app(app, db)
-app.config["SECRET_KEY"] = "test-secret-key"  # Align with test_base.py for session consistency
+app.config["SECRET_KEY"] = (
+    "test-secret-key"  # Align with test_base.py for session consistency
+)
 app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"  # Align with test_base.py
 
-socketio = SocketIO(app, async_mode='threading') # Reverted manage_session to default (True)
+socketio = SocketIO(
+    app, async_mode="threading"
+)  # Reverted manage_session to default (True)
 api = Api(app)
 jwt = JWTManager(app)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login' # Specify the login view
+login_manager.login_view = "login"  # Specify the login view
+
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -597,10 +609,22 @@ def user_profile(username):
     effective_block = False
 
     if not is_viewing_own_profile and current_user_id:
-        viewer_has_blocked_profile_owner = UserBlock.query.filter_by(blocker_id=current_user_id, blocked_id=user.id).first() is not None
-        profile_owner_has_blocked_viewer = UserBlock.query.filter_by(blocker_id=user.id, blocked_id=current_user_id).first() is not None
+        viewer_has_blocked_profile_owner = (
+            UserBlock.query.filter_by(
+                blocker_id=current_user_id, blocked_id=user.id
+            ).first()
+            is not None
+        )
+        profile_owner_has_blocked_viewer = (
+            UserBlock.query.filter_by(
+                blocker_id=user.id, blocked_id=current_user_id
+            ).first()
+            is not None
+        )
 
-    effective_block = viewer_has_blocked_profile_owner or profile_owner_has_blocked_viewer
+    effective_block = (
+        viewer_has_blocked_profile_owner or profile_owner_has_blocked_viewer
+    )
 
     # If there's an effective block, don't show posts, etc.
     if effective_block:
@@ -624,7 +648,7 @@ def user_profile(username):
         is_viewing_own_profile=is_viewing_own_profile,
         viewer_has_blocked_profile_owner=viewer_has_blocked_profile_owner,
         profile_owner_has_blocked_viewer=profile_owner_has_blocked_viewer,
-        effective_block=effective_block
+        effective_block=effective_block,
     )
 
 
@@ -2447,7 +2471,9 @@ def handle_edit_post_content(data):
     user_id = None
     token = data.get("token")
 
-    app.logger.debug(f"handle_edit_post_content invoked. Data received: {data}, SID: {request.sid}")
+    app.logger.debug(
+        f"handle_edit_post_content invoked. Data received: {data}, SID: {request.sid}"
+    )
     app.logger.debug(f"Session content at handler: {dict(session)}")
 
     if token:
@@ -2478,15 +2504,18 @@ def handle_edit_post_content(data):
 
     if not user_id:  # If token auth failed or no token was provided
         user_id_from_session = session.get("user_id")
-        app.logger.debug(f"Attempting to use User ID from session: {user_id_from_session}")
+        app.logger.debug(
+            f"Attempting to use User ID from session: {user_id_from_session}"
+        )
         if user_id_from_session:
             user_id = user_id_from_session
         else:
             app.logger.debug(f"No user_id in session either. SID: {request.sid}")
 
-
     if not user_id:
-        app.logger.debug(f"Authentication failed (no token or session user_id). SID: {request.sid}")
+        app.logger.debug(
+            f"Authentication failed (no token or session user_id). SID: {request.sid}"
+        )
         emit(
             "edit_error",
             {
@@ -2526,7 +2555,9 @@ def handle_edit_post_content(data):
         app.logger.debug(
             f"No lock found for post_id={post_id}. Post lock_info: {post.lock_info}"
         )
-        app.logger.debug(f"Emitting edit_error to SID: {request.sid}") # Log request.sid
+        app.logger.debug(
+            f"Emitting edit_error to SID: {request.sid}"
+        )  # Log request.sid
         emit(
             "edit_error",
             {"message": "Post is not locked for editing. Please acquire a lock first."},
@@ -2659,57 +2690,101 @@ def api_login():
 def login_required_socketio(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated: # Uses Flask-SocketIO's current_user
-            emit('unauthorized_error', {'message': 'User not authenticated for this action.'})
+        if not current_user.is_authenticated:  # Uses Flask-SocketIO's current_user
+            emit(
+                "unauthorized_error",
+                {"message": "User not authenticated for this action."},
+            )
             # Returning False or None might signal to Flask-SocketIO to not proceed with the handler
             # or to disconnect the client, depending on configuration.
             # For now, emitting an error is a clear way to inform the client.
-            return False # Indicate failure / stop processing
+            return False  # Indicate failure / stop processing
         return f(*args, **kwargs)
+
     return decorated_function
 
 
-import sys # Add sys import for stderr
+import sys  # Add sys import for stderr
+
 
 @socketio.on("connect", namespace="/")
 def handle_connect():
-    app.logger.info(f"SERVER: SocketIO connect attempt. SID: {request.sid}. Request cookies: {request.cookies}")
-    flask_request_session = request.environ.get('werkzeug.request').session if request.environ.get('werkzeug.request') else None
-    app.logger.info(f"SERVER: Flask session via werkzeug.request.session: {flask_request_session}")
-    app.logger.info(f"SERVER: Flask session via flask.session: {dict(session)}") # Direct flask.session
+    app.logger.info(
+        f"SERVER: SocketIO connect attempt. SID: {request.sid}. Request cookies: {request.cookies}"
+    )
+    flask_request_session = (
+        request.environ.get("werkzeug.request").session
+        if request.environ.get("werkzeug.request")
+        else None
+    )
+    app.logger.info(
+        f"SERVER: Flask session via werkzeug.request.session: {flask_request_session}"
+    )
+    app.logger.info(
+        f"SERVER: Flask session via flask.session: {dict(session)}"
+    )  # Direct flask.session
 
     user_to_auth = None
-    if hasattr(current_user, 'is_authenticated') and current_user.is_authenticated:
+    if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
         user_to_auth = current_user
-        app.logger.info(f"SERVER: User authenticated via Flask-Login current_user: {user_to_auth.username}")
-    elif 'user_id' in session:
+        app.logger.info(
+            f"SERVER: User authenticated via Flask-Login current_user: {user_to_auth.username}"
+        )
+    elif "user_id" in session:
         # Attempt to load user manually from session if Flask-Login's current_user is not set
-        user_id_from_session = session['user_id']
-        app.logger.info(f"SERVER: current_user not authenticated, trying to load user_id {user_id_from_session} from session manually for SocketIO.")
+        user_id_from_session = session["user_id"]
+        app.logger.info(
+            f"SERVER: current_user not authenticated, trying to load user_id {user_id_from_session} from session manually for SocketIO."
+        )
         user_from_session = db.session.get(User, user_id_from_session)
         if user_from_session:
             user_to_auth = user_from_session
-            app.logger.info(f"SERVER: User manually loaded from session for SocketIO: {user_to_auth.username}")
+            app.logger.info(
+                f"SERVER: User manually loaded from session for SocketIO: {user_to_auth.username}"
+            )
         else:
-            app.logger.warning(f"SERVER: user_id {user_id_from_session} found in session, but no user found in DB.")
+            app.logger.warning(
+                f"SERVER: user_id {user_id_from_session} found in session, but no user found in DB."
+            )
 
-    if user_to_auth and user_to_auth.is_authenticated: # Check is_authenticated on the user object we have
-        app.logger.info(f"SERVER: Authenticated user ID: {user_to_auth.id}, Username: {user_to_auth.username}. SID: {request.sid}")
+    if (
+        user_to_auth and user_to_auth.is_authenticated
+    ):  # Check is_authenticated on the user object we have
+        app.logger.info(
+            f"SERVER: Authenticated user ID: {user_to_auth.id}, Username: {user_to_auth.username}. SID: {request.sid}"
+        )
         join_room(f"user_{user_to_auth.id}")
         app.logger.info(
             f"User {user_to_auth.username} (SID: {request.sid}) connected to global namespace and joined room user_{user_to_auth.id}"
         )
-        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': user_to_auth.username})
+        emit(
+            "confirm_namespace_connected",
+            {
+                "namespace": request.namespace,
+                "sid": request.sid,
+                "status": "authenticated",
+                "username": user_to_auth.username,
+            },
+        )
     else:
-        app.logger.info(f"SERVER: User could not be authenticated for SocketIO. SID: {request.sid}")
-        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous_after_manual_check'})
+        app.logger.info(
+            f"SERVER: User could not be authenticated for SocketIO. SID: {request.sid}"
+        )
+        emit(
+            "confirm_namespace_connected",
+            {
+                "namespace": request.namespace,
+                "sid": request.sid,
+                "status": "anonymous_after_manual_check",
+            },
+        )
 
 
 if __name__ == "__main__":
     # Start the scheduler only once, even with Flask reloader
     # The os.environ.get('WERKZEUG_RUN_MAIN') check ensures this runs in the main Flask process,
     # not the reloader's process.
-    if not app.config.get("TESTING", False): # Do not run scheduler in test mode
+    if not app.config.get("TESTING", False):  # Do not run scheduler in test mode
         if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
             if not scheduler.running:  # Ensure scheduler is not started more than once
                 # Add the job before starting the scheduler
@@ -3410,15 +3485,24 @@ def send_friend_request(target_user_id):
     # Check for existing blocks
     # 1. Has current_user blocked target_user?
     # 2. Has target_user blocked current_user?
-    is_blocked_by_current_user = UserBlock.query.filter_by(blocker_id=current_user_id, blocked_id=target_user_id).first()
-    is_blocked_by_target_user = UserBlock.query.filter_by(blocker_id=target_user_id, blocked_id=current_user_id).first()
+    is_blocked_by_current_user = UserBlock.query.filter_by(
+        blocker_id=current_user_id, blocked_id=target_user_id
+    ).first()
+    is_blocked_by_target_user = UserBlock.query.filter_by(
+        blocker_id=target_user_id, blocked_id=current_user_id
+    ).first()
 
-    app.logger.debug(f"Block check for send_friend_request: current_user_id={current_user_id}, target_user_id={target_user_id}")
+    app.logger.debug(
+        f"Block check for send_friend_request: current_user_id={current_user_id}, target_user_id={target_user_id}"
+    )
     app.logger.debug(f"is_blocked_by_current_user: {is_blocked_by_current_user}")
     app.logger.debug(f"is_blocked_by_target_user: {is_blocked_by_target_user}")
 
     if is_blocked_by_current_user or is_blocked_by_target_user:
-        flash("You cannot send a friend request to this user as they have blocked you or you have blocked them.", "warning")
+        flash(
+            "You cannot send a friend request to this user as they have blocked you or you have blocked them.",
+            "warning",
+        )
         return redirect(url_for("user_profile", username=target_user.username))
 
     # Check if a friendship request already exists or they are already friends
@@ -3747,7 +3831,7 @@ def unblock_user(username_to_unblock):
 
 @app.route("/user/<string:username_to_block>/block", methods=["POST"])
 @login_required
-def block_user_route(username_to_block): # Renamed to avoid conflict with model name
+def block_user_route(username_to_block):  # Renamed to avoid conflict with model name
     current_user_id = session.get("user_id")
     user_to_block = User.query.filter_by(username=username_to_block).first()
 
@@ -3770,8 +3854,10 @@ def block_user_route(username_to_block): # Renamed to avoid conflict with model 
         # Remove any existing friendship before blocking
         friendship_to_remove = Friendship.query.filter(
             db.or_(
-                (Friendship.user_id == current_user_id) & (Friendship.friend_id == user_to_block.id),
-                (Friendship.user_id == user_to_block.id) & (Friendship.friend_id == current_user_id)
+                (Friendship.user_id == current_user_id)
+                & (Friendship.friend_id == user_to_block.id),
+                (Friendship.user_id == user_to_block.id)
+                & (Friendship.friend_id == current_user_id),
             )
         ).first()
         if friendship_to_remove:
@@ -3781,7 +3867,10 @@ def block_user_route(username_to_block): # Renamed to avoid conflict with model 
         new_block = UserBlock(blocker_id=current_user_id, blocked_id=user_to_block.id)
         db.session.add(new_block)
         db.session.commit()
-        flash(f"You have blocked {username_to_block}. They will not be able to see your profile or interact with you, and vice-versa. Any existing friendship has been removed.", "success")
+        flash(
+            f"You have blocked {username_to_block}. They will not be able to see your profile or interact with you, and vice-versa. Any existing friendship has been removed.",
+            "success",
+        )
 
     return redirect(url_for("user_profile", username=username_to_block))
 
@@ -4590,7 +4679,9 @@ def download_shared_file(shared_file_id):
 
     app.logger.debug(f"Download attempt for file_id: {shared_file_id}")
     app.logger.debug(f"Session content: {dict(session)}")
-    app.logger.debug(f"SharedFile sender_id: {shared_file.sender_id}, receiver_id: {shared_file.receiver_id}")
+    app.logger.debug(
+        f"SharedFile sender_id: {shared_file.sender_id}, receiver_id: {shared_file.receiver_id}"
+    )
     current_user_id = session.get("user_id")
     app.logger.debug(f"Current session user_id: {current_user_id}")
 
@@ -4599,7 +4690,9 @@ def download_shared_file(shared_file_id):
         and shared_file.sender_id != current_user_id
     ):  # Allow sender to download too
         flash("You are not authorized to download this file.", "danger")
-        app.logger.warning(f"Unauthorized download attempt for file {shared_file_id} by user {current_user_id}. Redirecting.")
+        app.logger.warning(
+            f"Unauthorized download attempt for file {shared_file_id} by user {current_user_id}. Redirecting."
+        )
         return redirect(url_for("files_inbox"))  # Or hello_world
 
     try:
@@ -4823,18 +4916,24 @@ def post_stream_api_global():  # Also renamed function for clarity, though endpo
 
     return Response(event_stream(), mimetype="text/event-stream")
 
+
 # Decorator for SocketIO login required
 def login_required_socketio(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated: # Uses Flask-SocketIO's current_user
-            emit('unauthorized_error', {'message': 'User not authenticated for this action.'})
+        if not current_user.is_authenticated:  # Uses Flask-SocketIO's current_user
+            emit(
+                "unauthorized_error",
+                {"message": "User not authenticated for this action."},
+            )
             # Returning False or None might signal to Flask-SocketIO to not proceed with the handler
             # or to disconnect the client, depending on configuration.
             # For now, emitting an error is a clear way to inform the client.
-            return False # Indicate failure / stop processing
+            return False  # Indicate failure / stop processing
         return f(*args, **kwargs)
+
     return decorated_function
+
 
 # Removed the second, simpler handle_connect that was shadowing the more detailed one.
 # The more detailed one is already present earlier in the file.

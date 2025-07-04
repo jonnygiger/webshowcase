@@ -23,7 +23,9 @@ class TestFriendPostNotifications(AppTestCase):  # Inherit from AppTestCase for 
             data={"title": title, "content": content, "hashtags": hashtags},
             follow_redirects=True,
         )
-        self.assertEqual(response.status_code, 200) # Assuming successful post creation redirects and results in 200
+        self.assertEqual(
+            response.status_code, 200
+        )  # Assuming successful post creation redirects and results in 200
         # Add more assertions here if needed, e.g., check for flash message
         self.logout()
         # Note: This helper doesn't return the post object directly.

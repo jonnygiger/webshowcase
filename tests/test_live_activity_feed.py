@@ -78,7 +78,7 @@ class TestLiveActivityFeed(AppTestCase):
                 db.session.delete(existing_friendship)
                 db.session.commit()
 
-            # _create_friendship now returns an ID
+                # _create_friendship now returns an ID
                 friend_request_id = self._create_db_friendship(
                     self.user1, self.user2, status="pending"
                 ).id

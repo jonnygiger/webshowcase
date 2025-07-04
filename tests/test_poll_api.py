@@ -489,38 +489,28 @@ class TestPollAPI(AppTestCase):
         self.assertEqual(response_get_poll.status_code, 200)
         poll_data_api = response_get_poll.get_json()["poll"]
         option_id_1 = next(
-            opt["id"]
-            for opt in poll_data_api["options"]
-            if opt["text"] == "RenderOpt1"
+            opt["id"] for opt in poll_data_api["options"] if opt["text"] == "RenderOpt1"
         )
         option_id_2 = next(
-            opt["id"]
-            for opt in poll_data_api["options"]
-            if opt["text"] == "RenderOpt2"
+            opt["id"] for opt in poll_data_api["options"] if opt["text"] == "RenderOpt2"
         )
 
         # 3. Users vote on the poll (simulating form submissions)
         # User1 votes for RenderOpt1
-        self.login(self.user1.username, "password") # Corrected: self.login
-        self.client.post(
-            f"/poll/{poll_id}/vote", data={"option_id": str(option_id_1)}
-        )
+        self.login(self.user1.username, "password")  # Corrected: self.login
+        self.client.post(f"/poll/{poll_id}/vote", data={"option_id": str(option_id_1)})
         self.logout()
 
         # User2 votes for RenderOpt1
         self.login(self.user2.username, "password")
-        self.client.post(
-            f"/poll/{poll_id}/vote", data={"option_id": str(option_id_1)}
-        )
+        self.client.post(f"/poll/{poll_id}/vote", data={"option_id": str(option_id_1)})
         self.logout()
 
         # User3 votes for RenderOpt2
         # self.user3 = self._create_user("testuser3", "password") # _create_user does not exist in AppTestCase, use _create_db_user
         # self.user3 = self._create_db_user("testuser3", "password") # user3 is already created in AppTestCase.setUp
         self.login(self.user3.username, "password")
-        self.client.post(
-            f"/poll/{poll_id}/vote", data={"option_id": str(option_id_2)}
-        )
+        self.client.post(f"/poll/{poll_id}/vote", data={"option_id": str(option_id_2)})
         self.logout()
 
         # Expected counts: RenderOpt1: 2 votes, RenderOpt2: 1 vote
@@ -544,17 +534,32 @@ class TestPollAPI(AppTestCase):
         # We expect something like: <li>RenderOpt1 ... <span ...>2 vote(s)</span></li>
         # This can be fragile. Let's check for the specific badge text.
         # Using re.DOTALL equivalent for .*? to match across newlines: [\s\S]*?
-        self.assertRegex(html_content, r"RenderOpt1[\s\S]*?<span[^>]*class=[\"'][^\"']*badge[^\"']*[\"'][^>]*>\s*2\s*vote\(s\)\s*</span>", "Vote count for RenderOpt1 not rendered correctly or not found.")
-        self.assertRegex(html_content, r"RenderOpt2[\s\S]*?<span[^>]*class=[\"'][^\"']*badge[^\"']*[\"'][^>]*>\s*1\s*vote\(s\)\s*</span>", "Vote count for RenderOpt2 not rendered correctly or not found.")
-
+        self.assertRegex(
+            html_content,
+            r"RenderOpt1[\s\S]*?<span[^>]*class=[\"'][^\"']*badge[^\"']*[\"'][^>]*>\s*2\s*vote\(s\)\s*</span>",
+            "Vote count for RenderOpt1 not rendered correctly or not found.",
+        )
+        self.assertRegex(
+            html_content,
+            r"RenderOpt2[\s\S]*?<span[^>]*class=[\"'][^\"']*badge[^\"']*[\"'][^>]*>\s*1\s*vote\(s\)\s*</span>",
+            "Vote count for RenderOpt2 not rendered correctly or not found.",
+        )
 
         # Check progress bar percentages (approximate)
         # Opt1: 2/3 = 66.6%
         # Opt2: 1/3 = 33.3%
         # Example: style="width: 66.6...%;"
         # Using regex to find the style attribute for progress bars
-        self.assertRegex(html_content, r"width:\s*66\.6+%;", "Progress bar for RenderOpt1 (2/3 votes) not rendered correctly.") # Matches 66.6, 66.66, 66.666 etc.
-        self.assertRegex(html_content, r"width:\s*33\.3+%;", "Progress bar for RenderOpt2 (1/3 votes) not rendered correctly.") # Matches 33.3, 33.33 etc.
+        self.assertRegex(
+            html_content,
+            r"width:\s*66\.6+%;",
+            "Progress bar for RenderOpt1 (2/3 votes) not rendered correctly.",
+        )  # Matches 66.6, 66.66, 66.666 etc.
+        self.assertRegex(
+            html_content,
+            r"width:\s*33\.3+%;",
+            "Progress bar for RenderOpt2 (1/3 votes) not rendered correctly.",
+        )  # Matches 33.3, 33.33 etc.
 
 
 if __name__ == "__main__":

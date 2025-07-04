@@ -1,7 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_login import UserMixin # Import UserMixin
+from flask_login import UserMixin  # Import UserMixin
 
 db = SQLAlchemy()
 
@@ -62,7 +62,7 @@ class Group(db.Model):
         }
 
 
-class User(UserMixin, db.Model): # Inherit from UserMixin
+class User(UserMixin, db.Model):  # Inherit from UserMixin
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=True)  # Added email field

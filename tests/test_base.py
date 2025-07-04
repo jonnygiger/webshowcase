@@ -108,8 +108,7 @@ class AppTestCase(unittest.TestCase):
                 print(f"Disconnecting Flask-SocketIO test_client in tearDown. SID: {client_sid}", file=sys.stderr)
                 self.socketio_client.disconnect()
                 print("Flask-SocketIO test_client disconnected in tearDown.", file=sys.stderr)
-            else:
-                print("Flask-SocketIO test_client existed in tearDown but was not connected.", file=sys.stderr)
+            # Removed the else block that printed "Flask-SocketIO test_client existed in tearDown but was not connected."
         else:
             print("No socketio_client found in tearDown.", file=sys.stderr)
 

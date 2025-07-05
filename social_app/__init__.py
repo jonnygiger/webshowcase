@@ -40,6 +40,18 @@ def create_app(config_class=None):
     app.config.setdefault("SHARED_FILES_ALLOWED_EXTENSIONS", {"txt", "pdf", "png", "jpg", "jpeg", "gif", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx"})
     app.config.setdefault("SHARED_FILES_MAX_SIZE", 16 * 1024 * 1024) # 16MB
 
+    if isinstance(config_class, str) and config_class == 'testing':
+        try:
+            from config import TestingConfig
+            config_class = TestingConfig
+        except ImportError:
+            # This case should ideally not happen in our controlled environment
+            # but good to be aware of.
+            # We can log an error or re-raise if needed.
+            # For now, if it fails, it will proceed and likely fail at from_object,
+            # which is the original behavior for a missing module.
+            pass
+
     if config_class:
         app.config.from_object(config_class)
     else:

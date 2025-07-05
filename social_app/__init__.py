@@ -3,7 +3,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
-from flask_restful import Api
+from flask_restful import Api as FlaskRestfulApi
 from flask_jwt_extended import JWTManager
 from flask_login import LoginManager
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -12,7 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 db = SQLAlchemy()
 migrate = Migrate()
 socketio = SocketIO(async_mode="threading")
-api = Api()
+fr_api = FlaskRestfulApi()
 jwt = JWTManager()
 login_manager = LoginManager()
 scheduler = BackgroundScheduler()
@@ -62,7 +62,7 @@ def create_app(config_class=None):
     db.init_app(app)
     migrate.init_app(app, db)
     socketio.init_app(app) # Removed manage_session=False, default is True
-    api.init_app(app)
+    fr_api.init_app(app)
     jwt.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = "core.login" # Adjusted to new blueprint structure
@@ -95,29 +95,29 @@ def create_app(config_class=None):
     # API resources registration
     # These were originally added to `api = Api(app)` in app.py. Now `api` is initialized globally and then `init_app(app)`.
     # So, we use the global `api` object.
-    api.add_resource(UserListResource, "/api/users")
-    api.add_resource(UserResource, "/api/users/<int:user_id>")
-    api.add_resource(PostListResource, "/api/posts")
-    api.add_resource(PostResource, "/api/posts/<int:post_id>")
-    api.add_resource(EventListResource, "/api/events")
-    api.add_resource(EventResource, "/api/events/<int:event_id>")
-    api.add_resource(RecommendationResource, "/api/recommendations")
-    api.add_resource(PersonalizedFeedResource, "/api/personalized-feed")
-    api.add_resource(TrendingHashtagsResource, "/api/trending_hashtags")
-    api.add_resource(OnThisDayResource, "/api/onthisday")
-    api.add_resource(UserStatsResource, "/api/users/<int:user_id>/stats")
-    api.add_resource(SeriesListResource, "/api/series")
-    api.add_resource(SeriesResource, "/api/series/<int:series_id>")
-    api.add_resource(CommentListResource, "/api/posts/<int:post_id>/comments")
-    api.add_resource(PollListResource, "/api/polls")
-    api.add_resource(PollResource, "/api/polls/<int:poll_id>")
-    api.add_resource(PollVoteResource, "/api/polls/<int:poll_id>/vote")
-    api.add_resource(PostLockResource, "/api/posts/<int:post_id>/lock")
-    api.add_resource(SharedFileResource, "/api/files/<int:file_id>") # Corrected from app.py
-    api.add_resource(UserFeedResource, "/api/users/<int:user_id>/feed")
-    api.add_resource(ChatRoomListResource, "/api/chat/rooms")
-    api.add_resource(ChatRoomMessagesResource, "/api/chat/rooms/<int:room_id>/messages")
-    api.add_resource(ApiLoginResource, "/api/login") # Registered ApiLoginResource
+    fr_api.add_resource(UserListResource, "/api/users")
+    fr_api.add_resource(UserResource, "/api/users/<int:user_id>")
+    fr_api.add_resource(PostListResource, "/api/posts")
+    fr_api.add_resource(PostResource, "/api/posts/<int:post_id>")
+    fr_api.add_resource(EventListResource, "/api/events")
+    fr_api.add_resource(EventResource, "/api/events/<int:event_id>")
+    fr_api.add_resource(RecommendationResource, "/api/recommendations")
+    fr_api.add_resource(PersonalizedFeedResource, "/api/personalized-feed")
+    fr_api.add_resource(TrendingHashtagsResource, "/api/trending_hashtags")
+    fr_api.add_resource(OnThisDayResource, "/api/onthisday")
+    fr_api.add_resource(UserStatsResource, "/api/users/<int:user_id>/stats")
+    fr_api.add_resource(SeriesListResource, "/api/series")
+    fr_api.add_resource(SeriesResource, "/api/series/<int:series_id>")
+    fr_api.add_resource(CommentListResource, "/api/posts/<int:post_id>/comments")
+    fr_api.add_resource(PollListResource, "/api/polls")
+    fr_api.add_resource(PollResource, "/api/polls/<int:poll_id>")
+    fr_api.add_resource(PollVoteResource, "/api/polls/<int:poll_id>/vote")
+    fr_api.add_resource(PostLockResource, "/api/posts/<int:post_id>/lock")
+    fr_api.add_resource(SharedFileResource, "/api/files/<int:file_id>") # Corrected from app.py
+    fr_api.add_resource(UserFeedResource, "/api/users/<int:user_id>/feed")
+    fr_api.add_resource(ChatRoomListResource, "/api/chat/rooms")
+    fr_api.add_resource(ChatRoomMessagesResource, "/api/chat/rooms/<int:room_id>/messages")
+    fr_api.add_resource(ApiLoginResource, "/api/login") # Registered ApiLoginResource
 
     # Login manager user loader
     # Models need to be imported before this is defined

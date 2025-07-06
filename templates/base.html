@@ -99,22 +99,22 @@
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('core.hello_world') }}">Home</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('core.child') }}">Child Page</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('core.todo') }}">To-Do List</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('gallery') }}">Gallery</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('upload_image') }}">Upload Image</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('blog') }}">Blog</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('polls_list') }}">Polls</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('events_list') }}">Events</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('chat_page') }}">Chat</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.gallery') }}">Gallery</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.upload_image') }}">Upload Image</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.blog') }}">Blog</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.polls_list') }}">Polls</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.events_list') }}">Events</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.chat_page') }}">Chat</a></li>
                         {% if session['logged_in'] %}
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('create_event') }}">Create Event</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('create_group') }}">Create Group</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('view_notifications') }}">Notifications</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('view_friend_post_notifications') }}">Friend Activity</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('inbox') }}">Inbox</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('files_inbox') }}">File Inbox</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('discover_feed') }}">Discovery</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('trending_posts_page') }}">Trending</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('on_this_day_page') }}">On This Day</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.create_event') }}">Create Event</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.create_group') }}">Create Group</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.view_notifications') }}">Notifications</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.view_friend_post_notifications') }}">Friend Activity</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.inbox') }}">Inbox</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.files_inbox') }}">File Inbox</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.discover_feed') }}">Discovery</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.trending_posts_page') }}">Trending</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.on_this_day_page') }}">On This Day</a></li>
                          {% if current_user %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('view_friend_requests') }}">Friend Requests</a></li>
                          {% endif %}

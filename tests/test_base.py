@@ -251,10 +251,10 @@ class AppTestCase(unittest.TestCase):
         socketio_client_to_use.connect(namespace="/", headers=connect_headers)
 
         # Increased sleep and retry logic for SID acquisition
-        time.sleep(0.5)
+        time.sleep(0.05)
         retry_count = 0
-        max_retries = 30  # Increased max_retries
-        wait_interval = 0.2  # Slightly longer wait interval
+        max_retries = 10  # Increased max_retries
+        wait_interval = 0.02  # Slightly longer wait interval
 
         while (
             not getattr(socketio_client_to_use, "sid", None)
@@ -267,7 +267,7 @@ class AppTestCase(unittest.TestCase):
             ) and retry_count < (max_retries / 2):
                 # Removed debug print statement about SocketIO client not connected during SID wait
                 socketio_client_to_use.connect(namespace="/")
-                time.sleep(0.5)
+                time.sleep(0.05)
 
         if not getattr(socketio_client_to_use, "sid", None):
             eio_sid_val = "N/A"

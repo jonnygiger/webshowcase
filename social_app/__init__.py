@@ -12,7 +12,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 db = SQLAlchemy()
 migrate = Migrate()
 socketio = SocketIO(async_mode="threading")
-fr_api = FlaskRestfulApi()
 jwt = JWTManager()
 login_manager = LoginManager()
 scheduler = BackgroundScheduler()
@@ -62,6 +61,7 @@ def create_app(config_class=None):
     db.init_app(app)
     migrate.init_app(app, db)
     socketio.init_app(app) # Removed manage_session=False, default is True
+    fr_api = FlaskRestfulApi()
     fr_api.init_app(app)
     jwt.init_app(app)
     login_manager.init_app(app)

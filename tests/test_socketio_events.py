@@ -1,6 +1,5 @@
 import unittest
 import json
-from social_app import app, db, socketio
 from social_app.models.db_models import User, Post, Like, PostLock, Achievement, UserAchievement
 from tests.test_base import AppTestCase  # Assuming this sets up app context and db
 from flask_jwt_extended import create_access_token

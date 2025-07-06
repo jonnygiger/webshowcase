@@ -303,9 +303,10 @@ class AppTestCase(unittest.TestCase):
             return msg
 
     def _get_jwt_token(self, username, password):
-        response = self.client.post(
-            "/api/login", json={"username": username, "password": password}
-        )
+        with self.app.app_context():
+            response = self.client.post(
+                "/api/login", json={"username": username, "password": password}
+            )
         self.assertEqual(
             response.status_code,
             200,

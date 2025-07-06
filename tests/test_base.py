@@ -195,63 +195,64 @@ class AppTestCase(unittest.TestCase):
 
         # Connect SocketIO client with JWT token
         self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")
-        connection_confirmed_event = threading.Event()
-        auth_error_received = None
-
-        def on_confirm_connect(data):
-            self.app.logger.info(f"SocketIO 'confirm_namespace_connected' received: {data}")
-            if data.get('status') == 'authenticated':
-                connection_confirmed_event.set()
-            # Potentially store data if needed for assertions later
-
-        def on_auth_error(data):
-            nonlocal auth_error_received
-            self.app.logger.error(f"SocketIO 'auth_error' received: {data}")
-            auth_error_received = data
-            connection_confirmed_event.set() # Signal to stop waiting
-
-        socketio_client_to_use.on('confirm_namespace_connected', on_confirm_connect)
-        socketio_client_to_use.on('auth_error', on_auth_error)
-
-        # Connect SocketIO client with JWT token
-        self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")
         socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token})
 
-        # Wait for connection confirmation or error
-        connection_confirmed_event.wait(timeout=10) # Timeout in seconds
+        start_time = time.time()
+        timeout_seconds = 10
+        auth_successful = False
+        auth_error_message = None
 
-        # Unregister handlers
-        socketio_client_to_use.off('confirm_namespace_connected')
-        socketio_client_to_use.off('auth_error')
+        while time.time() - start_time < timeout_seconds:
+            try:
+                received_events = socketio_client_to_use.get_received(namespace="/", timeout=0.1) # Short timeout for non-blocking check
+                for event in received_events:
+                    event_name = event.get('name')
+                    event_args = event.get('args')
+                    self.app.logger.debug(f"SocketIO event received for {username}: Name: {event_name}, Args: {event_args}")
+
+                    if event_name == 'confirm_namespace_connected':
+                        if event_args and event_args[0].get('status') == 'authenticated':
+                            self.app.logger.info(f"SocketIO 'confirm_namespace_connected' received with status 'authenticated' for {username}")
+                            auth_successful = True
+                            break
+                    elif event_name == 'auth_error':
+                        self.app.logger.error(f"SocketIO 'auth_error' received for {username}: {event_args}")
+                        auth_error_message = str(event_args[0]) if event_args else "Unknown authentication error"
+                        break
+                if auth_successful or auth_error_message:
+                    break
+            except Exception as e: # get_received might raise if client disconnects unexpectedly
+                self.app.logger.error(f"Error while getting received events for {username}: {e}")
+                # Potentially treat as a connection failure
+                break
+            time.sleep(0.05) # Small delay to prevent busy-waiting
 
         current_sid = getattr(socketio_client_to_use, "sid", None)
 
-        if auth_error_received is not None:
-            self.app.logger.error(f"SocketIO authentication failed for {username}: {auth_error_received}")
-            raise ConnectionError(f"SocketIO authentication failed: {auth_error_received}")
-        elif not connection_confirmed_event.is_set():
+        if auth_error_message:
+            self.app.logger.error(f"SocketIO authentication failed for {username}: {auth_error_message}")
+            raise ConnectionError(f"SocketIO authentication failed: {auth_error_message}")
+        elif not auth_successful:
             eio_sid_val = "N/A"
             if hasattr(socketio_client_to_use, 'eio_test_client') and socketio_client_to_use.eio_test_client:
                 eio_sid_val = getattr(socketio_client_to_use.eio_test_client, 'sid', "N/A (eio_test_client has no sid)")
             is_connected_status = socketio_client_to_use.is_connected(namespace="/")
             error_message = (
-                f"SocketIO connection attempt for {username} timed out after 10s "
-                f"without 'confirm_namespace_connected' or 'auth_error'. "
+                f"SocketIO connection attempt for {username} timed out after {timeout_seconds}s "
+                f"without successful 'confirm_namespace_connected' or 'auth_error'. "
                 f"is_connected: {is_connected_status}, current_sid: {current_sid}, eio_sid: {eio_sid_val}."
             )
             self.app.logger.error(error_message)
             raise ConnectionError(error_message)
         elif not current_sid:
-            # This case might be redundant if auth_error or timeout already caught issues,
-            # but it's a good safeguard.
             error_message = (
-                f"SocketIO client for {username} connected (event set) but SID is missing. "
+                f"SocketIO client for {username} authenticated but SID is missing. "
                 "This indicates a potential issue with the connection process or client state."
             )
             self.app.logger.error(error_message)
             raise ConnectionError(error_message)
         else:
-            self.app.logger.info(f"SocketIO client for {username} connected successfully with SID: {current_sid}. Event-based auth successful.")
+            self.app.logger.info(f"SocketIO client for {username} connected successfully with SID: {current_sid}. Authentication successful.")
         return login_response
 
     def logout(self, client_instance=None):

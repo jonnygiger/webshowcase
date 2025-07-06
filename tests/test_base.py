@@ -4,6 +4,7 @@ import unittest
 import json
 import io
 import time
+import threading
 from unittest.mock import patch, call, ANY
 
 from social_app import create_app, db as app_db, socketio as main_app_socketio
@@ -193,52 +194,63 @@ class AppTestCase(unittest.TestCase):
 
         # Connect SocketIO client with JWT token
         self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")
+        connection_confirmed_event = threading.Event()
+        auth_error_received = None
+
+        def on_confirm_connect(data):
+            self.app.logger.info(f"SocketIO 'confirm_namespace_connected' received: {data}")
+            if data.get('status') == 'authenticated':
+                connection_confirmed_event.set()
+            # Potentially store data if needed for assertions later
+
+        def on_auth_error(data):
+            nonlocal auth_error_received
+            self.app.logger.error(f"SocketIO 'auth_error' received: {data}")
+            auth_error_received = data
+            connection_confirmed_event.set() # Signal to stop waiting
+
+        socketio_client_to_use.on('confirm_namespace_connected', on_confirm_connect)
+        socketio_client_to_use.on('auth_error', on_auth_error)
+
+        # Connect SocketIO client with JWT token
+        self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")
         socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token})
 
-        # Keep the existing SID waiting logic
-        time.sleep(0.05) # Initial small delay
-        retry_count = 0
-        max_retries = 20
-        wait_interval = 0.02
+        # Wait for connection confirmation or error
+        connection_confirmed_event.wait(timeout=10) # Timeout in seconds
 
-        while (
-            not getattr(socketio_client_to_use, "sid", None)
-            and retry_count < max_retries
-        ):
-            time.sleep(wait_interval)
-            retry_count += 1
-            if not socketio_client_to_use.is_connected(
-                namespace="/"
-            ) and retry_count < (max_retries / 2):
-                self.app.logger.warning(f"SocketIO client for {username} disconnected during SID wait. Attempting reconnect with token. Retry: {retry_count}")
-                # Ensure to pass auth token on reconnect as well
-                socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token})
-                time.sleep(0.05) # Wait after reconnect attempt
+        # Unregister handlers
+        socketio_client_to_use.off('confirm_namespace_connected')
+        socketio_client_to_use.off('auth_error')
 
         current_sid = getattr(socketio_client_to_use, "sid", None)
-        if not current_sid:
-            eio_sid_val = "N/A"
-            if (
-                hasattr(socketio_client_to_use, "eio_test_client")
-                and socketio_client_to_use.eio_test_client
-            ):
-                eio_sid_val = getattr(
-                    socketio_client_to_use.eio_test_client,
-                    "sid",
-                    "N/A (eio_test_client has no sid)",
-                )
-            is_connected_status = socketio_client_to_use.is_connected(namespace="/")
 
+        if auth_error_received is not None:
+            self.app.logger.error(f"SocketIO authentication failed for {username}: {auth_error_received}")
+            raise ConnectionError(f"SocketIO authentication failed: {auth_error_received}")
+        elif not connection_confirmed_event.is_set():
+            eio_sid_val = "N/A"
+            if hasattr(socketio_client_to_use, 'eio_test_client') and socketio_client_to_use.eio_test_client:
+                eio_sid_val = getattr(socketio_client_to_use.eio_test_client, 'sid', "N/A (eio_test_client has no sid)")
+            is_connected_status = socketio_client_to_use.is_connected(namespace="/")
             error_message = (
-                f"SocketIO client for {username} failed to get SID after {max_retries} retries. "
-                f"is_connected: {is_connected_status}, sid: {current_sid}, eio_sid: {eio_sid_val}. "
-                "Attempted JWT token authentication with connect(auth=...). "
-                "Check server logs for 'handle_connect' and JWT processing details."
+                f"SocketIO connection attempt for {username} timed out after 10s "
+                f"without 'confirm_namespace_connected' or 'auth_error'. "
+                f"is_connected: {is_connected_status}, current_sid: {current_sid}, eio_sid: {eio_sid_val}."
             )
             self.app.logger.error(error_message)
             raise ConnectionError(error_message)
-
-        self.app.logger.info(f"SocketIO client for {username} connected successfully with SID: {current_sid}. Auth token used.")
+        elif not current_sid:
+            # This case might be redundant if auth_error or timeout already caught issues,
+            # but it's a good safeguard.
+            error_message = (
+                f"SocketIO client for {username} connected (event set) but SID is missing. "
+                "This indicates a potential issue with the connection process or client state."
+            )
+            self.app.logger.error(error_message)
+            raise ConnectionError(error_message)
+        else:
+            self.app.logger.info(f"SocketIO client for {username} connected successfully with SID: {current_sid}. Event-based auth successful.")
         return login_response
 
     def logout(self, client_instance=None):

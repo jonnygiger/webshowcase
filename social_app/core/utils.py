@@ -325,4 +325,3 @@ def generate_activity_summary():
     else:
         current_app.logger.info("Activity summary generated. No new notifications.")
     current_app.last_activity_check_time = current_check_time
-```

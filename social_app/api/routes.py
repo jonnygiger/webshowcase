@@ -23,6 +23,8 @@ from ..models.db_models import ( # Corrected model import path
     PostLock,
     SharedFile,
     UserBlock,
+    ChatRoom,
+    ChatMessage,
 )
 # db will be available via from social_app import db if routes are registered within create_app
 # For now, assuming db is correctly accessed or will be passed/imported via social_app
@@ -930,7 +932,7 @@ class SharedFileResource(Resource):
 
 
 # Chat API Resources
-# from ..models.db_models import ChatRoom, ChatMessage # Already imported at the top
+# ChatRoom and ChatMessage are now imported at the top
 
 
 class ChatRoomListResource(Resource):

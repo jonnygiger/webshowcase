@@ -1,6 +1,5 @@
 import unittest
 import json
-# Updated model import paths
 from social_app.models.db_models import (
     User,
     Post,
@@ -8,25 +7,20 @@ from social_app.models.db_models import (
     UserBlock,
 )
 from tests.test_base import AppTestCase
-from werkzeug.security import generate_password_hash  # For creating user password
+from werkzeug.security import generate_password_hash
 
 
 class TestCommentAPI(AppTestCase):
 
     def setUp(self):
         super().setUp()
-        # self.user1, self.user2, self.user3 are created by AppTestCase's _setup_base_users()
-        # and their IDs (self.user1_id etc.) are available and refreshed.
-        # Specific posts needed by tests will be created within test methods or more specific setups.
 
     def test_create_comment_success(self):
         with self.app.app_context():
             post_obj = self._create_db_post(
                 user_id=self.user1_id, title="Post for Commenting"
             )
-            self.assertIsNotNone(
-                post_obj.id, "Post object must have an ID for comment creation test."
-            )
+            self.assertIsNotNone(post_obj.id)
 
             token = self._get_jwt_token(self.user1.username, "password")
             headers = {
@@ -52,12 +46,9 @@ class TestCommentAPI(AppTestCase):
             self.assertEqual(comment_data["post_id"], post_obj.id)
             self.assertEqual(comment_data["author_username"], self.user1.username)
 
-            # Verify the comment is in the database
             comment_in_db = self.db.session.get(Comment, data["comment"]["id"])
             self.assertIsNotNone(comment_in_db)
-            self.assertEqual(
-                comment_in_db.content, comment_content
-            )  # Use variable with period
+            self.assertEqual(comment_in_db.content, comment_content)
             self.assertEqual(comment_in_db.user_id, self.user1.id)
             self.assertEqual(comment_in_db.post_id, post_obj.id)
 
@@ -109,11 +100,7 @@ class TestCommentAPI(AppTestCase):
             response.status_code, 404, f"Response data: {response.data.decode()}"
         )
         data = json.loads(response.data)
-        self.assertEqual(
-            data["message"],
-            "Post not found",
-            "Error message for non-existent post did not match.",
-        )
+        self.assertEqual(data["message"], "Post not found")
 
     def test_create_comment_missing_content(self):
         post_obj = self._create_db_post(

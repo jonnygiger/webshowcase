@@ -1,11 +1,6 @@
-# This file will store notification-related utilities to help break circular dependencies.
-# Initially, it will house new_post_sse_queues and broadcast_new_post.
-
 from flask import current_app, url_for
-import queue  # broadcast_new_post uses queue.Queue for sse_listeners, and app.py uses it for new_post_sse_queues
+import queue
 
-# Global list for SSE queues for new posts.
-# Each item in the list is a queue.Queue instance.
 new_post_sse_queues = []
 
 
@@ -14,17 +9,12 @@ def broadcast_new_post(post_data):
     Broadcasts new post data to all connected SSE clients.
     This function is moved here to break a circular import between app.py and api.py.
     """
-    # Ensure this function is called within an application context.
-    # The original function in app.py had extensive logging and error handling.
-    # It's important to replicate or adapt that as needed.
-
-    logger = current_app.logger  # Get logger from current_app
+    logger = current_app.logger
 
     post_data_with_url = post_data.copy()
 
     if "id" in post_data_with_url:
         try:
-            # url_for needs an app context, which should be present if called from a request or API endpoint.
             post_data_with_url["url"] = url_for(
                 "core.view_post", post_id=post_data_with_url["id"], _external=True
             )

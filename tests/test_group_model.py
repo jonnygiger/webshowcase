@@ -1,8 +1,7 @@
 import unittest
 from datetime import datetime, timezone
-# Updated imports: db is handled by AppTestCase or imported from social_app
-from social_app import db # app will be self.app from AppTestCase
-from social_app.models.db_models import User, Group # Updated model import paths
+from social_app import db
+from social_app.models.db_models import User, Group
 from tests.test_base import AppTestCase
 
 
@@ -24,14 +23,12 @@ class TestGroupModel(AppTestCase):
                 creator_id=creator.id, name="Group For Adding Members"
             )
 
-            # Ensure both are in the current session context before operating on the relationship
             group = db.session.merge(group)
             member = db.session.merge(member)
 
             group.members.append(member)
             db.session.commit()
 
-            # Re-fetch group and member to ensure session state is current
             group = db.session.get(Group, group.id)
             member = db.session.get(User, member.id)
 
@@ -46,27 +43,21 @@ class TestGroupModel(AppTestCase):
                 creator_id=creator.id, name="Group For Removing Members"
             )
 
-            # Ensure both are in the current session context
             group = db.session.merge(group)
             member = db.session.merge(member)
 
             group.members.append(member)
             db.session.commit()
 
-            # Re-fetch to ensure relationship is loaded
             group = db.session.get(Group, group.id)
-            member = db.session.get(
-                User, member.id
-            )  # Also fetch member to ensure it's in session
+            member = db.session.get(User, member.id)
             self.assertIn(member, group.members.all())
 
-            # Ensure objects are in session before removal operation
             group = db.session.merge(group)
             member = db.session.merge(member)
             group.members.remove(member)
             db.session.commit()
 
-            # Re-fetch group and member
             group = db.session.get(Group, group.id)
             member = db.session.get(User, member.id)
 
@@ -77,9 +68,7 @@ class TestGroupModel(AppTestCase):
         with self.app.app_context():
             creator = self._create_db_user(username="group_creator_dict")
             group_description = "A test description for dict."
-            created_time = datetime.now(
-                timezone.utc
-            )  # Approximate, exact match difficult
+            created_time = datetime.now(timezone.utc)
 
             group = Group(
                 name="Dict Group",
@@ -90,7 +79,6 @@ class TestGroupModel(AppTestCase):
             db.session.add(group)
             db.session.commit()
 
-            # Re-fetch to ensure all attributes are loaded correctly, especially defaults or server-side changes
             group_fetched = db.session.get(Group, group.id)
 
             expected_dict = {
@@ -98,7 +86,7 @@ class TestGroupModel(AppTestCase):
                 "name": "Dict Group",
                 "description": group_description,
                 "creator_id": creator.id,
-                "created_at": group_fetched.created_at.isoformat(),  # Use the actual DB value
+                "created_at": group_fetched.created_at.isoformat(),
                 "creator_username": creator.username,
             }
             self.assertDictEqual(group_fetched.to_dict(), expected_dict)
@@ -110,13 +98,11 @@ class TestGroupModel(AppTestCase):
                 creator_id=creator.id, name="Creator Test Group"
             )
 
-            # Re-fetch group
             group_fetched = db.session.get(Group, group.id)
             self.assertIsNotNone(group_fetched.creator)
             self.assertEqual(group_fetched.creator.id, creator.id)
             self.assertEqual(group_fetched.creator.username, "group_rel_creator")
 
-            # Check back-population
             creator_fetched = db.session.get(User, creator.id)
             self.assertIn(group_fetched, creator_fetched.created_groups)
 

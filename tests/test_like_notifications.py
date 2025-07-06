@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, ANY
 from datetime import datetime
 
 from social_app import db, create_app
@@ -17,11 +17,8 @@ class TestLikeNotifications(AppTestCase):
             self.author2 = User(
                 username="author2",
                 email="author2@example.com",
-                # Use set_password for consistency if available, or direct hash
-                password_hash="password_hash_for_author2", # Placeholder, use generate_password_hash if testing registration
+                password_hash="password_hash_for_author2",
             )
-            # If User model has set_password method:
-            # self.author2.set_password("password")
             db.session.add(self.author2)
             db.session.commit()
             self.author2 = db.session.get(User, self.author2.id)
@@ -32,7 +29,7 @@ class TestLikeNotifications(AppTestCase):
             post_by_author = self._create_db_post(
                 user_id=self.author1.id, title="Author's Likable Post"
             )
-            self.assertIsNotNone(post_by_author, "Failed to create post.")
+            self.assertIsNotNone(post_by_author)
 
             self.login(self.liker.username, "password")
             response = self.client.post(
@@ -45,9 +42,7 @@ class TestLikeNotifications(AppTestCase):
                 type="like",
                 related_id=post_by_author.id,
             ).first()
-            self.assertIsNotNone(
-                notification, "Database notification was not created for the author."
-            )
+            self.assertIsNotNone(notification)
             expected_message = f"{self.liker.username} liked your post: '{post_by_author.title}'"
             self.assertEqual(notification.message, expected_message)
 
@@ -72,21 +67,18 @@ class TestLikeNotifications(AppTestCase):
             post_by_author1 = self._create_db_post(
                 user_id=self.author1.id, title="Author1's Test Post"
             )
-            self.assertIsNotNone(post_by_author1, "Failed to create post by author1.")
+            self.assertIsNotNone(post_by_author1)
 
             self.login(self.liker.username, "password")
             response = self.client.post(
                 f"/blog/post/{post_by_author1.id}/like", follow_redirects=True
             )
-            self.assertEqual(response.status_code, 200, "Liking the post failed.")
+            self.assertEqual(response.status_code, 200)
 
             notification_author1 = Notification.query.filter_by(
                 user_id=self.author1.id, type="like", related_id=post_by_author1.id
             ).first()
-            self.assertIsNotNone(
-                notification_author1,
-                "Database notification for author1 was not created.",
-            )
+            self.assertIsNotNone(notification_author1)
             expected_message_author1 = (
                 f"{self.liker.username} liked your post: '{post_by_author1.title}'"
             )
@@ -110,10 +102,7 @@ class TestLikeNotifications(AppTestCase):
                 type="like",
                 related_id=post_by_author1.id,
             ).first()
-            self.assertIsNone(
-                notification_author2,
-                "Notification for author2 was created, but should not have been for author1's post.",
-            )
+            self.assertIsNone(notification_author2)
 
             author2_room = f"user_{self.author2.id}"
             called_author2_room = False
@@ -128,11 +117,7 @@ class TestLikeNotifications(AppTestCase):
                     if payload.get("post_id") == post_by_author1.id:
                         called_author2_room = True
                         break
-            self.assertFalse(
-                called_author2_room,
-                f"'new_like_notification' event for post ID {post_by_author1.id} "
-                f"should NOT be emitted to author2's room ({author2_room}). Found calls: {mock_socketio_emit.call_args_list}",
-            )
+            self.assertFalse(called_author2_room)
         self.logout()
 
     @patch("social_app.core.views.socketio.emit")
@@ -143,79 +128,48 @@ class TestLikeNotifications(AppTestCase):
             post_by_author = self._create_db_post(
                 user_id=self.author1.id, title="Author's Post for Multiple Likes"
             )
-            self.assertIsNotNone(post_by_author, "Failed to create post.")
+            self.assertIsNotNone(post_by_author)
 
             self.login(self.liker.username, "password")
             response = self.client.post(
                 f"/blog/post/{post_by_author.id}/like", follow_redirects=True
             )
-            self.assertEqual(response.status_code, 200, "First like attempt failed.")
+            self.assertEqual(response.status_code, 200)
 
             notification = Notification.query.filter_by(
                 user_id=self.author1.id,
                 type="like",
                 related_id=post_by_author.id,
             ).first()
-            self.assertIsNotNone(
-                notification,
-                "Database notification was not created for the author on the first like.",
-            )
+            self.assertIsNotNone(notification)
             expected_message = (
                 f"{self.liker.username} liked your post: '{post_by_author.title}'"
             )
-            self.assertEqual(
-                notification.message,
-                expected_message,
-                "Notification message is incorrect for the first like.",
-            )
-            self.assertEqual(
-                mock_socketio_emit.call_count,
-                1,
-                "SocketIO emit was not called exactly once on the first like.",
-            )
+            self.assertEqual(notification.message, expected_message)
+            self.assertEqual(mock_socketio_emit.call_count, 1)
             first_notification_id = notification.id
 
             response_again = self.client.post(
                 f"/blog/post/{post_by_author.id}/like", follow_redirects=True
             )
-            self.assertEqual(
-                response_again.status_code, 200, "Second like attempt failed."
-            )
+            self.assertEqual(response_again.status_code, 200)
 
             notifications_count = Notification.query.filter_by(
                 user_id=self.author1.id,
                 type="like",
                 related_id=post_by_author.id,
             ).count()
-            self.assertEqual(
-                notifications_count,
-                1,
-                "Notification count for the author should remain 1 after multiple likes.",
-            )
+            self.assertEqual(notifications_count, 1)
 
             current_notification = Notification.query.filter_by(
                 user_id=self.author1.id,
                 type="like",
                 related_id=post_by_author.id,
             ).first()
-            self.assertIsNotNone(
-                current_notification, "Could not find notification after second like."
-            )
-            self.assertEqual(
-                current_notification.id,
-                first_notification_id,
-                "The existing notification ID should not change.",
-            )
-            self.assertEqual(
-                current_notification.message,
-                expected_message,
-                "Notification message is incorrect after second like.",
-            )
-            self.assertEqual(
-                mock_socketio_emit.call_count,
-                1,
-                "SocketIO emit call count should remain 1 after the second like.",
-            )
+            self.assertIsNotNone(current_notification)
+            self.assertEqual(current_notification.id, first_notification_id)
+            self.assertEqual(current_notification.message, expected_message)
+            self.assertEqual(mock_socketio_emit.call_count, 1)
         self.logout()
 
     @patch("social_app.core.views.socketio.emit")
@@ -226,7 +180,7 @@ class TestLikeNotifications(AppTestCase):
             post_by_author = self._create_db_post(
                 user_id=self.author1.id, title="Author's Own Post to Like"
             )
-            self.assertIsNotNone(post_by_author, "Failed to create post.")
+            self.assertIsNotNone(post_by_author)
 
             self.login(self.author1.username, "password")
 
@@ -240,10 +194,7 @@ class TestLikeNotifications(AppTestCase):
                 type="like",
                 related_id=post_by_author.id,
             ).first()
-            self.assertIsNone(
-                notification,
-                "Notification should NOT be created when an author likes their own post.",
-            )
+            self.assertIsNone(notification)
 
             for call_args_tuple in mock_socketio_emit.call_args_list:
                 args, kwargs = call_args_tuple
@@ -261,31 +212,21 @@ class TestLikeNotifications(AppTestCase):
             post_by_author = self._create_db_post(
                 user_id=self.author1.id, title="Anonymous Like Test Post"
             )
-            self.assertIsNotNone(post_by_author, "Failed to create post by author.")
+            self.assertIsNotNone(post_by_author)
 
             response = self.client.post(
                 f"/blog/post/{post_by_author.id}/like", follow_redirects=False
             )
-            self.assertEqual(
-                response.status_code,
-                302,
-                "Response status code should be 302 for anonymous like attempt.",
-            )
+            self.assertEqual(response.status_code, 302)
             expected_login_url_path = "/login"
-            self.assertTrue(
-                response.location.startswith(expected_login_url_path),
-                f"Redirect location '{response.location}' does not match expected login URL path '{expected_login_url_path}'.",
-            )
+            self.assertTrue(response.location.startswith(expected_login_url_path))
 
             notification = Notification.query.filter_by(
                 user_id=self.author1.id,
                 type="like",
                 related_id=post_by_author.id,
             ).first()
-            self.assertIsNone(
-                notification,
-                "Notification should NOT be created for the author when an anonymous user attempts to like.",
-            )
+            self.assertIsNone(notification)
 
             for call_args_tuple in mock_socketio_emit.call_args_list:
                 args, _ = call_args_tuple
@@ -307,10 +248,7 @@ class TestLikeNotifications(AppTestCase):
             notification = Notification.query.filter_by(
                 related_id=non_existent_post_id, type="like"
             ).first()
-            self.assertIsNone(
-                notification,
-                "Notification should not be created for liking a non-existent post.",
-            )
+            self.assertIsNone(notification)
 
             for call_args_tuple in mock_socketio_emit.call_args_list:
                 args, _ = call_args_tuple
@@ -319,5 +257,3 @@ class TestLikeNotifications(AppTestCase):
                         f"'new_like_notification' event should NOT be emitted for liking a non-existent post. Found: {call_args_tuple}"
                     )
         self.logout()
-
-```

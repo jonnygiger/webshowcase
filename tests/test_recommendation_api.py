@@ -15,9 +15,10 @@ from social_app.models.db_models import (
     Comment,
     EventRSVP,
     PollVote,
-    Friendship, # Added Friendship
+    Friendship,
 )
 from tests.test_base import AppTestCase
+from flask import url_for
 
 
 class TestRecommendationAPI(AppTestCase):
@@ -33,9 +34,7 @@ class TestRecommendationAPI(AppTestCase):
         self.event_by_user2 = self._create_db_event(
             user_id=self.user2_id,
             title="User2's Event",
-            date_str=(datetime.now(timezone.utc) + timedelta(days=30)).strftime(
-                "%Y-%m-%d"
-            ),
+            date_str=(datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d"),
         )
         self.poll_by_user2 = self._create_db_poll(
             user_id=self.user2_id, question="User2's Poll?"
@@ -126,9 +125,7 @@ class TestRecommendationAPI(AppTestCase):
 
     def test_recommend_post_liked_by_friend(self):
         self._create_db_friendship(self.user1, self.user3, status="accepted")
-        # Ensure friendship is mutual for some recommendation logic
         self._create_db_friendship(self.user3, self.user1, status="accepted")
-
 
         post_by_user2 = self._create_db_post(
             user_id=self.user2_id, title="Post by User2", content="Content by User2"
@@ -141,24 +138,17 @@ class TestRecommendationAPI(AppTestCase):
 
         self.assertIn("suggested_posts", recommendations)
         self.assertIsInstance(recommendations["suggested_posts"], list)
-        self.assertTrue(
-            len(recommendations["suggested_posts"]) > 0,
-            "Suggested posts list is empty, expected post liked by friend.",
-        )
+        self.assertTrue(len(recommendations["suggested_posts"]) > 0)
 
         found_post_in_recommendations = any(
             rec_post.get("id") == post_by_user2.id
             for rec_post in recommendations["suggested_posts"]
         )
-        self.assertTrue(
-            found_post_in_recommendations,
-            f"Post ID {post_by_user2.id} liked by friend was not found.",
-        )
+        self.assertTrue(found_post_in_recommendations)
 
     def test_recommend_post_commented_on_by_friend(self):
         self._create_db_friendship(self.user1, self.user3, status="accepted")
         self._create_db_friendship(self.user3, self.user1, status="accepted")
-
 
         post_by_user2 = self._create_db_post(
             user_id=self.user2_id,
@@ -177,19 +167,13 @@ class TestRecommendationAPI(AppTestCase):
 
         self.assertIn("suggested_posts", recommendations)
         self.assertIsInstance(recommendations["suggested_posts"], list)
-        self.assertTrue(
-            len(recommendations["suggested_posts"]) > 0,
-            "Suggested posts list is empty, expected post commented by friend.",
-        )
+        self.assertTrue(len(recommendations["suggested_posts"]) > 0)
 
         found_post_in_recommendations = any(
             rec_post.get("id") == post_by_user2.id
             for rec_post in recommendations["suggested_posts"]
         )
-        self.assertTrue(
-            found_post_in_recommendations,
-            f"Post ID {post_by_user2.id} commented on by friend was not found.",
-        )
+        self.assertTrue(found_post_in_recommendations)
 
     def test_recommend_group_joined_by_friend(self):
         self._create_db_friendship(self.user1, self.user2, status="accepted")
@@ -202,40 +186,27 @@ class TestRecommendationAPI(AppTestCase):
         )
 
         with self.app.app_context():
-            user2_obj = db.session.get(User, self.user2_id) # Renamed from user2 to user2_obj
-            group_obj = db.session.get(Group, group_by_user3.id) # Renamed from group_by_user3_merged to group_obj
+            user2_obj = db.session.get(User, self.user2_id)
+            group_obj = db.session.get(Group, group_by_user3.id)
 
-            if user2_obj and group_obj: # Use renamed variables
-                user2_obj.joined_groups.append(group_obj) # Use renamed variables
-                db.session.add(user2_obj) # Use renamed variable
+            if user2_obj and group_obj:
+                user2_obj.joined_groups.append(group_obj)
+                db.session.add(user2_obj)
                 db.session.commit()
             else:
                 self.fail("Failed to fetch user2 or group_by_user3 for test setup")
 
         response = self.client.get(f"/api/recommendations?user_id={self.user1_id}")
-        self.assertEqual(response.status_code, 200, "API call should be successful")
+        self.assertEqual(response.status_code, 200)
         recommendations = json.loads(response.data)
 
-        self.assertIn(
-            "suggested_groups",
-            recommendations,
-            "Response should contain suggested_groups",
-        )
+        self.assertIn("suggested_groups", recommendations)
         suggested_groups = recommendations["suggested_groups"]
-        self.assertIsInstance(
-            suggested_groups, list, "suggested_groups should be a list"
-        )
-        self.assertTrue(
-            len(suggested_groups) > 0, "Suggested groups list should not be empty."
-        )
+        self.assertIsInstance(suggested_groups, list)
+        self.assertTrue(len(suggested_groups) > 0)
 
         found_group_in_recommendations = any(
             rec_group.get("id") == group_by_user3.id
             for rec_group in suggested_groups
         )
-        self.assertTrue(
-            found_group_in_recommendations,
-            f"Group ID {group_by_user3.id} joined by friend was not found.",
-        )
-
-```
+        self.assertTrue(found_group_in_recommendations)

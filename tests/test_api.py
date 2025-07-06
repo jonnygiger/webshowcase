@@ -2,9 +2,8 @@ import unittest
 import json
 from unittest.mock import patch
 
-# Updated imports: app and db are handled by AppTestCase or imported from social_app
-from social_app import db # app will be self.app from AppTestCase
-from social_app.models.db_models import ( # Updated model import paths
+from social_app import db
+from social_app.models.db_models import (
     User,
     Post,
     Poll,
@@ -15,7 +14,7 @@ from social_app.models.db_models import ( # Updated model import paths
     UserBlock,
     SharedFile,
 )
-from tests.test_base import AppTestCase  # Assuming this sets up app context and db
+from tests.test_base import AppTestCase
 from flask_jwt_extended import create_access_token
 import os
 from datetime import datetime, timedelta, timezone
@@ -33,7 +32,7 @@ class TestPollAPI(AppTestCase):
                 headers=headers,
                 json={
                     "question": "Too few options?",
-                    "options": ["Option 1"],  # Only one option
+                    "options": ["Option 1"],
                 },
             )
             self.assertEqual(response.status_code, 400)
@@ -50,7 +49,7 @@ class TestPollAPI(AppTestCase):
                 headers=headers,
                 json={
                     "question": "Empty option text?",
-                    "options": ["Option 1", "   "],  # One valid, one empty
+                    "options": ["Option 1", "   "],
                 },
             )
             self.assertEqual(response.status_code, 400)
@@ -58,66 +57,38 @@ class TestPollAPI(AppTestCase):
             self.assertIn("Poll option text cannot be blank", data["message"])
 
 
-class TestEventAPI(
-    AppTestCase
-):  # Placeholder, actual tests depend on EventListResource implementation
+class TestEventAPI(AppTestCase):
 
     def test_get_event_list_api_placeholder(self):
-        # This test assumes EventListResource is implemented and returns event data
-        # For now, we'll just check if the endpoint exists and returns a successful status code
-        # if the resource is more than a placeholder.
-        # If it's a true placeholder, this test might need adjustment or will fail.
         with self.app.app_context():
-            token = self._get_jwt_token(
-                self.user1.username, "password"
-            )  # Assuming auth is required
+            token = self._get_jwt_token(self.user1.username, "password")
             headers = {"Authorization": f"Bearer {token}"}
 
-            # Create some events for the list to pick up if implemented
             self._create_db_event(self.user1_id, title="Event Alpha")
             self._create_db_event(self.user2_id, title="Event Beta")
 
             response = self.client.get("/api/events", headers=headers)
-            # Current placeholder returns 200 with a message.
-            # If it were fully implemented, it would also return event data.
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
             self.assertIn("message", data)
-            # self.assertIn("events", data) # This would be for a full implementation
 
 
 class TestTrendingHashtagsAPI(AppTestCase):
 
-    @patch("recommendations.get_trending_hashtags")  # Corrected mock path
+    @patch("social_app.services.recommendations_service.get_trending_hashtags")
     def test_get_trending_hashtags_api(self, mock_get_trending_hashtags):
         with self.app.app_context():
-            # Configure the mock to return a predefined list of hashtags
-            # This mock setup might need adjustment depending on how the actual
-            # TrendingHashtagsResource and get_trending_hashtags function are implemented.
-            # If get_trending_hashtags returns model instances that have a to_dict() method:
             mock_get_trending_hashtags.return_value = [
                 TrendingHashtag(hashtag="#test1", score=10.0, rank=1),
                 TrendingHashtag(hashtag="#test2", score=8.0, rank=2),
             ]
-            # If it's expected to return dicts directly:
-            # mock_get_trending_hashtags.return_value = [
-            #     {"hashtag": "#test1", "score": 10.0, "rank": 1},
-            #     {"hashtag": "#test2", "score": 8.0, "rank": 2},
-            # ]
-            # The current TrendingHashtagsResource is a placeholder, so this test
-            # will mainly verify the placeholder's response for now.
 
-            token = self._get_jwt_token(
-                self.user1.username, "password"
-            )  # Assuming auth might be added
+            token = self._get_jwt_token(self.user1.username, "password")
             headers = {"Authorization": f"Bearer {token}"}
             response = self.client.get("/api/trending_hashtags", headers=headers)
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
-            self.assertIn("message", data)  # Placeholder check
-            # self.assertEqual(len(data["trending_hashtags"]), 2)
-            # self.assertEqual(data["trending_hashtags"][0]["hashtag"], "#test1")
-            # mock_get_trending_hashtags.assert_called_once() # Verify the mocked function was called
+            self.assertIn("message", data)
 
 
 class TestPostLockAPI(AppTestCase):
@@ -128,7 +99,6 @@ class TestPostLockAPI(AppTestCase):
                 user_id=self.user1_id, title="Shared Lock Post"
             )
 
-            # User1 locks the post
             token_user1 = self._get_jwt_token(self.user1.username, "password")
             headers_user1 = {"Authorization": f"Bearer {token_user1}"}
             response_user1_lock = self.client.post(
@@ -136,14 +106,13 @@ class TestPostLockAPI(AppTestCase):
             )
             self.assertEqual(response_user1_lock.status_code, 200)
 
-            # User2 attempts to lock the same post
             token_user2 = self._get_jwt_token(self.user2.username, "password")
             headers_user2 = {"Authorization": f"Bearer {token_user2}"}
             response_user2_lock_attempt = self.client.post(
                 f"/api/posts/{post_to_lock.id}/lock", headers=headers_user2
             )
 
-            self.assertEqual(response_user2_lock_attempt.status_code, 409)  # Conflict
+            self.assertEqual(response_user2_lock_attempt.status_code, 409)
             data = response_user2_lock_attempt.get_json()
             self.assertIn("Post is currently locked by another user.", data["message"])
             self.assertEqual(data["locked_by_username"], self.user1.username)
@@ -153,9 +122,8 @@ class TestUserFeedAPI(AppTestCase):
 
     def test_get_user_feed_unauthorized(self):
         with self.app.app_context():
-            # Attempt to access without a token
             response = self.client.get(f"/api/users/{self.user1_id}/feed")
-            self.assertEqual(response.status_code, 401)  # Expect Unauthorized
+            self.assertEqual(response.status_code, 401)
 
 
 class TestChatRoomAPI(AppTestCase):
@@ -166,17 +134,15 @@ class TestChatRoomAPI(AppTestCase):
             headers = {"Authorization": f"Bearer {token}"}
             room_name = "Duplicate Room Test"
 
-            # Create the first room
             response1 = self.client.post(
                 "/api/chat/rooms", headers=headers, json={"name": room_name}
             )
             self.assertEqual(response1.status_code, 201)
 
-            # Attempt to create another room with the same name
             response2 = self.client.post(
                 "/api/chat/rooms", headers=headers, json={"name": room_name}
             )
-            self.assertEqual(response2.status_code, 409)  # Conflict
+            self.assertEqual(response2.status_code, 409)
             data = response2.get_json()
             self.assertIn(
                 f"Chat room with name '{room_name}' already exists.", data["message"]
@@ -204,17 +170,14 @@ class TestCommentAPI(AppTestCase):
             post_author = self.user1
             commenter = self.user2
 
-            # Post author (user1) blocks commenter (user2)
             self._create_db_block(
                 blocker_user_obj=post_author, blocked_user_obj=commenter
             )
 
-            # Post by user1
             post_by_author = self._create_db_post(
                 user_id=post_author.id, title="Blocker's Post"
             )
 
-            # Commenter (user2) attempts to comment - should be blocked
             token_commenter = self._get_jwt_token(commenter.username, "password")
             headers_commenter = {"Authorization": f"Bearer {token_commenter}"}
 
@@ -235,14 +198,12 @@ class TestCommentAPI(AppTestCase):
 class TestSharedFileAPI(AppTestCase):
 
     def setUp(self):
-        super().setUp()  # Call AppTestCase.setUp
-        # Ensure the test shared files folder exists
+        super().setUp()
         shared_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
         if not os.path.exists(shared_folder):
             os.makedirs(shared_folder)
 
     def tearDown(self):
-        # Clean up any created files in the test shared folder
         shared_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
         if os.path.exists(shared_folder):
             for filename in os.listdir(shared_folder):
@@ -261,7 +222,6 @@ class TestSharedFileAPI(AppTestCase):
         original_filename="test_file.txt",
         saved_filename="saved_test_file.txt",
     ):
-        # Create a dummy file on disk for deletion test
         upload_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
         dummy_file_path = os.path.join(upload_folder, saved_filename)
         with open(dummy_file_path, "w") as f:
@@ -271,7 +231,7 @@ class TestSharedFileAPI(AppTestCase):
             sender_id=sender.id,
             receiver_id=receiver.id,
             original_filename=original_filename,
-            saved_filename=saved_filename,  # This is crucial
+            saved_filename=saved_filename,
         )
         db.session.add(shared_file)
         db.session.commit()
@@ -281,7 +241,7 @@ class TestSharedFileAPI(AppTestCase):
         with self.app.app_context():
             sender = self.user1
             receiver = self.user2
-            unauthorized_user = self.user3  # Neither sender nor receiver
+            unauthorized_user = self.user3
 
             shared_file = self._create_db_shared_file_for_api_test(
                 sender=sender, receiver=receiver
@@ -300,7 +260,6 @@ class TestSharedFileAPI(AppTestCase):
             data = response.get_json()
             self.assertIn("You are not authorized to delete this file", data["message"])
 
-            # Ensure file still exists in DB and on disk
             self.assertIsNotNone(db.session.get(SharedFile, shared_file.id))
             upload_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
             self.assertTrue(

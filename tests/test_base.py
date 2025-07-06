@@ -6,7 +6,6 @@ import io
 import time
 from unittest.mock import patch, call, ANY
 
-# Updated imports for the new app structure
 from social_app import create_app, db as app_db, socketio as main_app_socketio
 from flask import url_for, Response
 import flask
@@ -14,10 +13,9 @@ import flask
 from flask_jwt_extended import JWTManager
 from flask_restful import Api
 
-# from models import db as app_db # app_db is now imported from social_app
-from social_app.models.db_models import ( # Updated model import paths
+from social_app.models.db_models import (
     Achievement,
-    Bookmark, # Added
+    Bookmark,
     Comment,
     Event,
     EventRSVP,
@@ -38,10 +36,9 @@ from social_app.models.db_models import ( # Updated model import paths
     TrendingHashtag,
     User,
     UserAchievement,
-    UserBlock, # Added
+    UserBlock,
     UserStatus,
 )
-# app_db is already imported from social_app, so no separate import for it from models needed.
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -53,40 +50,11 @@ class AppTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # Create an app instance for testing
-        cls.app = create_app('testing') # Config is now handled by 'testing' string
-
-        # The following configurations are now set by TestingConfig via create_app('testing')
-        # cls.app.config["SERVER_NAME"] = "localhost"
-        # cls.app.config["APPLICATION_ROOT"] = "/"
-        # cls.app.config["PREFERRED_URL_SCHEME"] = "http"
-        # cls.app.config["SESSION_COOKIE_NAME"] = "session"
-        # cls.app.config["SESSION_COOKIE_DOMAIN"] = "localhost"
-        # cls.app.config["TESTING"] = True
-        # cls.app.config["WTF_CSRF_ENABLED"] = False
-        # cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///test_site.db"
-        # cls.app.config["SECRET_KEY"] = "test-secret-key"
-        # cls.app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"
-        # cls.app.config["SOCKETIO_MESSAGE_QUEUE"] = None
-        # cls.app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-        # SHARED_FILES_UPLOAD_FOLDER is defined in TestingConfig.
-        # The create_app function handles folder creation for UPLOAD_FOLDER,
-        # PROFILE_PICS_FOLDER, and SHARED_FILES_UPLOAD_FOLDER.
-        # So, manual creation here is no longer needed.
-        # shared_folder_path = cls.app.config.setdefault("SHARED_FILES_UPLOAD_FOLDER", "shared_files_test_folder")
-        # if not os.path.exists(shared_folder_path):
-        #     os.makedirs(shared_folder_path)
-
-        cls.db = app_db # app_db is imported from social_app
-
-        # SocketIO is initialized within create_app. We use the instance from social_app.
-        # No need to call init_app() on main_app_socketio again here.
+        cls.app = create_app('testing')
+        cls.db = app_db
         cls.socketio_class_level = main_app_socketio
 
-        # Configure logging for tests
         import logging
-
         cls.app.logger.setLevel(logging.DEBUG)
         handler = logging.StreamHandler(sys.stderr)
         handler.setLevel(logging.DEBUG)
@@ -101,13 +69,8 @@ class AppTestCase(unittest.TestCase):
         logging.getLogger("socketio").setLevel(logging.DEBUG)
         logging.getLogger("engineio").setLevel(logging.DEBUG)
 
-        # Api is initialized in create_app, no need to handle it here.
-
         with cls.app.app_context():
             cls.db.create_all()
-
-        # Ensure the test client uses the app's test config for cookies, etc.
-        # This is usually handled by app.test_client() itself.
 
     @classmethod
     def tearDownClass(cls):
@@ -130,14 +93,12 @@ class AppTestCase(unittest.TestCase):
 
     def _clean_tables_for_setup(self):
         self.db.session.remove()
-        # Delete data from all tables instead of dropping and recreating
         for table in reversed(self.db.metadata.sorted_tables):
             self.db.session.execute(table.delete())
         self.db.session.commit()
 
     def tearDown(self):
         if hasattr(self, "socketio_client") and self.socketio_client:
-            # Check if the client is connected
             if self.socketio_client.is_connected():
                 client_sid = getattr(self.socketio_client, "sid", None)
                 if client_sid:
@@ -151,12 +112,11 @@ class AppTestCase(unittest.TestCase):
                         file=sys.stderr,
                     )
                 else:
-                    # Connected but no SID, attempt disconnect anyway if possible
                     print(
                         "Flask-SocketIO test_client in tearDown: connected but SID missing. Attempting disconnect.",
                         file=sys.stderr,
                     )
-                    self.socketio_client.disconnect() # disconnect might still work or clean up
+                    self.socketio_client.disconnect()
                     print(
                         "Flask-SocketIO test_client (attempted) disconnected in tearDown.",
                         file=sys.stderr,
@@ -172,7 +132,6 @@ class AppTestCase(unittest.TestCase):
         with self.app.app_context():
             self.db.session.remove()
 
-        # Cleanup shared files folder
         shared_files_folder = self.app.config.get("SHARED_FILES_UPLOAD_FOLDER")
         if shared_files_folder and os.path.exists(shared_files_folder):
             for filename in os.listdir(shared_files_folder):
@@ -211,41 +170,29 @@ class AppTestCase(unittest.TestCase):
     def login(self, username, password, client_instance=None):
         jwt_token = self._get_jwt_token(username, password)
 
-        # Use the standard Flask test client to log in, which sets the session cookie
         login_response = self.client.post(
             "/login",
             data=dict(username=username, password=password),
             follow_redirects=True,
         )
         self.assertEqual(login_response.status_code, 200)
-        # Verify that 'user_id' is in the session after login via HTTP client
         with self.client.session_transaction() as http_session:
-            self.assertIn(
-                "_user_id", http_session, "_user_id not in session after HTTP login."
-            )
-            # Removed debug print statement about user session
+            self.assertIn("_user_id", http_session)
 
         socketio_client_to_use = (
             client_instance if client_instance else self.socketio_client
         )
 
-        # Disconnect if already connected, to ensure a fresh connection attempt
         if socketio_client_to_use.is_connected(namespace="/"):
-            # Removed debug print statement about disconnecting existing socketio_client
             socketio_client_to_use.disconnect(namespace="/")
-            time.sleep(0.2)  # Short delay for disconnect to process
+            time.sleep(0.2)
 
-        # The SocketIO test client, when initialized with the Flask test client,
-        # should automatically use the cookies from the Flask test client's cookie jar.
-        # No explicit headers with cookies should be needed here.
-        # Removed debug print statement about attempting SocketIO connect
         socketio_client_to_use.connect(namespace="/")
 
-        # Increased sleep and retry logic for SID acquisition
         time.sleep(0.05)
         retry_count = 0
-        max_retries = 20  # Increased max_retries
-        wait_interval = 0.02  # Slightly longer wait interval
+        max_retries = 20
+        wait_interval = 0.02
 
         while (
             not getattr(socketio_client_to_use, "sid", None)
@@ -256,8 +203,7 @@ class AppTestCase(unittest.TestCase):
             if not socketio_client_to_use.is_connected(
                 namespace="/"
             ) and retry_count < (max_retries / 2):
-                # Removed debug print statement about SocketIO client not connected during SID wait
-                socketio_client_to_use.connect(namespace="/") # Ensure no headers here either
+                socketio_client_to_use.connect(namespace="/")
                 time.sleep(0.05)
 
         if not getattr(socketio_client_to_use, "sid", None):
@@ -272,12 +218,7 @@ class AppTestCase(unittest.TestCase):
                     "N/A (eio_test_client has no sid)",
                 )
             is_connected_status = socketio_client_to_use.is_connected(namespace="/")
-            # Removed debug print statement about SocketIO client failed to get SID
-            # Log session state from the server side perspective during the failing connect attempt
-            with self.app.test_request_context(
-                "/socket.io"
-            ):  # Simulate a socket.io context for session access
-                # Removed debug print statement about Flask session state during SID failure
+            with self.app.test_request_context("/socket.io"):
                 pass
 
             raise ConnectionError(
@@ -285,9 +226,7 @@ class AppTestCase(unittest.TestCase):
                 f"is_connected: {is_connected_status}, sid: None, eio_sid: {eio_sid_val}. "
                 "Ensure session cookie is correctly passed and processed by SocketIO server-side authentication."
             )
-
-        # Removed debug print statement about SocketIO client connected with SID
-        return login_response  # Return the HTTP login response
+        return login_response
 
     def logout(self, client_instance=None):
         http_client = self.client
@@ -466,7 +405,7 @@ class AppTestCase(unittest.TestCase):
         description="A series for testing.",
         created_at=None,
         updated_at=None,
-    ):  # This seems to be a duplicate of _create_db_series
+    ):
         with self.app.app_context():
             series = Series(
                 user_id=user_id,

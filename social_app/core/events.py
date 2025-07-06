@@ -211,36 +211,40 @@ def handle_connect():
     auth_method = "anonymous"
 
     auth_header = request.namespace.auth
+    current_app.logger.info(f"SocketIO: handle_connect: auth_header: {auth_header}. SID: {request.sid}") # Log auth_header
     if auth_header and isinstance(auth_header, dict) and 'token' in auth_header:
         jwt_token = auth_header.get('token')
-        current_app.logger.info(f"SocketIO: Connect attempt with JWT. SID: {request.sid}")
+        current_app.logger.info(f"SocketIO: Connect attempt with JWT. Token: {jwt_token}. SID: {request.sid}") # Log token
         try:
             decoded_token = decode_token(jwt_token)
             user_identity = decoded_token['sub']
+            current_app.logger.info(f"SocketIO: JWT decoded. user_identity: {user_identity}. SID: {request.sid}") # Log user_identity
             # Ensure user_identity can be converted to an integer for DB query
             try:
                 user_id = int(user_identity)
+                current_app.logger.info(f"SocketIO: JWT user_identity converted to user_id: {user_id}. SID: {request.sid}") # Log user_id
             except ValueError:
                 current_app.logger.error(f"SocketIO: JWT 'sub' claim '{user_identity}' is not a valid integer. SID: {request.sid}")
                 emit('auth_error', {'message': 'Invalid user identifier in token.'}, room=request.sid)
                 return False # Deny connection
 
             jwt_user = db.session.get(User, user_id)
+            current_app.logger.info(f"SocketIO: JWT User object retrieved from DB: {'Success' if jwt_user else 'Failure'}. SID: {request.sid}") # Log User object retrieval
             if jwt_user:
                 user_to_auth_on_connect = jwt_user
                 user_authenticated_by_jwt = True
                 auth_method = "jwt"
-                current_app.logger.info(f"SocketIO: User '{jwt_user.username}' authenticated via JWT. SID: {request.sid}")
+                current_app.logger.info(f"SocketIO: User '{jwt_user.username}' authenticated via JWT. SID: {request.sid}") # Log JWT auth success
             else:
                 current_app.logger.warning(f"SocketIO: JWT valid, but user ID '{user_id}' not found in DB. SID: {request.sid}")
                 emit('auth_error', {'message': 'User not found for provided token.'}, room=request.sid)
                 return False # Deny connection
         except ExpiredSignatureError:
-            current_app.logger.warning(f"SocketIO: JWT connection failed: Token expired. SID: {request.sid}")
+            current_app.logger.warning(f"SocketIO: JWT connection failed: Token expired. SID: {request.sid}") # Log ExpiredSignatureError
             emit('auth_error', {'message': 'Token has expired.'}, room=request.sid)
             return False # Deny connection
         except InvalidTokenError as e:
-            current_app.logger.error(f"SocketIO: JWT connection failed: Invalid token: {e}. SID: {request.sid}")
+            current_app.logger.error(f"SocketIO: JWT connection failed: Invalid token: {e}. SID: {request.sid}") # Log InvalidTokenError
             emit('auth_error', {'message': f'Invalid token: {e}'}, room=request.sid)
             return False # Deny connection
         except Exception as e: # Catch any other decoding errors or issues
@@ -248,31 +252,33 @@ def handle_connect():
             emit('auth_error', {'message': 'Authentication error.'}, room=request.sid)
             return False # Deny connection
     else:
-        current_app.logger.info(f"SocketIO: No JWT in auth header, attempting session authentication. SID: {request.sid}. Cookies: {request.cookies.get('session')}")
+        current_app.logger.info(f"SocketIO: No JWT in auth header or JWT auth failed, attempting session authentication. SID: {request.sid}. Cookies: {request.cookies.get('session')}") # Log JWT auth failed/skipped
+        current_app.logger.info(f"SocketIO: current_user.is_authenticated: {current_user.is_authenticated}. current_user: {current_user}. SID: {request.sid}") # Log current_user status
         if current_user.is_authenticated:
             user_to_auth_on_connect = current_user
             auth_method = "session_current_user"
-            current_app.logger.info(f"SocketIO: User '{current_user.username}' authenticated via Flask-Login current_user. SID: {request.sid}")
-        elif "user_id" in session:
-            user_id_from_session = session.get("user_id")
-            current_app.logger.info(f"SocketIO: current_user not authenticated, trying user_id '{user_id_from_session}' from flask.session. SID: {request.sid}")
+            current_app.logger.info(f"SocketIO: User '{current_user.username}' authenticated via Flask-Login current_user (Session Auth Success). SID: {request.sid}") # Log session auth success
+        elif "_user_id" in session: # <<< MODIFIED
+            user_id_from_session = session.get("_user_id") # <<< MODIFIED
+            current_app.logger.info(f"SocketIO: current_user not authenticated, trying _user_id '{user_id_from_session}' from flask.session. SID: {request.sid}") # Log change
             try:
                 # Ensure user_id_from_session is valid integer before querying DB
-                user_id = int(user_id_from_session)
+                user_id = int(user_id_from_session) # Keep this conversion
                 user_from_session = db.session.get(User, user_id)
+                current_app.logger.info(f"SocketIO: Session User object retrieved from DB (using _user_id): {'Success' if user_from_session else 'Failure'}. SID: {request.sid}") # Log User object retrieval
                 if user_from_session:
                     user_to_auth_on_connect = user_from_session
-                    auth_method = "session_user_id"
-                    current_app.logger.info(f"SocketIO: User '{user_from_session.username}' authenticated via user_id in session. SID: {request.sid}")
+                    auth_method = "session_underscore_user_id" # Log change
+                    current_app.logger.info(f"SocketIO: User '{user_from_session.username}' authenticated via _user_id in session (Session Auth Success). SID: {request.sid}") # Log change
                 else:
-                    current_app.logger.warning(f"SocketIO: user_id '{user_id_from_session}' in session, but no such user in DB. SID: {request.sid}")
+                    current_app.logger.warning(f"SocketIO: _user_id '{user_id_from_session}' in session, but no such user in DB. SID: {request.sid}")
             except ValueError:
-                current_app.logger.error(f"SocketIO: user_id '{user_id_from_session}' in session is not a valid integer. SID: {request.sid}")
+                current_app.logger.error(f"SocketIO: _user_id '{user_id_from_session}' in session is not a valid integer. SID: {request.sid}")
             # If user_from_session is None or ValueError, user_to_auth_on_connect remains None
 
     if user_to_auth_on_connect:
         join_room(f"user_{user_to_auth_on_connect.id}")
-        current_app.logger.info(f"SocketIO: User {user_to_auth_on_connect.username} (SID: {request.sid}, Auth: {auth_method}) connected to namespace '/' and joined room user_{user_to_auth_on_connect.id}")
+        current_app.logger.info(f"SocketIO: User {user_to_auth_on_connect.username} (SID: {request.sid}, Auth: {auth_method}) connected to namespace '/' and joined room user_{user_to_auth_on_connect.id}") # Log final outcome - success
         emit('confirm_namespace_connected', {
             'namespace': request.namespace,
             'sid': request.sid,
@@ -284,7 +290,7 @@ def handle_connect():
         # No return True explicitly needed, successful connection is the default
     else:
         # This block is reached if no JWT was provided AND session auth failed
-        current_app.logger.info(f"SocketIO: User could not be authenticated for SocketIO connection (no JWT, session auth failed). SID: {request.sid}")
+        current_app.logger.info(f"SocketIO: User could not be authenticated for SocketIO connection (no JWT, session auth failed). Auth method: {auth_method}. SID: {request.sid}") # Log final outcome - failure
         emit('auth_error', {'message': 'Authentication required.'}, room=request.sid)
         return False # Deny connection
 

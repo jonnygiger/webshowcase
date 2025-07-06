@@ -16,28 +16,30 @@ from flask_restful import Api
 
 # from models import db as app_db # app_db is now imported from social_app
 from social_app.models.db_models import ( # Updated model import paths
-    User,
-    Message,
-    Post,
-    Friendship,
-    FriendPostNotification,
-    Group,
+    Achievement,
+    Bookmark, # Added
+    Comment,
     Event,
+    EventRSVP,
+    FriendPostNotification,
+    Friendship,
+    Group,
+    Like,
+    Message,
+    Notification,
     Poll,
     PollOption,
-    TrendingHashtag,
-    SharedFile,
-    UserStatus,
-    Achievement,
-    UserAchievement,
-    Comment,
+    PollVote,
+    Post,
+    PostLock,
     Series,
     SeriesPost,
-    Notification,
-    Like,
-    EventRSVP,
-    PollVote,
-    PostLock,
+    SharedFile,
+    TrendingHashtag,
+    User,
+    UserAchievement,
+    UserBlock, # Added
+    UserStatus,
 )
 # app_db is already imported from social_app, so no separate import for it from models needed.
 from datetime import datetime, timedelta, timezone
@@ -385,8 +387,6 @@ class AppTestCase(unittest.TestCase):
             return self.db.session.get(Post, post.id)
 
     def _create_db_like(self, user_id, post_id, timestamp=None):
-        from social_app.models.db_models import Like # Corrected import
-
         with self.app.app_context():
             like = Like(
                 user_id=user_id,
@@ -400,8 +400,6 @@ class AppTestCase(unittest.TestCase):
     def _create_db_comment(
         self, user_id, post_id, content="Test comment", timestamp=None
     ):
-        from social_app.models.db_models import Comment # Corrected import
-
         with self.app.app_context():
             comment = Comment(
                 user_id=user_id,
@@ -416,8 +414,6 @@ class AppTestCase(unittest.TestCase):
     def _create_db_event_rsvp(
         self, user_id, event_id, status="Attending", timestamp=None
     ):
-        from social_app.models.db_models import EventRSVP # Corrected import
-
         with self.app.app_context():
             rsvp = EventRSVP(
                 user_id=user_id,
@@ -430,8 +426,6 @@ class AppTestCase(unittest.TestCase):
             return rsvp.id
 
     def _create_db_poll_vote(self, user_id, poll_id, poll_option_id, created_at=None):
-        from social_app.models.db_models import PollVote # Corrected import
-
         with self.app.app_context():
             vote = PollVote(
                 user_id=user_id,
@@ -480,8 +474,6 @@ class AppTestCase(unittest.TestCase):
             self.fail("Haystack for assertInHTML was not a string.")
 
     def _create_db_lock(self, post_id, user_id, minutes_offset=0):
-        from social_app.models.db_models import PostLock # Corrected import
-
         with self.app.app_context():
             expires_at = datetime.now(timezone.utc) + timedelta(minutes=minutes_offset)
             lock = PostLock(post_id=post_id, user_id=user_id, expires_at=expires_at)
@@ -524,8 +516,6 @@ class AppTestCase(unittest.TestCase):
             return self.db.session.get(Series, series.id)
 
     def _create_db_bookmark(self, user_id, post_id, timestamp=None):
-        from social_app.models.db_models import Bookmark # Corrected import
-
         with self.app.app_context():
             bookmark = Bookmark(
                 user_id=user_id,
@@ -537,8 +527,6 @@ class AppTestCase(unittest.TestCase):
             return bookmark
 
     def _create_db_block(self, blocker_user_obj, blocked_user_obj, timestamp=None):
-        from social_app.models.db_models import UserBlock # Corrected import
-
         with self.app.app_context():
             block = UserBlock(
                 blocker_id=blocker_user_obj.id,

@@ -130,8 +130,10 @@ class AppTestCase(unittest.TestCase):
 
     def _clean_tables_for_setup(self):
         self.db.session.remove()
-        self.db.drop_all()
-        self.db.create_all()
+        # Delete data from all tables instead of dropping and recreating
+        for table in reversed(self.db.metadata.sorted_tables):
+            self.db.session.execute(table.delete())
+        self.db.session.commit()
 
     def tearDown(self):
         if hasattr(self, "socketio_client") and self.socketio_client:

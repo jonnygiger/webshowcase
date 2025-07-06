@@ -2,8 +2,7 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin  # Import UserMixin
-
-db = SQLAlchemy()
+from social_app import db
 
 # Association table for User-Group many-to-many relationship
 group_members = db.Table(

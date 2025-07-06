@@ -37,11 +37,12 @@ def jwt_required_socketio(f):
             user = db.session.get(User, user_id)
 
             if not user:
-                current_app.logger.warning(f"SocketIO: User with ID {user_id} (from token) not found. SID: {request.sid}.")
-                emit('auth_error', {'message': 'User from token not found.'}, room=request.sid)
+                current_app.logger.warning(f"SocketIO: User with ID {user_id} (from token sub) not found in DB. SID: {request.sid}.")
+                emit('auth_error', {'message': 'User associated with token not found.'}, room=request.sid) # Changed message for clarity
                 return False
 
             g.socketio_user = user
+            current_app.logger.debug(f"SocketIO: User {user.username} authenticated for event '{f.__name__}' via JWT. SID: {request.sid}") # Added debug log
 
             return f(*args, **kwargs)
 
@@ -50,12 +51,12 @@ def jwt_required_socketio(f):
             emit('auth_error', {'message': 'Token has expired.'}, room=request.sid)
             return False
         except InvalidTokenError as e:
-            current_app.logger.warning(f"SocketIO: Invalid token for event '{f.__name__}' from SID {request.sid}: {e}")
-            emit('auth_error', {'message': f'Invalid token: {str(e)}'}, room=request.sid)
+            current_app.logger.warning(f"SocketIO: Invalid token for event '{f.__name__}' from SID {request.sid}. Type: {type(e).__name__}, Error: {e}") # Enhanced log
+            emit('auth_error', {'message': f'Invalid token supplied: {str(e)}'}, room=request.sid) # Changed message
             return False
         except Exception as e:
-            current_app.logger.error(f"SocketIO: Unexpected error during token auth for event '{f.__name__}' from SID {request.sid}. Error: {str(e)}", exc_info=True)
-            emit('auth_error', {'message': 'An unexpected error occurred during authentication.'}, room=request.sid)
+            current_app.logger.error(f"SocketIO: Unexpected critical error during JWT processing for event '{f.__name__}' from SID {request.sid}. Error: {str(e)}", exc_info=True) # Enhanced log
+            emit('auth_error', {'message': 'An critical server error occurred during authentication.'}, room=request.sid) # Changed message
             return False
 
     return decorated_function

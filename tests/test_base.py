@@ -217,7 +217,7 @@ class AppTestCase(unittest.TestCase):
                             break
                     elif event_name == 'auth_error':
                         self.app.logger.error(f"SocketIO 'auth_error' received for {username}: {event_args}")
-                        auth_error_message = str(event_args[0]) if event_args else "Unknown authentication error"
+                        auth_error_message = event_args[0].get('message', str(event_args[0])) if event_args and event_args[0] else "Unknown authentication error"
                         break
                 if auth_successful or auth_error_message:
                     break

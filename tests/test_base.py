@@ -228,11 +228,8 @@ class AppTestCase(unittest.TestCase):
         )
 
         # Extract session cookie
-        session_cookie = None
-        for cookie in self.client.cookie_jar:
-            if cookie.name == 'session':
-                session_cookie = cookie.value
-                break
+        session_cookie_obj = self.client.get_cookie('session')
+        session_cookie = session_cookie_obj.value if session_cookie_obj else None
 
         connect_headers = {}
         if session_cookie:

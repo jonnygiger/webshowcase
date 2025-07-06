@@ -131,6 +131,7 @@ class AppTestCase(unittest.TestCase):
             print("No socketio_client found or set in tearDown.", file=sys.stderr)
 
         with self.app.app_context():
+            self.db.session.rollback()
             self.db.session.remove()
 
         shared_files_folder = self.app.config.get("SHARED_FILES_UPLOAD_FOLDER")

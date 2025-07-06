@@ -202,7 +202,7 @@ class AppTestCase(unittest.TestCase):
         # Verify that 'user_id' is in the session after login via HTTP client
         with self.client.session_transaction() as http_session:
             self.assertIn(
-                "user_id", http_session, "user_id not in session after HTTP login."
+                "_user_id", http_session, "_user_id not in session after HTTP login."
             )
             # Removed debug print statement about user session
 

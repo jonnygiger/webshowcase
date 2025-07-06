@@ -22,7 +22,7 @@
                             <h6 class="card-subtitle mb-2 text-muted">By: {{ featured_post.author.username }}</h6>
                         {% endif %}
                         <p class="card-text">{{ featured_post.content[:200] }}{% if featured_post.content|length > 200 %}...{% endif %}</p>
-                        <a href="{{ url_for('view_post', post_id=featured_post.id) }}" class="btn btn-primary">Read more</a>
+                        <a href="{{ url_for('core.view_post', post_id=featured_post.id) }}" class="btn btn-primary">Read more</a>
                     </div>
                 </div>
             {% else %}

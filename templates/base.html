@@ -116,10 +116,10 @@
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('core.trending_posts_page') }}">Trending</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('core.on_this_day_page') }}">On This Day</a></li>
                          {% if current_user %}
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('view_friend_requests') }}">Friend Requests</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.view_friend_requests') }}">Friend Requests</a></li>
                          {% endif %}
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('create_series') }}">Create Series</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('create_post') }}">Create Post</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.create_series') }}">Create Series</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.create_post') }}">Create Post</a></li>
                         {% endif %}
                     </ul>
                     <ul class="navbar-nav">
@@ -129,15 +129,15 @@
                                 {{ current_user.username if current_user else session.username }}
                             </a>
                             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarUserDropdown">
-                                <li><a class="dropdown-item" href="{{ url_for('user_profile', username=current_user.username if current_user else session.username) }}">My Profile</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('upload_profile_picture') }}">Change Profile Picture</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('core.user_profile', username=current_user.username if current_user else session.username) }}">My Profile</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('core.upload_profile_picture') }}">Change Profile Picture</a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('core.logout') }}">Logout</a></li>
                             </ul>
                         </li>
                         {% else %}
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">Login</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('register') }}">Register</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.login') }}">Login</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('core.register') }}">Register</a></li>
                         {% endif %}
                     </ul>
                 </div>
@@ -283,7 +283,7 @@
                 bsToast.show();
             }
 
-            const eventSource = new EventSource("{{ url_for('user_notification_stream') }}");
+            const eventSource = new EventSource("{{ url_for('core.user_notification_stream') }}");
 
             eventSource.onopen = function() {
                 console.log("SSE connection established for user notifications.");
@@ -308,6 +308,7 @@
     </script>
     {% endif %}
 
+    {#
     <script>
         (function() {
             const globalPostEventSource = new EventSource("{{ url_for('api_post_stream') }}");
@@ -368,6 +369,7 @@
             });
         })();
     </script>
+    #}
     {% block scripts %}{% endblock %}
 </body>
 </html>

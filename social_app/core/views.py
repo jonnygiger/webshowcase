@@ -3796,7 +3796,11 @@ def share_file_route(receiver_username):
                 flash("File shared!", "success"); return redirect(url_for("core.files_inbox"))
             except Exception as e:
                 db.session.rollback(); current_app.logger.error(f"Error saving/sharing file: {e}"); flash("Error sharing file.", "danger")
-                if os.path.exists(file_path): try: os.remove(file_path); except OSError as ose: current_app.logger.error(f"Error removing orphaned file: {ose}")
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except OSError as ose:
+                        current_app.logger.error(f"Error removing orphaned file: {ose}")
                 return redirect(request.url)
         else: flash("File type not allowed or no file.", "danger"); return redirect(request.url)
     return render_template("share_file.html", receiver_user=receiver_user)

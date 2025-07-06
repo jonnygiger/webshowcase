@@ -137,25 +137,42 @@ class AppTestCase(unittest.TestCase):
 
     def tearDown(self):
         if hasattr(self, "socketio_client") and self.socketio_client:
+            # Check if the client is connected
             if self.socketio_client.is_connected():
-                client_sid = getattr(
-                    self.socketio_client, "sid", "N/A (sid missing despite connected)"
-                )
+                client_sid = getattr(self.socketio_client, "sid", None)
+                if client_sid:
+                    print(
+                        f"Disconnecting Flask-SocketIO test_client in tearDown. SID: {client_sid}",
+                        file=sys.stderr,
+                    )
+                    self.socketio_client.disconnect()
+                    print(
+                        "Flask-SocketIO test_client disconnected in tearDown.",
+                        file=sys.stderr,
+                    )
+                else:
+                    # Connected but no SID, attempt disconnect anyway if possible
+                    print(
+                        "Flask-SocketIO test_client in tearDown: connected but SID missing. Attempting disconnect.",
+                        file=sys.stderr,
+                    )
+                    self.socketio_client.disconnect() # disconnect might still work or clean up
+                    print(
+                        "Flask-SocketIO test_client (attempted) disconnected in tearDown.",
+                        file=sys.stderr,
+                    )
+            else:
                 print(
-                    f"Disconnecting Flask-SocketIO test_client in tearDown. SID: {client_sid}",
+                    "Flask-SocketIO test_client in tearDown: was already disconnected.",
                     file=sys.stderr,
                 )
-                self.socketio_client.disconnect()
-                print(
-                    "Flask-SocketIO test_client disconnected in tearDown.",
-                    file=sys.stderr,
-                )
-            # Removed the else block that printed "Flask-SocketIO test_client existed in tearDown but was not connected."
         else:
-            print("No socketio_client found in tearDown.", file=sys.stderr)
+            print("No socketio_client found or set in tearDown.", file=sys.stderr)
 
         with self.app.app_context():
             self.db.session.remove()
+
+        # Cleanup shared files folder
         shared_files_folder = self.app.config.get("SHARED_FILES_UPLOAD_FOLDER")
         if shared_files_folder and os.path.exists(shared_files_folder):
             for filename in os.listdir(shared_files_folder):
@@ -164,7 +181,7 @@ class AppTestCase(unittest.TestCase):
                     if os.path.isfile(file_path) or os.path.islink(file_path):
                         os.unlink(file_path)
                 except Exception as e:
-                    print(f"Failed to delete {file_path}. Reason: {e}")
+                    print(f"Failed to delete {file_path}. Reason: {e}", file=sys.stderr)
 
     def _setup_base_users(self):
         self.user1 = User(

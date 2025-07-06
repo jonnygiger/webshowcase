@@ -30,8 +30,6 @@ class TestSuggestTrendingPosts(AppTestCase): # Should inherit from AppTestCase
         self.user3 = User(
             username="user3", email="user3@example.com", password_hash="test"
         )
-        db.session.add_all([self.user1, self.user2, self.user3])
-        db.session.commit()
 
         # Current time for reference in tests
         self.now = datetime.now(timezone.utc) # Use timezone.utc for consistency

@@ -5,22 +5,16 @@ from flask import current_app
 
 from alembic import context
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
 fileConfig(config.config_file_name)
 logger = logging.getLogger("alembic.env")
 
 
 def get_engine():
     try:
-        # this works with Flask-SQLAlchemy<3 and Alchemical
         return current_app.extensions["migrate"].db.get_engine()
     except (TypeError, AttributeError):
-        # this works with Flask-SQLAlchemy>=3
         return current_app.extensions["migrate"].db.engine
 
 
@@ -31,33 +25,17 @@ def get_engine_url():
         return str(get_engine().url).replace("%", "%%")
 
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-
-# Import the db instance from your app
-from social_app import db as app_db # Corrected import path
-# Import all models here for autogenerate support
-from social_app.models import db_models # This will make models available via db_models.User, etc.
-# Alternatively, import each model explicitly:
-# from social_app.models.db_models import User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP, Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity, FlaggedContent, FriendPostNotification, TrendingHashtag, SharedFile, UserStatus, UserAchievement, Achievement, Series, SeriesPost, UserBlock, ChatRoom, ChatMessage
+from social_app import db as app_db
+from social_app.models import db_models
 
 effective_url = get_engine_url()
-# print(f"DEBUG: Effective SQLAlchemy URL: {effective_url}") # No longer needed
 config.set_main_option("sqlalchemy.url", effective_url)
 target_db = current_app.extensions[
     "migrate"
-].db  # Keep for other parts if needed, or remove if app_db is solely used
-
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+].db
 
 
 def get_metadata():
-    # Use the metadata from the imported db instance
     return app_db.metadata
 
 
@@ -88,9 +66,6 @@ def run_migrations_online():
 
     """
 
-    # this callback is used to prevent an auto-migration from being generated
-    # when there are no changes to the schema
-    # reference: http://alembic.zzzcomputing.com/en/latest/cookbook.html
     def process_revision_directives(context, revision, directives):
         if getattr(config.cmd_opts, "autogenerate", False):
             script = directives[0]

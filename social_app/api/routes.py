@@ -1,14 +1,11 @@
-# Assuming these are from common Flask libraries and local models
 from flask_restful import Resource, reqparse
 from flask import request, g, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta, timezone
 import os
 
-# import app as main_app  # Removed to break circular dependency
-# Import from the new service locations
 from ..services.notifications_service import broadcast_new_post
-from ..models.db_models import ( # Corrected model import path
+from ..models.db_models import (
     User,
     Post,
     Comment,
@@ -19,24 +16,19 @@ from ..models.db_models import ( # Corrected model import path
     Poll,
     PollOption,
     PollVote,
-    db, # db should be imported from social_app's __init__
+    db,
     PostLock,
     SharedFile,
     UserBlock,
     ChatRoom,
     ChatMessage,
 )
-# db will be available via from social_app import db if routes are registered within create_app
-# For now, assuming db is correctly accessed or will be passed/imported via social_app
 
-
-# Placeholder for UserListResource
 class UserListResource(Resource):
     def get(self):
         return {"message": "User list resource placeholder"}, 200
 
 
-# Placeholder for UserResource
 class UserResource(Resource):
     def get(self, user_id):
         return {"message": f"User resource placeholder for user_id {user_id}"}, 200
@@ -46,7 +38,7 @@ class PostListResource(Resource):
     @jwt_required()
     def post(self):
         current_user_id = int(get_jwt_identity())
-        user = db.session.get(User, current_user_id)  # Use actual User model query
+        user = db.session.get(User, current_user_id)
         if not user:
             return {"message": "User not found for provided token"}, 404
 
@@ -60,13 +52,8 @@ class PostListResource(Resource):
         db.session.add(new_post)
         db.session.commit()
 
-        # ID is auto-assigned by DB, no need to simulate.
-        # if new_post.id is None:
-        #     import random
-        #     new_post.id = random.randint(1, 1000) # Simulate ID assignment
-
         post_dict = new_post.to_dict()
-        broadcast_new_post(post_dict)  # Call imported function directly
+        broadcast_new_post(post_dict)
 
         return {"message": "Post created successfully", "post": post_dict}, 201
 
@@ -83,12 +70,6 @@ class CommentListResource(Resource):
         if not post:
             return {"message": "Post not found"}, 404
 
-        # Placeholder for block check logic
-        # Conceptually, this will check if post.author has blocked user (current_user_id)
-        # For now, using 'if False:' to avoid breaking existing functionality.
-        # This will be replaced with actual logic once UserBlock model and relationships are implemented.
-        # Example: if post.author.has_blocked(user):
-        # Check if the post author has blocked the current user
         if UserBlock.query.filter_by(
             blocker_id=post.user_id, blocked_id=user.id
         ).first():
@@ -106,17 +87,16 @@ class CommentListResource(Resource):
         db.session.add(new_comment)
         db.session.commit()
 
-        # Real-time notification for the new comment
         new_comment_data_for_post_room = {
             "id": new_comment.id,
             "post_id": new_comment.post_id,
-            "author_username": new_comment.author.username,  # Accessing via backref
+            "author_username": new_comment.author.username,
             "content": new_comment.content,
             "timestamp": new_comment.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         }
         current_app.extensions["socketio"].emit(
             "new_comment_event", new_comment_data_for_post_room, room=f"post_{post_id}"
-        )  # Use current_app
+        )
 
         comment_details = {
             "id": new_comment.id,
@@ -164,23 +144,16 @@ class PollListResource(Resource):
 
         new_poll = Poll(question=data["question"], user_id=user.id)
         db.session.add(new_poll)
-        # We need to flush to get the new_poll.id for the options if not using cascade persist for options from poll
-        # However, SQLAlchemy handles this if options are added to new_poll.options directly before committing new_poll
 
         for option_text in data["options"]:
-            if not option_text.strip():  # Ensure option text is not blank
+            if not option_text.strip():
                 return {"message": "Poll option text cannot be blank"}, 400
             poll_option = PollOption(
                 text=option_text, poll=new_poll
-            )  # Associate with new_poll
+            )
             db.session.add(
                 poll_option
-            )  # Add option explicitly if not cascaded from poll.options.append
-
-        # If Poll.options has cascade="all, delete-orphan" or similar with persist,
-        # adding options to new_poll.options and then adding new_poll to session would be enough.
-        # Let's assume explicit add for options for clarity or if cascade isn't set up for this.
-        # db.session.add(new_poll) # new_poll is already added
+            )
 
         db.session.commit()
         return {"message": "Poll created successfully", "poll": new_poll.to_dict()}, 201
@@ -213,11 +186,11 @@ class PollVoteResource(Resource):
     @jwt_required()
     def post(
         self, poll_id
-    ):  # The option_id was in the original plan, but typically it's in the request body.
+    ):
         current_user_id = int(get_jwt_identity())
         user = db.session.get(
             User, current_user_id
-        )  # Query user to ensure they exist, though jwt implies it.
+        )
         if not user:
             return {"message": "User not found"}, 404
 
@@ -278,9 +251,9 @@ class PostLockResource(Resource):
                     "locked_by_username": existing_lock.user.username,
                     "expires_at": existing_lock.expires_at.isoformat(),
                 }, 409
-            else:  # If same user OR (other user AND expired lock)
+            else:
                 db.session.delete(existing_lock)
-                db.session.flush()  # Ensure DELETE is processed before potential INSERT
+                db.session.flush()
 
         lock_duration_minutes = 15
         expires_at = datetime.now(timezone.utc) + timedelta(
@@ -299,7 +272,6 @@ class PostLockResource(Resource):
             current_app.logger.error(f"Error creating lock: {str(e)}")
             return {"message": f"Error creating lock: {str(e)}"}, 500
 
-        # Emit SocketIO event for lock acquired
         current_app.extensions["socketio"].emit(
             "post_lock_acquired",
             {
@@ -317,7 +289,6 @@ class PostLockResource(Resource):
                 "post_id": new_lock.post_id,
                 "locked_by_user_id": new_lock.user_id,
                 "locked_by_username": user.username,
-                # Ensure timestamps are aware UTC before isoformat if they are naive from DB
                 "locked_at": (
                     new_lock.locked_at.replace(tzinfo=timezone.utc).isoformat()
                     if new_lock.locked_at.tzinfo is None
@@ -348,7 +319,6 @@ class PostLockResource(Resource):
             return {"message": "Post is not currently locked."}, 404
 
         if lock_to_delete.user_id != current_user_id:
-            # Example: if user.role not in ['admin', 'moderator']:
             return {
                 "message": "You are not authorized to unlock this post as it is locked by another user.",
                 "locked_by_username": lock_to_delete.user.username,
@@ -362,7 +332,6 @@ class PostLockResource(Resource):
             current_app.logger.error(f"Error unlocking post: {str(e)}")
             return {"message": f"Error unlocking post: {str(e)}"}, 500
 
-        # Emit SocketIO event for lock released
         current_app.extensions["socketio"].emit(
             "post_lock_released",
             {
@@ -376,25 +345,21 @@ class PostLockResource(Resource):
         return {"message": "Post unlocked successfully."}, 200
 
 
-# Placeholder for PostResource
 class PostResource(Resource):
     def get(self, post_id):
         return {"message": f"Post resource placeholder for post_id {post_id}"}, 200
 
 
-# Placeholder for EventListResource
 class EventListResource(Resource):
     def get(self):
         return {"message": "Event list resource placeholder"}, 200
 
 
-# Placeholder for EventResource
 class EventResource(Resource):
     def get(self, event_id):
         return {"message": f"Event resource placeholder for event_id {event_id}"}, 200
 
 
-# RecommendationResource Implementation
 class RecommendationResource(Resource):
     def get(self):
         parser = reqparse.RequestParser()
@@ -412,18 +377,13 @@ class RecommendationResource(Resource):
         if not user:
             return {"message": f"User {user_id} not found"}, 404
 
-        # Import recommendation functions
-        # Import recommendation functions from the new service location
         from ..services.recommendations_service import (
             suggest_posts_to_read,
             suggest_groups_to_join,
             suggest_events_to_attend,
             suggest_users_to_follow,
-            # suggest_polls_to_vote, # This was noted as possibly undefined/removed earlier
         )
-        # If suggest_polls_to_vote is indeed used and defined, it should be in recommendations_service
 
-        # Call recommendation functions
         limit = 5
         raw_posts = suggest_posts_to_read(user_id, limit=limit)
         raw_groups = suggest_groups_to_join(user_id, limit=limit)
@@ -431,7 +391,6 @@ class RecommendationResource(Resource):
         raw_users = suggest_users_to_follow(user_id, limit=limit)
         raw_polls = suggest_polls_to_vote(user_id, limit=limit)
 
-        # Serialize results
         suggested_posts_data = []
         for post_obj, reason_str in raw_posts:
             suggested_posts_data.append(
@@ -479,7 +438,7 @@ class RecommendationResource(Resource):
                     "text": option.text,
                     "vote_count": len(
                         option.votes
-                    ),  # PollOption.votes is a list of PollVote objects
+                    ),
                 }
                 for option in poll_obj.options
             ]
@@ -504,16 +463,12 @@ class RecommendationResource(Resource):
         }, 200
 
 
-# Need User model for UserFeedResource, already imported at the top
-# from ..models.db_models import User # Already imported
 from ..services.recommendations_service import get_personalized_feed_posts
 
 
 class UserFeedResource(Resource):
     @jwt_required()
     def get(self, user_id):
-        # current_user_id = int(get_jwt_identity()) # Not strictly needed unless for auth checks
-
         target_user = db.session.get(User, user_id)
         if not target_user:
             return {"message": "User not found"}, 404
@@ -526,13 +481,12 @@ class UserFeedResource(Resource):
         for post, reason in posts_with_reasons:
             post_dict = post.to_dict()
             post_dict["reason_for_recommendation"] = reason
-            # Ensure timestamp is serialized
             if "timestamp" in post_dict and isinstance(
                 post_dict["timestamp"], datetime
             ):
                 post_dict["timestamp"] = (
                     post_dict["timestamp"].isoformat() + "Z"
-                )  # Assume UTC
+                )
             if (
                 "last_edited" in post_dict
                 and post_dict["last_edited"]
@@ -544,7 +498,6 @@ class UserFeedResource(Resource):
         return {"feed_posts": feed_data}, 200
 
 
-# PersonalizedFeedResource Implementation
 class PersonalizedFeedResource(Resource):
     @jwt_required()
     def get(self):
@@ -554,25 +507,21 @@ class PersonalizedFeedResource(Resource):
         if not current_user:
             return {"message": "User not found"}, 404
 
-        processed_items = {}  # Using dict to handle duplicates (type, id) -> item
+        processed_items = {}
 
-        # Get friend IDs
         friend_ids = set()
-        # Friendships initiated by the current user
         initiated_friendships = Friendship.query.filter_by(
             user_id=current_user_id, status="accepted"
         ).all()
         for f in initiated_friendships:
             friend_ids.add(f.friend_id)
-        # Friendships accepted by the current user
         accepted_friendships = Friendship.query.filter_by(
             friend_id=current_user_id, status="accepted"
         ).all()
         for f in accepted_friendships:
             friend_ids.add(f.user_id)
 
-        if friend_ids:  # Only proceed if the user has friends
-            # 1. Posts from Friends
+        if friend_ids:
             friend_posts = (
                 Post.query.filter(Post.user_id.in_(friend_ids))
                 .order_by(Post.timestamp.desc())
@@ -596,7 +545,6 @@ class PersonalizedFeedResource(Resource):
                 ):
                     processed_items[key] = item
 
-            # 2. Posts Liked by Friends
             friend_likes = (
                 Like.query.filter(Like.user_id.in_(friend_ids))
                 .order_by(Like.timestamp.desc())
@@ -622,7 +570,6 @@ class PersonalizedFeedResource(Resource):
                 ):
                     processed_items[key] = item
 
-            # 3. Posts Commented on by Friends
             friend_comments = (
                 Comment.query.filter(Comment.user_id.in_(friend_ids))
                 .order_by(Comment.timestamp.desc())
@@ -648,7 +595,6 @@ class PersonalizedFeedResource(Resource):
                 ):
                     processed_items[key] = item
 
-            # 4. Events by Friends or Friends Attending
             friend_events = (
                 Event.query.filter(Event.user_id.in_(friend_ids))
                 .order_by(Event.created_at.desc())
@@ -663,8 +609,8 @@ class PersonalizedFeedResource(Resource):
                     "description": event.description,
                     "date": (
                         event.date.isoformat() if event.date else None
-                    ),  # Serialize event.date
-                    "timestamp": event.created_at,  # This will be serialized later
+                    ),
+                    "timestamp": event.created_at,
                     "organizer_username": event.organizer.username,
                     "reason": f"Organized by your friend {event.organizer.username}",
                 }
@@ -693,8 +639,8 @@ class PersonalizedFeedResource(Resource):
                     "description": rsvp.event.description,
                     "date": (
                         rsvp.event.date.isoformat() if rsvp.event.date else None
-                    ),  # Serialize event.date
-                    "timestamp": rsvp.timestamp,  # This will be serialized later
+                    ),
+                    "timestamp": rsvp.timestamp,
                     "organizer_username": rsvp.event.organizer.username,
                     "reason": f"{rsvp.attendee.username} is attending",
                 }
@@ -705,7 +651,6 @@ class PersonalizedFeedResource(Resource):
                 ):
                     processed_items[key] = item
 
-            # 5. Polls by Friends or Friends Voted On
             friend_polls = (
                 Poll.query.filter(Poll.user_id.in_(friend_ids))
                 .order_by(Poll.created_at.desc())
@@ -739,8 +684,7 @@ class PersonalizedFeedResource(Resource):
                 .all()
             )
             for vote in friend_poll_votes:
-                # Access poll through vote.option.poll
-                if not vote.option or not vote.option.poll:  # Add check for safety
+                if not vote.option or not vote.option.poll:
                     continue
                 current_poll = vote.option.poll
                 if current_poll.user_id == current_user_id:
@@ -756,7 +700,7 @@ class PersonalizedFeedResource(Resource):
                     ],
                     "timestamp": vote.created_at,
                     "creator_username": current_poll.author.username,
-                    "reason": f"Voted on by your friend {vote.voter.username}",  # Changed vote.user to vote.voter based on model
+                    "reason": f"Voted on by your friend {vote.voter.username}",
                 }
                 key = ("poll", current_poll.id)
                 if (
@@ -778,20 +722,14 @@ class PersonalizedFeedResource(Resource):
         return {"feed_items": feed_items_list}, 200
 
 
-# Placeholder for TrendingHashtagsResource
 class TrendingHashtagsResource(Resource):
     def get(self):
-        # Actual implementation might use:
-        # from ..services.recommendations_service import get_trending_hashtags
-        # trending_data = get_trending_hashtags()
-        # return trending_data, 200
         return {"message": "Trending hashtags resource placeholder"}, 200
 
 
 from ..services.recommendations_service import get_on_this_day_content
 
 
-# OnThisDayResource Implementation
 class OnThisDayResource(Resource):
     @jwt_required()
     def get(self):
@@ -801,7 +739,6 @@ class OnThisDayResource(Resource):
         except ValueError:
             return {"message": "Invalid user identity in token"}, 400
 
-        # It's good practice to ensure the user exists, though jwt_required handles token validity.
         user = db.session.get(User, current_user_id)
         if not user:
             return {"message": "User not found for provided token"}, 404
@@ -813,14 +750,14 @@ class OnThisDayResource(Resource):
             for post_obj in content["posts"]:
                 posts_data.append(
                     post_obj.to_dict()
-                )  # Assuming Post model has to_dict()
+                )
 
         events_data = []
         if content.get("events"):
             for event_obj in content["events"]:
                 events_data.append(
                     event_obj.to_dict()
-                )  # Assuming Event model has to_dict()
+                )
 
         return {
             "on_this_day_posts": posts_data,
@@ -828,37 +765,30 @@ class OnThisDayResource(Resource):
         }, 200
 
 
-# UserStatsResource Implementation
 class UserStatsResource(Resource):
-    @jwt_required()  # Ensure this is uncommented and active
+    @jwt_required()
     def get(self, user_id):
-        current_jwt_user_id = int(get_jwt_identity())  # ID of the logged-in user
+        current_jwt_user_id = int(get_jwt_identity())
 
         if current_jwt_user_id != user_id:
-            # Future: Add admin role check here to allow admins access
-            # requesting_user = db.session.get(User, current_jwt_user_id)
-            # if not (requesting_user and requesting_user.role == 'admin'):
             return {"message": "You are not authorized to view these stats."}, 403
 
         user = db.session.get(User, user_id)
         if not user:
             return {"message": "User not found"}, 404
 
-        stats = user.get_stats()  # Assumes User model has get_stats() method
-        # Ensure all datetime objects in stats are serialized if any
+        stats = user.get_stats()
         if stats.get("join_date") and isinstance(stats["join_date"], datetime):
-            stats["join_date"] = stats["join_date"].isoformat() + "Z"  # Assume UTC
+            stats["join_date"] = stats["join_date"].isoformat() + "Z"
 
         return stats, 200
 
 
-# Placeholder for SeriesListResource
 class SeriesListResource(Resource):
     def get(self):
         return {"message": "Series list resource placeholder"}, 200
 
 
-# Placeholder for SeriesResource
 class SeriesResource(Resource):
     def get(self, series_id):
         return {
@@ -883,10 +813,8 @@ class SharedFileResource(Resource):
         if not shared_file:
             return {"message": "File not found"}, 404
 
-        # Refresh the object to ensure all attributes are loaded correctly from the DB
         db.session.refresh(shared_file)
 
-        # Authorization check: Current user must be sender or receiver
         if not (
             shared_file.sender_id == current_user_id
             or shared_file.receiver_id == current_user_id
@@ -894,7 +822,6 @@ class SharedFileResource(Resource):
             return {"message": "You are not authorized to delete this file"}, 403
 
         try:
-            # Check if the essential saved_filename attribute is present
             if not shared_file.saved_filename:
                 current_app.logger.error(
                     f"File record is incomplete (missing saved_filename) for SharedFile ID: {file_id}"
@@ -908,12 +835,11 @@ class SharedFileResource(Resource):
             )
             file_path = os.path.join(
                 upload_folder, shared_file.saved_filename
-            )  # Use saved_filename
+            )
 
             if os.path.exists(file_path):
                 os.remove(file_path)
             else:
-                # Log this inconsistency but proceed to delete DB record
                 current_app.logger.warning(
                     f"Warning: File {file_path} not found on filesystem for SharedFile ID {file_id} but DB record exists."
                 )
@@ -929,10 +855,6 @@ class SharedFileResource(Resource):
             return {
                 "message": f"An error occurred while deleting the file: {str(e)}"
             }, 500
-
-
-# Chat API Resources
-# ChatRoom and ChatMessage are now imported at the top
 
 
 class ChatRoomListResource(Resource):
@@ -968,8 +890,6 @@ class ChatRoomListResource(Resource):
         db.session.add(new_chat_room)
         try:
             db.session.commit()
-            # Optionally, emit a socketio event if other parts of the app should react to new rooms
-            # current_app.extensions['socketio'].emit('new_chat_room_created', new_chat_room.to_dict(), broadcast=True)
             return {
                 "message": "Chat room created successfully.",
                 "chat_room": new_chat_room.to_dict(),
@@ -991,11 +911,10 @@ class ChatRoomMessagesResource(Resource):
         if not chat_room:
             return {"message": "Chat room not found"}, 404
 
-        # Implement pagination for messages
         page = request.args.get("page", 1, type=int)
         per_page = request.args.get(
             "per_page", 20, type=int
-        )  # Default 20 messages per page
+        )
 
         messages_query = ChatMessage.query.filter_by(room_id=room_id).order_by(
             ChatMessage.timestamp.desc(), ChatMessage.id.desc()
@@ -1005,8 +924,6 @@ class ChatRoomMessagesResource(Resource):
         )
 
         messages_data = [message.to_dict() for message in paginated_messages.items]
-        # Reverse for chronological order in display if needed by frontend, or handle in frontend
-        # messages_data.reverse()
 
         return {
             "room_id": room_id,
@@ -1018,11 +935,7 @@ class ChatRoomMessagesResource(Resource):
             "total_messages": paginated_messages.total,
         }, 200
 
-    # POST to this resource (i.e., sending a message to a room) is typically handled via SocketIO
-    # for real-time communication. If a RESTful way to post messages is also desired,
-    # it could be implemented here, but it's often redundant with SocketIO.
 
-# JWT Based API Login Resource (moved from app.py's /api/login route)
 from flask_jwt_extended import create_access_token
 from werkzeug.security import check_password_hash
 

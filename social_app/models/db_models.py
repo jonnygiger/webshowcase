@@ -1,30 +1,26 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_login import UserMixin  # Import UserMixin
+from flask_login import UserMixin
 from social_app import db
 
-# Association table for User-Group many-to-many relationship
 group_members = db.Table(
     "group_members",
     db.Column("user_id", db.Integer, db.ForeignKey("user.id"), primary_key=True),
     db.Column("group_id", db.Integer, db.ForeignKey("group.id"), primary_key=True),
 )
 
-
-# Association table for Series and Post
 class SeriesPost(db.Model):
     __tablename__ = "series_posts"
     series_id = db.Column(db.Integer, db.ForeignKey("series.id"), primary_key=True)
     post_id = db.Column(db.Integer, db.ForeignKey("post.id"), primary_key=True)
-    order = db.Column(db.Integer, nullable=False)  # Order of the post in the series
+    order = db.Column(db.Integer, nullable=False)
 
     series = db.relationship("Series", back_populates="series_post_entries")
     post = db.relationship("Post", back_populates="series_post_entries")
 
     def __repr__(self):
         return f"<SeriesPost series_id={self.series_id} post_id={self.post_id} order={self.order}>"
-
 
 class Group(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -33,18 +29,15 @@ class Group(db.Model):
     creator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
-    # Relationship to User (creator)
     creator = db.relationship("User", back_populates="created_groups")
 
-    # Relationship to User (members) via association table
     members = db.relationship(
         "User",
         secondary=group_members,
-        lazy="dynamic",  # Allows for further querying
+        lazy="dynamic",
         back_populates="joined_groups",
     )
 
-    # Relationship to GroupMessage
     # messages = db.relationship('GroupMessage', backref='group', lazy='dynamic', cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -60,23 +53,20 @@ class Group(db.Model):
             "creator_username": self.creator.username if self.creator else None,
         }
 
-
-class User(UserMixin, db.Model):  # Inherit from UserMixin
+class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=True)  # Added email field
+    email = db.Column(db.String(120), unique=True, nullable=True)
     password_hash = db.Column(
         db.String(255), nullable=False
-    )  # Increased length for potentially longer hashes
+    )
     profile_picture = db.Column(
         db.String(255), nullable=True
-    )  # Path to profile picture
-    # uploaded_images can be a relationship if Image is a model, or a JSON/string field
-    # For now, let's assume it's not a direct DB relationship in this phase
+    )
     uploaded_images = db.Column(
         db.Text, nullable=True
-    )  # Path to images, comma-separated
-    bio = db.Column(db.Text, nullable=True)  # User's biography
+    )
+    bio = db.Column(db.Text, nullable=True)
 
     posts = db.relationship("Post", backref="author", lazy=True)
     comments = db.relationship("Comment", backref="author", lazy=True)
@@ -100,39 +90,35 @@ class User(UserMixin, db.Model):  # Inherit from UserMixin
     )
     activities = db.relationship(
         "UserActivity", foreign_keys="UserActivity.user_id", backref="user", lazy=True
-    )  # Explicit foreign_keys
+    )
 
-    # Friendship relationships
     sent_friend_requests = db.relationship(
         "Friendship",
         foreign_keys="Friendship.user_id",
-        backref="requester",  # This will add a 'requester' attribute to Friendship instances
+        backref="requester",
         lazy="dynamic",
-        cascade="all, delete-orphan",  # If a User is deleted, their sent requests are deleted
+        cascade="all, delete-orphan",
     )
     received_friend_requests = db.relationship(
         "Friendship",
         foreign_keys="Friendship.friend_id",
-        backref="requested",  # This will add a 'requested' attribute to Friendship instances
+        backref="requested",
         lazy="dynamic",
-        cascade="all, delete-orphan",  # If a User is deleted, their received requests are deleted
+        cascade="all, delete-orphan",
     )
 
-    # Group relationships
     created_groups = db.relationship(
         "Group", back_populates="creator", lazy=True, foreign_keys="Group.creator_id"
     )
     joined_groups = db.relationship(
         "Group",
         secondary=group_members,
-        lazy="dynamic",  # Allows for further querying
+        lazy="dynamic",
         back_populates="members",
     )
 
-    # Role field
-    role = db.Column(db.String(80), nullable=False, default="user")  # Added role field
+    role = db.Column(db.String(80), nullable=False, default="user")
 
-    # FlaggedContent relationships
     flags_submitted = db.relationship(
         "FlaggedContent",
         foreign_keys="FlaggedContent.flagged_by_user_id",
@@ -146,10 +132,8 @@ class User(UserMixin, db.Model):  # Inherit from UserMixin
         lazy="dynamic",
     )
 
-    # Relationship to GroupMessage
     # group_messages = db.relationship('GroupMessage', backref='user', lazy='dynamic', cascade="all, delete-orphan")
 
-    # UserStatus relationship
     statuses = db.relationship(
         "UserStatus",
         backref="user",
@@ -158,12 +142,10 @@ class User(UserMixin, db.Model):  # Inherit from UserMixin
         order_by="UserStatus.timestamp.desc()",
     )
 
-    # Series relationship
     series_created = db.relationship(
         "Series", back_populates="author", lazy="dynamic", cascade="all, delete-orphan"
     )
 
-    # SharedFile relationships
     sent_files = db.relationship(
         "SharedFile",
         foreign_keys="SharedFile.sender_id",
@@ -179,12 +161,10 @@ class User(UserMixin, db.Model):  # Inherit from UserMixin
         cascade="all, delete-orphan",
     )
 
-    # UserAchievements relationship
     achievements = db.relationship(
         "UserAchievement", back_populates="user", lazy="dynamic"
     )
 
-    # UserBlock relationships
     blocked_users = db.relationship(
         "UserBlock",
         foreign_keys="UserBlock.blocker_id",
@@ -215,11 +195,10 @@ class User(UserMixin, db.Model):  # Inherit from UserMixin
         return {
             "id": self.id,
             "username": self.username,
-            "email": self.email,  # Added email to dict
+            "email": self.email,
             "profile_picture": self.profile_picture,
             "uploaded_images": self.uploaded_images,
             "bio": self.bio,
-            # Add other fields if they are simple and non-sensitive
         }
 
     def get_stats(self):
@@ -237,59 +216,52 @@ class User(UserMixin, db.Model):  # Inherit from UserMixin
 
     def get_friends(self):
         friends = []
-        # Friendships this user initiated and were accepted
-        # Accessing User model via fs.requested.id (or fs.requested directly)
         accepted_sent_requests = Friendship.query.filter_by(
             user_id=self.id, status="accepted"
         ).all()
         for fs in accepted_sent_requests:
-            friends.append(fs.requested)  # fs.requested should be the User instance
+            friends.append(fs.requested)
 
-        # Friendships this user received and accepted
-        # Accessing User model via fs.requester.id (or fs.requester directly)
         accepted_received_requests = Friendship.query.filter_by(
             friend_id=self.id, status="accepted"
         ).all()
         for fs in accepted_received_requests:
-            friends.append(fs.requester)  # fs.requester should be the User instance
+            friends.append(fs.requester)
 
-        # Deduplicate in case of any unforeseen issues, though logic should prevent it
         return list(set(friends))
 
     def get_current_status(self):
         """Returns the user's most recent status, or None if none exist."""
         return self.statuses.first()
 
-
 class UserActivity(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     activity_type = db.Column(
         db.String(50), nullable=False
-    )  # e.g., "new_post", "new_comment", "new_event"
+    )
     related_id = db.Column(
         db.Integer, nullable=True
-    )  # e.g., post_id, comment_id, event_id
+    )
     target_user_id = db.Column(
         db.Integer,
         db.ForeignKey("user.id", name="fk_user_activity_target_user_id_user"),
         nullable=True,
-    )  # Added target_user_id and FK name
+    )
     content_preview = db.Column(
         db.Text, nullable=True
-    )  # e.g., a snippet of the post or comment
-    link = db.Column(db.String(255), nullable=True)  # e.g., URL to the post or event
+    )
+    link = db.Column(db.String(255), nullable=True)
     timestamp = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
     target_user = db.relationship(
         "User", foreign_keys=[target_user_id]
-    )  # Added target_user relationship
+    )
 
     def __repr__(self):
         return f"<UserActivity {self.id} - User {self.user_id}, Type: {self.activity_type}>"
-
 
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -300,10 +272,10 @@ class Post(db.Model):
     )
     last_edited = db.Column(db.DateTime, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    hashtags = db.Column(db.Text, nullable=True)  # Stores comma-separated hashtags
+    hashtags = db.Column(db.Text, nullable=True)
     is_featured = db.Column(db.Boolean, default=False)
     featured_at = db.Column(db.DateTime, nullable=True)
-    image_url = db.Column(db.String(255), nullable=True)  # Added image_url field
+    image_url = db.Column(db.String(255), nullable=True)
 
     comments = db.relationship(
         "Comment", backref="post", lazy=True, cascade="all, delete-orphan"
@@ -321,7 +293,6 @@ class Post(db.Model):
         "Bookmark", backref="post", lazy=True, cascade="all, delete-orphan"
     )
 
-    # Relationship to Series via series_posts association table
     series_post_entries = db.relationship(
         "SeriesPost",
         back_populates="post",
@@ -333,7 +304,6 @@ class Post(db.Model):
     def series_associated_with(self):
         return [entry.series for entry in self.series_post_entries]
 
-    # Relationship to PostLock
     lock_info = db.relationship(
         "PostLock", uselist=False, backref="post_locked", cascade="all, delete-orphan"
     )
@@ -342,7 +312,6 @@ class Post(db.Model):
         return f"<Post {self.title}>"
 
     def to_dict(self):
-        # Ensure content is not None before trying to slice it
         snippet = ""
         if self.content:
             snippet = (
@@ -352,18 +321,17 @@ class Post(db.Model):
         return {
             "id": self.id,
             "title": self.title,
-            # 'content': self.content, # Removed full content
             "content_snippet": snippet,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "last_edited": self.last_edited.isoformat() if self.last_edited else None,
             "user_id": self.user_id,
             "author_username": (
                 self.author.username if self.author else None
-            ),  # Assumes self.author relationship exists
+            ),
             "hashtags": self.hashtags,
             "is_featured": self.is_featured,
             "featured_at": self.featured_at.isoformat() if self.featured_at else None,
-            "image_url": self.image_url,  # Added image_url to to_dict
+            "image_url": self.image_url,
         }
 
     def to_dict_simple(self):
@@ -376,12 +344,10 @@ class Post(db.Model):
     def is_locked(self):
         """Checks if the post is currently actively locked."""
         if self.lock_info and self.lock_info.expires_at:
-            # Assume expires_at from DB is naive UTC, make it aware
             expires_at_aware = self.lock_info.expires_at.replace(tzinfo=timezone.utc)
             if expires_at_aware > datetime.now(timezone.utc):
                 return True
         return False
-
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -394,7 +360,6 @@ class Comment(db.Model):
 
     def __repr__(self):
         return f"<Comment {self.id} by User {self.user_id} on Post {self.post_id}>"
-
 
 class Like(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -409,10 +374,9 @@ class Like(db.Model):
     def __repr__(self):
         return f"<Like User {self.user_id} Post {self.post_id}>"
 
-
 class Review(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    rating = db.Column(db.Integer, nullable=False)  # Assuming 1-5
+    rating = db.Column(db.Integer, nullable=False)
     review_text = db.Column(db.Text, nullable=True)
     timestamp = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
@@ -422,7 +386,6 @@ class Review(db.Model):
 
     def __repr__(self):
         return f"<Review {self.id} by User {self.user_id} for Post {self.post_id}>"
-
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -437,7 +400,6 @@ class Message(db.Model):
     def __repr__(self):
         return f"<Message {self.id} from {self.sender_id} to {self.receiver_id}>"
 
-
 class Poll(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     question = db.Column(db.String(255), nullable=False)
@@ -446,7 +408,7 @@ class Poll(db.Model):
     )
     user_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
-    )  # Author of the poll
+    )
 
     options = db.relationship(
         "PollOption", backref="poll", lazy=True, cascade="all, delete-orphan"
@@ -465,7 +427,6 @@ class Poll(db.Model):
             "options": [option.to_dict() for option in self.options],
         }
 
-
 class PollOption(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     text = db.Column(db.String(255), nullable=False)
@@ -481,18 +442,12 @@ class PollOption(db.Model):
     def to_dict(self):
         return {"id": self.id, "text": self.text, "vote_count": len(self.votes)}
 
-
 class PollVote(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     poll_option_id = db.Column(
         db.Integer, db.ForeignKey("poll_option.id"), nullable=False
     )
-
-    # To ensure a user can vote only once per poll, we need a constraint.
-    # This can be achieved by a unique constraint on (user_id, poll_id derived through poll_option_id).
-    # A direct unique constraint on (user_id, poll_id) is cleaner if poll_id is directly on PollVote.
-    # Let's add poll_id to PollVote for easier constraint definition.
     poll_id = db.Column(db.Integer, db.ForeignKey("poll.id"), nullable=False)
     created_at = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
@@ -503,20 +458,18 @@ class PollVote(db.Model):
     def __repr__(self):
         return f"<PollVote by User {self.user_id} for Option {self.poll_option_id} in Poll {self.poll_id}>"
 
-
 class Event(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
-    date = db.Column(db.DateTime, nullable=False)  # Changed to DateTime
-    # time field is removed as it's part of the date (DateTime object)
+    date = db.Column(db.DateTime, nullable=False)
     location = db.Column(db.String(200), nullable=True)
     created_at = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
     user_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
-    )  # Organizer
+    )
 
     rsvps = db.relationship(
         "EventRSVP", backref="event", lazy=True, cascade="all, delete-orphan"
@@ -532,20 +485,18 @@ class Event(db.Model):
             "description": self.description,
             "date": (
                 self.date.isoformat() if self.date else None
-            ),  # Format DateTime to ISO string
-            # "time": self.time, # Removed
+            ),
             "location": self.location,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "user_id": self.user_id,
             "organizer_username": self.organizer.username if self.organizer else None,
         }
 
-
 class EventRSVP(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     status = db.Column(
         db.String(50), nullable=False
-    )  # e.g., "Attending", "Maybe", "Not Attending"
+    )
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False)
     timestamp = db.Column(
@@ -559,21 +510,17 @@ class EventRSVP(db.Model):
     def __repr__(self):
         return f"<EventRSVP User {self.user_id} for Event {self.event_id} status {self.status}>"
 
-
 class Reaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    emoji = db.Column(db.String(10), nullable=False)  # Emoji character
+    emoji = db.Column(db.String(10), nullable=False)
     timestamp = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
 
-    # Relationships are defined in User and Post models via backref
-
     def __repr__(self):
         return f"<Reaction {self.emoji} by User {self.user_id} on Post {self.post_id}>"
-
 
 class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -581,17 +528,15 @@ class Notification(db.Model):
     timestamp = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
-    type = db.Column(db.String(50), nullable=False)  # e.g., 'new_post', 'new_event'
-    related_id = db.Column(db.Integer, nullable=True)  # e.g., post_id, event_id
+    type = db.Column(db.String(50), nullable=False)
+    related_id = db.Column(db.Integer, nullable=True)
     is_read = db.Column(db.Boolean, default=False, nullable=False)
-    # If notifications can be user-specific (which they often are)
     user_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=True
-    )  # Nullable if system-wide, or target all users
+    )
 
     def __repr__(self):
         return f"<Notification {self.id} type {self.type}>"
-
 
 class TodoItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -612,19 +557,6 @@ class TodoItem(db.Model):
     def __repr__(self):
         return f"<TodoItem {self.id}: {self.task[:30]}>"
 
-
-# Note: The `uploaded_images` field in User and image handling in general might need a dedicated Image model
-# if images have metadata, need to be queried independently, etc. For now, it's a comma-separated string.
-# The `generate_password_hash` and `check_password_hash` would be methods on the User model or helpers used during user registration/login.
-# `session` related logic remains in `app.py` routes.
-# `app.config` settings remain in `app.py`.
-# The scheduler and SocketIO setup remain in `app.py`.
-# Global counters like `app.blog_post_id_counter` will be replaced by auto-incrementing primary keys.
-# The `generate_activity_summary` function will need to be updated to query the database.
-# Login_required decorator remains the same.
-# Route logic will change significantly to use DB queries.
-
-
 class Series(db.Model):
     __tablename__ = "series"
     id = db.Column(db.Integer, primary_key=True)
@@ -638,10 +570,8 @@ class Series(db.Model):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    # Relationship to User (author)
     author = db.relationship("User", back_populates="series_created")
 
-    # Relationship to Posts via series_posts association table
     series_post_entries = db.relationship(
         "SeriesPost",
         back_populates="series",
@@ -673,7 +603,6 @@ class Series(db.Model):
             ],
         }
 
-
 class Bookmark(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -689,7 +618,6 @@ class Bookmark(db.Model):
     def __repr__(self):
         return f"<Bookmark User {self.user_id} Post {self.post_id}>"
 
-
 class SharedPost(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     original_post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
@@ -699,11 +627,9 @@ class SharedPost(db.Model):
     )
     sharing_user_comment = db.Column(db.Text, nullable=True)
 
-    # Relationship to the original Post
     original_post = db.relationship(
         "Post", backref=db.backref("shares", lazy="dynamic")
     )
-    # Relationship to the User who shared the post
     sharing_user = db.relationship(
         "User", backref=db.backref("shared_posts", lazy="dynamic")
     )
@@ -711,20 +637,18 @@ class SharedPost(db.Model):
     def __repr__(self):
         return f"<SharedPost id={self.id} original_post_id={self.original_post_id} shared_by_user_id={self.shared_by_user_id}>"
 
-
 class Friendship(db.Model):
-    __tablename__ = "friendship"  # Explicitly name the table
+    __tablename__ = "friendship"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     friend_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     status = db.Column(
         db.String(20), nullable=False, default="pending"
-    )  # e.g., pending, accepted, rejected
+    )
     timestamp = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
-    # To prevent a user from being their own friend or having duplicate requests
     __table_args__ = (
         db.UniqueConstraint("user_id", "friend_id", name="uq_user_friend"),
         db.CheckConstraint("user_id != friend_id", name="ck_user_not_friend_self"),
@@ -733,30 +657,28 @@ class Friendship(db.Model):
     def __repr__(self):
         return f"<Friendship {self.user_id} to {self.friend_id} - {self.status}>"
 
-
 class FlaggedContent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    content_type = db.Column(db.String(50), nullable=False)  # e.g., 'post', 'comment'
+    content_type = db.Column(db.String(50), nullable=False)
     content_id = db.Column(
         db.Integer, nullable=False
-    )  # ID of the flagged post or comment
+    )
     flagged_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     reason = db.Column(db.Text, nullable=True)
     status = db.Column(
         db.String(50), nullable=False, default="pending"
-    )  # e.g., 'pending', 'approved', 'rejected'
+    )
     timestamp = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
     moderator_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=True
-    )  # User who resolved it
+    )
     moderator_comment = db.Column(
         db.Text, nullable=True
-    )  # Why it was approved/rejected
+    )
     resolved_at = db.Column(db.DateTime, nullable=True)
 
-    # Relationships to User
     flagged_by_user = db.relationship(
         "User", foreign_keys=[flagged_by_user_id], back_populates="flags_submitted"
     )
@@ -767,24 +689,22 @@ class FlaggedContent(db.Model):
     def __repr__(self):
         return f"<FlaggedContent {self.id} ({self.content_type} {self.content_id}) by User {self.flagged_by_user_id} - Status: {self.status}>"
 
-
 class FriendPostNotification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
-    )  # User receiving the notification
+    )
     post_id = db.Column(
         db.Integer, db.ForeignKey("post.id"), nullable=False
-    )  # The post that was created
+    )
     poster_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
-    )  # User who created the post
+    )
     timestamp = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     is_read = db.Column(db.Boolean, default=False, nullable=False)
 
-    # Relationships
     user = db.relationship(
         "User",
         foreign_keys=[user_id],
@@ -803,7 +723,6 @@ class FriendPostNotification(db.Model):
 
     def __repr__(self):
         return f"<FriendPostNotification id={self.id} user_id={self.user_id} post_id={self.post_id} poster_id={self.poster_id} is_read={self.is_read}>"
-
 
 class TrendingHashtag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -830,7 +749,6 @@ class TrendingHashtag(db.Model):
             ),
         }
 
-
 class SharedFile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sender_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -853,7 +771,6 @@ class SharedFile(db.Model):
     def __repr__(self):
         return f"<SharedFile {self.id} from {self.sender_id} to {self.receiver_id} - {self.original_filename}>"
 
-
 class UserStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -866,20 +783,18 @@ class UserStatus(db.Model):
     def __repr__(self):
         return f"<UserStatus {self.id} by User {self.user_id}>"
 
-
 class Achievement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
     description = db.Column(db.Text, nullable=False)
     icon_url = db.Column(
         db.String(255), nullable=True
-    )  # Placeholder for icon path or class
+    )
     criteria_type = db.Column(
         db.String(50), nullable=False
-    )  # e.g., 'num_posts', 'num_comments_given'
-    criteria_value = db.Column(db.Integer, nullable=False)  # e.g., 1, 10, 25
+    )
+    criteria_value = db.Column(db.Integer, nullable=False)
 
-    # Relationship to users who earned this achievement
     earned_by_users = db.relationship(
         "UserAchievement", back_populates="achievement", lazy="dynamic"
     )
@@ -897,7 +812,6 @@ class Achievement(db.Model):
             "criteria_value": self.criteria_value,
         }
 
-
 class UserAchievement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -908,7 +822,6 @@ class UserAchievement(db.Model):
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
-    # Relationships
     user = db.relationship("User", back_populates="achievements")
     achievement = db.relationship("Achievement", back_populates="earned_by_users")
 
@@ -933,46 +846,40 @@ class UserAchievement(db.Model):
             "awarded_at": self.awarded_at.isoformat(),
         }
 
-
 class PostLock(db.Model):
     __tablename__ = "post_lock"
     id = db.Column(db.Integer, primary_key=True)
     post_id = db.Column(
         db.Integer, db.ForeignKey("post.id"), nullable=False, unique=True
-    )  # A post can only have one lock
+    )
     user_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
-    )  # User who holds the lock
+    )
     locked_at = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     expires_at = db.Column(
         db.DateTime, nullable=False
-    )  # When the lock automatically expires
+    )
 
-    # Relationship to User who locked the post
     user = db.relationship("User", backref=db.backref("post_locks", lazy="dynamic"))
-
-    # Note: The backref 'post_locked' is already defined in Post.lock_info
 
     def __repr__(self):
         return f"<PostLock id={self.id} post_id={self.post_id} user_id={self.user_id} expires_at={self.expires_at}>"
-
 
 class UserBlock(db.Model):
     __tablename__ = "user_block"
     id = db.Column(db.Integer, primary_key=True)
     blocker_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
-    )  # The user performing the block
+    )
     blocked_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=False
-    )  # The user being blocked
+    )
     timestamp = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
-    # Relationships to User
     blocker = db.relationship(
         "User", foreign_keys=[blocker_id], back_populates="blocked_users"
     )
@@ -990,7 +897,6 @@ class UserBlock(db.Model):
     def __repr__(self):
         return f"<UserBlock blocker_id={self.blocker_id} blocked_id={self.blocked_id}>"
 
-
 class ChatRoom(db.Model):
     __tablename__ = "chat_room"
     id = db.Column(db.Integer, primary_key=True)
@@ -998,7 +904,7 @@ class ChatRoom(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     creator_id = db.Column(
         db.Integer, db.ForeignKey("user.id"), nullable=True
-    )  # Can be null for system-generated rooms
+    )
 
     messages = db.relationship(
         "ChatMessage", backref="room", lazy="dynamic", cascade="all, delete-orphan"
@@ -1018,7 +924,6 @@ class ChatRoom(db.Model):
             "creator_id": self.creator_id,
             "creator_username": self.creator.username if self.creator else "System",
         }
-
 
 class ChatMessage(db.Model):
     __tablename__ = "chat_message"

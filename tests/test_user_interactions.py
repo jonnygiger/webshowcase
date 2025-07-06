@@ -74,7 +74,7 @@ class TestUserInteractions(AppTestCase):
             )
 
             # Verify it was created by fetching it using the ID in the current session context
-            block_instance_check = UserBlock.query.get(block_id)
+            block_instance_check = db.session.get(UserBlock, block_id)
             self.assertIsNotNone(
                 block_instance_check,
                 "Block instance not found after creation using its ID.",
@@ -92,7 +92,7 @@ class TestUserInteractions(AppTestCase):
             )  # unblock_user redirects to profile
 
             # Verify the block is removed from DB using the block_id
-            self.assertIsNone(UserBlock.query.get(block_id))
+            self.assertIsNone(db.session.get(UserBlock, block_id))
 
             # Verify flash message
             self.assertIn(

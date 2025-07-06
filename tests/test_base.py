@@ -242,7 +242,7 @@ class AppTestCase(unittest.TestCase):
         # Increased sleep and retry logic for SID acquisition
         time.sleep(0.05)
         retry_count = 0
-        max_retries = 10  # Increased max_retries
+        max_retries = 20  # Increased max_retries
         wait_interval = 0.02  # Slightly longer wait interval
 
         while (

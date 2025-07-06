@@ -1,32 +1,21 @@
-from flask import request, session, current_app
+from flask import request, session, current_app, g
 from flask_socketio import emit, join_room, leave_room
-from flask_login import current_user # Assuming flask_login's current_user for SocketIO
+# from flask_login import current_user # Removed
 from functools import wraps
 from datetime import datetime, timezone
 
 from .. import socketio, db # Import from social_app parent package
 from ..models.db_models import User, ChatRoom, ChatMessage, Post, PostLock # Import necessary models
-
-# Decorator for SocketIO login required (similar to the one in app.py)
-# This uses flask_login.current_user which should be integrated with Flask-SocketIO
-def login_required_socketio(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated:
-            current_app.logger.warning(f"SocketIO: Unauthenticated access attempt to '{f.__name__}' from SID {request.sid}. Emitting 'unauthorized_error'.")
-            emit('unauthorized_error', {'message': 'User not authenticated for this action.'}, room=request.sid)
-            return False # Indicate failure / stop processing
-        return f(*args, **kwargs)
-    return decorated_function
+from .socketio_auth import jwt_required_socketio # Added
 
 # SocketIO event handlers previously in app.py
 
 @socketio.on("join_chat_room")
-@login_required_socketio # Protect this handler
+@jwt_required_socketio # Changed
 def handle_join_chat_room_event(data):
+    user = g.socketio_user # Changed
     room_name = data.get("room_name") # e.g., "chat_room_1"
-    # current_user is available due to login_required_socketio and Flask-SocketIO integration
-    username = current_user.username
+    username = user.username # Changed
 
     if not room_name:
         current_app.logger.error(f"SocketIO: Join chat room event failed: room_name missing. SID: {request.sid}, User: {username}")
@@ -34,15 +23,16 @@ def handle_join_chat_room_event(data):
         return
 
     join_room(room_name)
-    current_app.logger.info(f"SocketIO: User '{username}' (ID: {current_user.id}, SID: {request.sid}) joined chat room: '{room_name}'")
+    current_app.logger.info(f"SocketIO: User '{username}' (ID: {user.id}, SID: {request.sid}) joined chat room: '{room_name}'")
     socketio.emit("user_joined_chat", {"username": username, "room": room_name}, room=room_name)
 
 
 @socketio.on("leave_chat_room")
-@login_required_socketio # Protect this handler
+@jwt_required_socketio # Changed
 def handle_leave_chat_room_event(data):
+    user = g.socketio_user # Changed
     room_name = data.get("room_name")
-    username = current_user.username
+    username = user.username # Changed
 
     if not room_name:
         current_app.logger.error(f"SocketIO: Leave chat room event failed: room_name missing. SID: {request.sid}, User: {username}")
@@ -50,17 +40,18 @@ def handle_leave_chat_room_event(data):
         return
 
     # leave_room(room_name) # This is managed by Flask-SocketIO if client disconnects or explicitly calls leave.
-    current_app.logger.info(f"SocketIO: User '{username}' (ID: {current_user.id}, SID: {request.sid}) left chat room: '{room_name}' (notified others)")
+    current_app.logger.info(f"SocketIO: User '{username}' (ID: {user.id}, SID: {request.sid}) left chat room: '{room_name}' (notified others)")
     socketio.emit("user_left_chat", {"username": username, "room": room_name}, room=room_name)
 
 
 @socketio.on("send_chat_message")
-@login_required_socketio # Protect this handler
+@jwt_required_socketio # Changed
 def handle_send_chat_message_event(data):
+    user = g.socketio_user # Changed
     room_name = data.get("room_name")
     message_text = data.get("message")
-    username = current_user.username
-    user_id = current_user.id
+    username = user.username # Changed
+    user_id = user.id # Changed
 
     if not room_name or not message_text:
         current_app.logger.error(f"SocketIO: Send chat message event failed: room_name='{room_name}', message empty? {not message_text}. SID: {request.sid}, User: {username}")
@@ -100,97 +91,69 @@ def handle_send_chat_message_event(data):
 
 
 @socketio.on("join_room") # Generic room joining, used by some features like user-specific notifications
-@login_required_socketio
+@jwt_required_socketio # Changed
 def handle_join_room_event(data): # Name kept generic from app.py
+    user = g.socketio_user # Changed
     room = data.get("room")
     if not room:
-        current_app.logger.warning(f"SocketIO: 'join_room' event from user {current_user.username} (SID: {request.sid}) missing 'room' data.")
+        current_app.logger.warning(f"SocketIO: 'join_room' event from user {user.username} (SID: {request.sid}) missing 'room' data.")
         return
     join_room(room)
-    current_app.logger.info(f"SocketIO: User {current_user.username} (SID: {request.sid}) joined generic room: {room}")
+    current_app.logger.info(f"SocketIO: User {user.username} (SID: {request.sid}) joined generic room: {room}")
 
 
 @socketio.on("join_group_chat")
-@login_required_socketio
+@jwt_required_socketio # Changed
 def handle_join_group_chat_event(data):
+    user = g.socketio_user # Changed
     group_id = data.get("group_id")
     if not group_id:
-        current_app.logger.error(f"SocketIO: join_group_chat event from {current_user.username} (SID: {request.sid}) received without group_id")
+        current_app.logger.error(f"SocketIO: join_group_chat event from {user.username} (SID: {request.sid}) received without group_id")
         emit('error_event', {'message': 'Group ID is missing.'}, room=request.sid)
         return
 
     room_name = f"group_chat_{group_id}"
     join_room(room_name)
-    current_app.logger.info(f"SocketIO: User '{current_user.username}' (SID: {request.sid}) joined group chat room: '{room_name}'")
+    current_app.logger.info(f"SocketIO: User '{user.username}' (SID: {request.sid}) joined group chat room: '{room_name}'")
     # socketio.emit('user_joined_group_notification', {'username': current_user.username, 'group_id': group_id}, room=room_name) # Optional: notify room
 
 
 @socketio.on("send_group_message")
-@login_required_socketio
+@jwt_required_socketio # Changed
 def handle_send_group_message_event(data):
+    user = g.socketio_user # Changed
     group_id = data.get("group_id")
     message_content = data.get("message_content")
 
     if not group_id:
-        current_app.logger.error(f"SocketIO: User {current_user.username} (SID: {request.sid}) tried to send group message without group_id.")
+        current_app.logger.error(f"SocketIO: User {user.username} (SID: {request.sid}) tried to send group message without group_id.")
         emit('error_event', {'message': 'Group ID is missing.'}, room=request.sid)
         return
     if not message_content or not message_content.strip():
         # Optionally inform user their message was empty, or just ignore silently
-        current_app.logger.info(f"SocketIO: User {current_user.username} (SID: {request.sid}) tried to send empty message to group {group_id}.")
+        current_app.logger.info(f"SocketIO: User {user.username} (SID: {request.sid}) tried to send empty message to group {group_id}.")
         return
 
     # Note: Original app.py did not save group messages. Keeping that behavior.
     room_name = f"group_chat_{group_id}"
     message_payload = {
-        "message_content": message_content.strip(), "sender_username": current_user.username,
+        "message_content": message_content.strip(), "sender_username": user.username, # Changed
         "timestamp": datetime.now(timezone.utc).isoformat(), # Use isoformat for consistency
-        "group_id": group_id, "user_id": current_user.id,
+        "group_id": group_id, "user_id": user.id, # Changed
         "message_id": "temp_id_" + datetime.now(timezone.utc).isoformat(), # Temporary ID
     }
     socketio.emit("receive_group_message", message_payload, room=room_name)
-    current_app.logger.info(f"SocketIO: User '{current_user.username}' (SID: {request.sid}) sent (unsaved) message to group {group_id}: '{message_content}'")
+    current_app.logger.info(f"SocketIO: User '{user.username}' (SID: {request.sid}) sent (unsaved) message to group {group_id}: '{message_content}'")
 
 
 @socketio.on("edit_post_content")
-# No @login_required_socketio here because original app.py had custom token + session auth logic
+@jwt_required_socketio # Changed
 def handle_edit_post_content(data):
-    # This handler needs careful review of its auth logic.
-    # It used a mix of JWT token from data and session auth.
-    # For now, replicating the logic. `decode_token` would need to be imported or defined.
-    # `decode_token` likely comes from `flask_jwt_extended`.
-    from flask_jwt_extended import decode_token # Assuming this is the one
+    # Removed custom auth logic, user is now in g.socketio_user
+    user = g.socketio_user # Added
+    user_id_to_auth = user.id # Use authed user's ID
 
-    user_id_to_auth = None # Renamed to avoid confusion with current_user
-    token = data.get("token")
-    current_app.logger.debug(f"SocketIO: handle_edit_post_content. Data: {data}, SID: {request.sid}")
-
-    if token:
-        try:
-            decoded_token = decode_token(token)
-            identity = decoded_token["sub"]
-            if isinstance(identity, str) and identity.isdigit(): user_id_to_auth = int(identity)
-            elif isinstance(identity, int): user_id_to_auth = identity
-            else: current_app.logger.warning(f"Token for edit_post_content invalid sub: {identity}")
-        except Exception as e:
-            current_app.logger.error(f"Token validation failed for edit_post_content: {e}")
-            emit('edit_error', {'message': f"Token error: {str(e)}"}, room=request.sid); return
-
-    if not user_id_to_auth: # Fallback to session if token auth failed or no token
-        if current_user.is_authenticated: # Check Flask-Login's current_user
-             user_id_to_auth = current_user.id
-             current_app.logger.debug(f"SocketIO: Edit auth using current_user.id: {user_id_to_auth}")
-        else: # Fallback to raw session if current_user is not authenticated (e.g. if LoginManager setup is incomplete for SocketIO)
-            user_id_from_session = session.get("user_id")
-            if user_id_from_session:
-                user_id_to_auth = user_id_from_session
-                current_app.logger.debug(f"SocketIO: Edit auth using raw session user_id: {user_id_to_auth}")
-
-    if not user_id_to_auth:
-        current_app.logger.debug(f"SocketIO: Edit auth failed (no token/session/current_user). SID: {request.sid}")
-        emit('edit_error', {'message': 'Authentication required.'}, room=request.sid); return
-
-    current_app.logger.debug(f"SocketIO: Authenticated user_id for edit: {user_id_to_auth}")
+    current_app.logger.debug(f"SocketIO: handle_edit_post_content. Data: {data}, SID: {request.sid}, User: {user.username}")
 
     post_id = data.get("post_id")
     new_content = data.get("new_content")
@@ -201,12 +164,11 @@ def handle_edit_post_content(data):
     if not post:
         emit('edit_error', {'message': 'Post not found.'}, room=request.sid); return
 
-    lock = post.lock_info
+    lock = post.lock_info # Assuming Post model has a relationship 'lock_info' to PostLock
     if not lock:
         emit('edit_error', {'message': 'Post not locked. Acquire lock first.'}, room=request.sid); return
 
-    # Ensure user_id_to_auth is compared as int if lock.user_id is int
-    if lock.user_id != int(user_id_to_auth):
+    if lock.user_id != user_id_to_auth: # Compare with authed user's ID
         if lock.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
             emit('edit_error', {'message': 'Lock by other user expired. Try acquiring.'}, room=request.sid)
         else:
@@ -226,11 +188,11 @@ def handle_edit_post_content(data):
     post.last_edited = datetime.now(timezone.utc)
     try:
         db.session.commit()
-        editor_user = db.session.get(User, int(user_id_to_auth)) # Fetch user for username
-        editor_username = editor_user.username if editor_user else "Unknown"
+        editor_username = user.username # Use authed user's username
         update_payload = {
             "post_id": post.id, "new_content": post.content, "last_edited": post.last_edited.isoformat(),
-            "edited_by_user_id": int(user_id_to_auth), "edited_by_username": editor_username,
+            "edited_by_user_id": user_id_to_auth,
+            "edited_by_username": editor_username,
         }
         socketio.emit("post_content_updated", update_payload, room=f"post_{post.id}")
         current_app.logger.info(f"User {user_id_to_auth} updated post {post.id}. Broadcasted.")
@@ -243,6 +205,12 @@ def handle_edit_post_content(data):
 
 @socketio.on("connect", namespace="/") # Matches the namespace in app.py
 def handle_connect():
+    # This handler remains largely unchanged for now.
+    # It uses flask_login.current_user (if available and integrated) or session for initial connection.
+    # This is for identifying the user for their specific room (e.g., user_123) if they have a browser session.
+    # Subsequent authenticated actions will rely on tokens in messages.
+    from flask_login import current_user # Keep local import for this specific handler
+
     # This connection handler needs to align with how Flask-Login and Flask-SocketIO are integrated.
     # If using current_user proxy from Flask-Login, it should work if session is correctly passed.
     current_app.logger.info(f"SocketIO: Connect attempt. SID: {request.sid}. Cookies: {request.cookies.get('session')}") # Log session cookie if present

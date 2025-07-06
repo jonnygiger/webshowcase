@@ -285,7 +285,7 @@ def handle_edit_post_content(data):
 def handle_connect():
     # Log function entry and initial request details
     current_app.logger.debug(
-        f"SocketIO: Entering 'handle_connect'. SID: {request.sid}, Namespace: {request.namespace}, "
+        f"SocketIO: Entering 'handle_connect'. SID: {request.sid}, EIO_SID: {request.eio_sid}, Namespace: {request.namespace}, "
         f"Headers: {dict(request.headers)}, Cookies: {request.cookies}"
     )
 
@@ -293,122 +293,123 @@ def handle_connect():
     auth_method = "anonymous" # Default auth method
 
     auth_header = request.namespace.auth # or request.headers.get('Authorization') depending on client
-    current_app.logger.debug(f"SocketIO: handle_connect - Auth header received: {auth_header}. SID: {request.sid}")
+    current_app.logger.debug(f"SocketIO: handle_connect - Auth header received: {auth_header}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
 
     if auth_header and isinstance(auth_header, dict) and 'token' in auth_header:
         jwt_token = auth_header.get('token')
         # Log token before decoding
-        current_app.logger.debug(f"SocketIO: JWT Auth - Attempting to use token: '{jwt_token}'. SID: {request.sid}")
+        current_app.logger.debug(f"SocketIO: handle_connect - JWT Auth: Attempting to decode token. SID: {request.sid}, EIO_SID: {request.eio_sid}, Token: {jwt_token[:20]}...")
         try:
             decoded_token = decode_token(jwt_token)
             # Log decoded token
-            current_app.logger.debug(f"SocketIO: JWT Auth - Decoded token: {decoded_token}. SID: {request.sid}")
+            current_app.logger.debug(f"SocketIO: handle_connect - JWT Auth: Token decoded. SID: {request.sid}, EIO_SID: {request.eio_sid}, Decoded sub: {decoded_token.get('sub')}")
 
             user_identity = decoded_token.get('sub')
             if user_identity is None:
-                current_app.logger.warning(f"SocketIO: JWT Auth - 'sub' claim missing in token. SID: {request.sid}. Token: {decoded_token}")
-                current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to missing 'sub' claim. SID: {request.sid}")
+                current_app.logger.warning(f"SocketIO: JWT Auth - 'sub' claim missing in token. SID: {request.sid}, EIO_SID: {request.eio_sid}. Token: {decoded_token}")
+                current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to missing 'sub' claim. SID: {request.sid}, EIO_SID: {request.eio_sid}")
                 emit('auth_error', {'message': "Token is missing the 'sub' (subject) claim."}, room=request.sid)
-                current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}. Outcome: JWT Auth Error - Missing 'sub' claim.")
+                current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {request.eio_sid}. Outcome: JWT Auth Error - Missing 'sub' claim. Returning False.")
                 return False
 
-            current_app.logger.debug(f"SocketIO: JWT Auth - User identity (sub): {user_identity}. SID: {request.sid}")
+            current_app.logger.debug(f"SocketIO: JWT Auth - User identity (sub): {user_identity}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
 
             try:
                 user_id = int(user_identity)
-                current_app.logger.debug(f"SocketIO: JWT Auth - Parsed user_id: {user_id}. SID: {request.sid}")
+                current_app.logger.debug(f"SocketIO: JWT Auth - Parsed user_id: {user_id}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
             except ValueError:
-                current_app.logger.warning(f"SocketIO: JWT Auth - Invalid user_id format '{user_identity}'. SID: {request.sid}")
-                current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to invalid user_id format. SID: {request.sid}")
+                current_app.logger.warning(f"SocketIO: JWT Auth - Invalid user_id format '{user_identity}'. SID: {request.sid}, EIO_SID: {request.eio_sid}")
+                current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to invalid user_id format. SID: {request.sid}, EIO_SID: {request.eio_sid}")
                 emit('auth_error', {'message': 'Invalid user identifier format in token.'}, room=request.sid)
-                current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}. Outcome: JWT Auth Error - Invalid user_id format.")
+                current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {request.eio_sid}. Outcome: JWT Auth Error - Invalid user_id format. Returning False.")
                 return False
 
             # Log before DB query for JWT user
-            current_app.logger.debug(f"SocketIO: JWT Auth - Attempting to fetch user from DB. User ID: {user_id}. SID: {request.sid}")
+            current_app.logger.debug(f"SocketIO: JWT Auth - Attempting to fetch user from DB. User ID: {user_id}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
             jwt_user = db.session.get(User, user_id)
+            current_app.logger.debug(f"SocketIO: handle_connect - JWT Auth: DB lookup for user ID {user_id}. User found: {bool(jwt_user)}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
             # Log result of DB query
             if jwt_user:
-                current_app.logger.debug(f"SocketIO: JWT Auth - User fetched from DB: ID={jwt_user.id}, Username={jwt_user.username}. SID: {request.sid}")
+                current_app.logger.debug(f"SocketIO: JWT Auth - User fetched from DB: ID={jwt_user.id}, Username={jwt_user.username}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
                 user_to_auth_on_connect = jwt_user
                 auth_method = "jwt"
             else:
-                current_app.logger.warning(f"SocketIO: JWT Auth - User ID '{user_id}' not found in DB. SID: {request.sid}")
-                current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to JWT user not found in DB. SID: {request.sid}")
+                current_app.logger.warning(f"SocketIO: JWT Auth - User ID '{user_id}' not found in DB. SID: {request.sid}, EIO_SID: {request.eio_sid}")
+                current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to JWT user not found in DB. SID: {request.sid}, EIO_SID: {request.eio_sid}")
                 emit('auth_error', {'message': 'User not found for provided token.'}, room=request.sid)
-                current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}. Outcome: JWT Auth Error - User not found.")
+                current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {request.eio_sid}. Outcome: JWT Auth Error - User not found. Returning False.")
                 return False
 
         except ExpiredSignatureError as e:
-            current_app.logger.warning(f"SocketIO: JWT Auth - Token expired. SID: {request.sid}. Error: {type(e).__name__} - {e}")
-            current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to ExpiredSignatureError. SID: {request.sid}")
+            current_app.logger.warning(f"SocketIO: JWT Auth - Token expired. SID: {request.sid}, EIO_SID: {request.eio_sid}. Error: {type(e).__name__} - {e}")
+            current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to ExpiredSignatureError. SID: {request.sid}, EIO_SID: {request.eio_sid}")
             emit('auth_error', {'message': 'Token has expired.'}, room=request.sid)
-            current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}. Outcome: JWT Auth Error - ExpiredSignatureError.")
+            current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {request.eio_sid}. Outcome: JWT Auth Error - ExpiredSignatureError. Returning False.")
             return False
         except InvalidTokenError as e:
-            current_app.logger.warning(f"SocketIO: JWT Auth - Invalid token. SID: {request.sid}. Error: {type(e).__name__} - {e}")
-            current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to InvalidTokenError. SID: {request.sid}")
+            current_app.logger.warning(f"SocketIO: JWT Auth - Invalid token. SID: {request.sid}, EIO_SID: {request.eio_sid}. Error: {type(e).__name__} - {e}")
+            current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to InvalidTokenError. SID: {request.sid}, EIO_SID: {request.eio_sid}")
             emit('auth_error', {'message': f'Invalid token supplied: {str(e)}'}, room=request.sid)
-            current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}. Outcome: JWT Auth Error - InvalidTokenError.")
+            current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {request.eio_sid}. Outcome: JWT Auth Error - InvalidTokenError. Returning False.")
             return False
         except Exception as e:
-            current_app.logger.error(f"SocketIO: JWT Auth - Unexpected error during token processing. SID: {request.sid}. Error: {type(e).__name__} - {e}", exc_info=True)
-            current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to unexpected JWT exception. SID: {request.sid}")
+            current_app.logger.error(f"SocketIO: JWT Auth - Unexpected error during token processing. SID: {request.sid}, EIO_SID: {request.eio_sid}. Error: {type(e).__name__} - {e}", exc_info=True)
+            current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to unexpected JWT exception. SID: {request.sid}, EIO_SID: {request.eio_sid}")
             emit('auth_error', {'message': 'An unexpected error occurred during authentication.'}, room=request.sid)
-            current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}. Outcome: JWT Auth Error - Unexpected Exception.")
+            current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {request.eio_sid}. Outcome: JWT Auth Error - Unexpected Exception. Returning False.")
             return False
     else:
-        current_app.logger.debug(f"SocketIO: No JWT in auth header or auth_header is not a dict, attempting session authentication. SID: {request.sid}")
+        current_app.logger.debug(f"SocketIO: No JWT in auth header or auth_header is not a dict, attempting session authentication. SID: {request.sid}, EIO_SID: {request.eio_sid}")
 
     # Attempt session authentication if JWT auth was not attempted or failed (and didn't return)
     if not user_to_auth_on_connect:
         current_app.logger.debug(
-            f"SocketIO: Session Auth - current_user.is_authenticated: {current_user.is_authenticated}. "
-            f"current_user: {current_user if current_user.is_authenticated else 'Anonymous'}. SID: {request.sid}"
+            f"SocketIO: handle_connect - Session Auth: Checking current_user.is_authenticated ({current_user.is_authenticated}). SID: {request.sid}, EIO_SID: {request.eio_sid}"
         )
         # Log session data - be careful with sensitive data in logs
         serializable_session = {k: v for k, v in session.items() if isinstance(v, (str, int, float, bool, list, dict))}
-        current_app.logger.debug(f"SocketIO: Session Auth - Session contents: {serializable_session}. SID: {request.sid}")
+        current_app.logger.debug(f"SocketIO: Session Auth - Session contents: {serializable_session}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
 
         if current_user.is_authenticated:
             user_to_auth_on_connect = current_user
             auth_method = "session_current_user"
-            current_app.logger.debug(f"SocketIO: Session Auth - Authenticated via Flask-Login current_user: {current_user.username}. SID: {request.sid}")
+            current_app.logger.debug(f"SocketIO: Session Auth - Authenticated via Flask-Login current_user: {current_user.username}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
         elif "_user_id" in session:
             user_id_from_session = session.get("_user_id")
-            current_app.logger.debug(f"SocketIO: Session Auth - Found '_user_id' in session: {user_id_from_session}. SID: {request.sid}")
+            current_app.logger.debug(f"SocketIO: handle_connect - Session Auth: Checking session for _user_id ('{user_id_from_session}'). SID: {request.sid}, EIO_SID: {request.eio_sid}")
             try:
                 user_id = int(user_id_from_session)
-                current_app.logger.debug(f"SocketIO: Session Auth - Attempting to fetch user from DB via session _user_id. User ID: {user_id}. SID: {request.sid}")
+                current_app.logger.debug(f"SocketIO: Session Auth - Attempting to fetch user from DB via session _user_id. User ID: {user_id}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
                 session_user = db.session.get(User, user_id)
+                current_app.logger.debug(f"SocketIO: handle_connect - Session Auth (from _user_id): DB lookup for user ID {user_id}. User found: {bool(session_user)}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
                 if session_user:
-                    current_app.logger.debug(f"SocketIO: Session Auth - User fetched from DB via _user_id: ID={session_user.id}, Username={session_user.username}. SID: {request.sid}")
+                    current_app.logger.debug(f"SocketIO: Session Auth - User fetched from DB via _user_id: ID={session_user.id}, Username={session_user.username}. SID: {request.sid}, EIO_SID: {request.eio_sid}")
                     user_to_auth_on_connect = session_user
                     auth_method = "session_underscore_user_id"
                 else:
-                    current_app.logger.warning(f"SocketIO: Session Auth - User ID '{user_id_from_session}' from session not found in DB. SID: {request.sid}")
+                    current_app.logger.warning(f"SocketIO: Session Auth - User ID '{user_id_from_session}' from session not found in DB. SID: {request.sid}, EIO_SID: {request.eio_sid}")
             except ValueError:
-                current_app.logger.warning(f"SocketIO: Session Auth - Invalid _user_id format in session: '{user_id_from_session}'. SID: {request.sid}")
+                current_app.logger.warning(f"SocketIO: Session Auth - Invalid _user_id format in session: '{user_id_from_session}'. SID: {request.sid}, EIO_SID: {request.eio_sid}")
             except Exception as e: # Catch potential errors from db.session.get or int conversion
-                current_app.logger.error(f"SocketIO: Session Auth - Error processing _user_id from session. SID: {request.sid}. Error: {type(e).__name__} - {e}", exc_info=True)
+                current_app.logger.error(f"SocketIO: Session Auth - Error processing _user_id from session. SID: {request.sid}, EIO_SID: {request.eio_sid}. Error: {type(e).__name__} - {e}", exc_info=True)
 
 
     if user_to_auth_on_connect:
         join_room(f"user_{user_to_auth_on_connect.id}")
         current_app.logger.info(
-            f"SocketIO: User {user_to_auth_on_connect.username} (ID: {user_to_auth_on_connect.id}) connected successfully via {auth_method}. "
-            f"SID: {request.sid}. Joined room: user_{user_to_auth_on_connect.id}"
+            f"SocketIO: handle_connect - User {user_to_auth_on_connect.username} (ID: {user_to_auth_on_connect.id}) connected via {auth_method}. Emitting 'confirm_namespace_connected'. "
+            f"SID: {request.sid}, EIO_SID: {request.eio_sid}. Joined room: user_{user_to_auth_on_connect.id}"
         )
         emit('confirm_namespace_connected', {
             'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated',
             'username': user_to_auth_on_connect.username, 'user_id': user_to_auth_on_connect.id,
             'auth_method': auth_method
         }, room=request.sid)
-        current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}. Outcome: User {user_to_auth_on_connect.username} connected via {auth_method}.")
+        current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {request.eio_sid}. Outcome: User {user_to_auth_on_connect.username} connected via {auth_method}.")
     else:
-        current_app.logger.info(f"SocketIO: Connection attempt failed. No authentication method succeeded. Auth method tried: {auth_method}. SID: {request.sid}")
+        current_app.logger.warning(f"SocketIO: handle_connect - Authentication failed. No JWT (via decorator), session user, or other method succeeded. Emitting 'auth_error'. Auth method at end: {auth_method}. SID: {request.sid}, EIO_SID: {request.eio_sid}, Auth Header provided: {bool(auth_header)}, CurrentUserAuthed: {current_user.is_authenticated}, SessionUserID: {session.get('_user_id')}")
         # Log reason for auth error before emitting
-        current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to failed authentication. SID: {request.sid}")
+        current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to failed authentication. SID: {request.sid}, EIO_SID: {request.eio_sid}")
         emit('auth_error', {'message': 'Authentication required and failed.'}, room=request.sid)
-        current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}. Outcome: Anonymous connection failed / Authentication required.")
+        current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {request.eio_sid}. Outcome: Anonymous connection failed / Authentication required. Returning False.")
         return False # Explicitly return False for failed connection

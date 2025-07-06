@@ -36,9 +36,11 @@ class TestSocketIOEvents(AppTestCase):
             self.app, flask_test_client=self.client
         )
         self.assertTrue(self.socketio_client.is_connected())
+        self.app.logger.debug(f"TestClient setUp: Initial client SID: {self.socketio_client.eio_sid}, Connected: {self.socketio_client.is_connected()}")
 
     def tearDown(self):
-        if (self.socketio_client and self.socketio_client.is_connected()):
+        if self.socketio_client and self.socketio_client.is_connected():
+            self.app.logger.debug(f"TestClient tearDown: Client SID: {self.socketio_client.eio_sid}, Connected: {self.socketio_client.is_connected()} before disconnect.")
             self.socketio_client.disconnect()
         super().tearDown()
 
@@ -54,16 +56,21 @@ class TestSocketIOEvents(AppTestCase):
             self.login(liker_user.username, "password")
 
             author_socket_client = self.socketio_class_level.test_client(self.app)
+            self.app.logger.debug(f"test_new_like_notification: Author client created. SID: {author_socket_client.eio_sid}, Connected: {author_socket_client.is_connected()}")
             self.login(post_author.username, "password", client_instance=author_socket_client)
             time.sleep(0.5)
 
             author_token = self._get_jwt_token(post_author.username, "password")
+            self.app.logger.debug(f"test_new_like_notification: Author client emitting 'join_room'. SID: {author_socket_client.eio_sid}, Data: {{'room': f'user_{post_author.id}', 'token': {author_token[:20] if author_token else 'None'}+...}}")
             author_socket_client.emit("join_room", {"room": f"user_{post_author.id}", "token": author_token}, namespace="/")
 
             join_ack_start_time = time.time()
-            while time.time() - join_ack_start_time < 0.2:
-                if not author_socket_client.get_received(namespace="/"):
+            while time.time() - join_ack_start_time < 0.2: # Short timeout for immediate events
+                join_ack_batch = author_socket_client.get_received(namespace="/")
+                self.app.logger.debug(f"test_new_like_notification: Author client polling for join ack. SID: {author_socket_client.eio_sid}. Received batch: {join_ack_batch}")
+                if not join_ack_batch: # if empty, means no more immediate events
                     break
+                # Process or just consume if not specifically checking join_ack here
 
             self.logout()
             self.login(liker_user.username, "password")
@@ -71,24 +78,26 @@ class TestSocketIOEvents(AppTestCase):
             response = self.client.post(f"/blog/post/{post_by_author.id}/like")
             self.assertEqual(response.status_code, 302) # Redirects to view_post
 
-            time.sleep(0.5)
+            time.sleep(0.5) # Allow time for server-side processing and event emission
 
             received_by_author_total = []
             notification_receive_start_time = time.time()
-            while time.time() - notification_receive_start_time < 1.0:
+            while time.time() - notification_receive_start_time < 1.0: # Polling duration
                 received_event_batch = author_socket_client.get_received(namespace="/")
+                self.app.logger.debug(f"test_new_like_notification: Author client polling for events. SID: {author_socket_client.eio_sid}. Received batch: {received_event_batch}")
                 if received_event_batch:
                     if isinstance(received_event_batch, list):
                         received_by_author_total.extend(received_event_batch)
                     else:
                         received_by_author_total.append(received_event_batch)
-                else:
-                    if any(r["name"] == "new_like_notification" for r in received_by_author_total):
+                else: # No events in this poll
+                    if any(r["name"] == "new_like_notification" for r in received_by_author_total): # Check if we already got it
                         break
-                    time.sleep(0.05)
+                    time.sleep(0.05) # Wait a bit before next poll if nothing received and target not met
 
+            self.app.logger.debug(f"test_new_like_notification: Author client checking for 'new_like_notification'. SID: {author_socket_client.eio_sid}. Total received: {received_by_author_total}")
             like_notification_events = [r for r in received_by_author_total if r["name"] == "new_like_notification"]
-            self.assertTrue(len(like_notification_events) > 0)
+            self.assertTrue(len(like_notification_events) > 0, "No 'new_like_notification' events received.")
 
             notification_data = like_notification_events[0]["args"][0]
             self.assertEqual(notification_data["liker_username"], liker_user.username)
@@ -122,15 +131,15 @@ class TestSocketIOEvents(AppTestCase):
             headers_user1 = {"Authorization": f"Bearer {token_user1}"}
             lock_response = self.client.post(f"/api/posts/{post_to_lock.id}/lock", headers=headers_user1)
             self.assertEqual(lock_response.status_code, 200)
-            listener_client.get_received(timeout=0.5)
+            listener_client.get_received() # Consume potential post_lock_acquired event
 
             unlock_response = self.client.delete(f"/api/posts/{post_to_lock.id}/lock", headers=headers_user1)
             self.assertEqual(unlock_response.status_code, 200)
 
-            time.sleep(0.5)
+            time.sleep(0.5) # Allow time for event propagation
             received_by_listener_total = []
             notification_receive_start_time = time.time()
-            while time.time() - notification_receive_start_time < 1.0:
+            while time.time() - notification_receive_start_time < 1.0: # Loop with timeout
                 received_event_batch = listener_client.get_received(namespace="/")
                 if received_event_batch:
                     if isinstance(received_event_batch, list):
@@ -155,21 +164,31 @@ class TestSocketIOEvents(AppTestCase):
     def test_socketio_join_chat_room_auth(self):
         with self.app.app_context():
             client = self.socketio_class_level.test_client(self.app)
+            self.app.logger.debug(f"test_join_chat_auth: New test client created. SID: {client.eio_sid}, Connected: {client.is_connected()}")
             self.login(self.user1.username, "password", client_instance=client)
-            time.sleep(0.1); client.get_received()
+            self.app.logger.debug(f"test_join_chat_auth: Post-login client SID: {client.eio_sid}, Connected: {client.is_connected()}")
+            time.sleep(0.1); client.get_received() # Consume login event, if any
             room_name = "test_chat_room_auth"
 
+            self.app.logger.debug(f"test_join_chat_auth: Emitting 'join_chat_room' (no token). SID: {client.eio_sid}, Data: {{'room_name': '{room_name}'}}")
             client.emit("join_chat_room", {"room_name": room_name})
-            received = client.get_received(timeout=1); self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
+            received = client.get_received()
+            self.app.logger.debug(f"test_join_chat_auth: Received after 'join_chat_room' (no token). SID: {client.eio_sid}, Events: {received}")
+            self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
             self.assertIn("Authentication token missing", received[0]["args"][0]["message"])
 
+            self.app.logger.debug(f"test_join_chat_auth: Emitting 'join_chat_room' (invalid token). SID: {client.eio_sid}, Data: {{'room_name': '{room_name}', 'token': 'invalid.token.here'}}")
             client.emit("join_chat_room", {"room_name": room_name, "token": "invalid.token.here"})
-            received = client.get_received(timeout=1); self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
+            received = client.get_received()
+            self.app.logger.debug(f"test_join_chat_auth: Received after 'join_chat_room' (invalid token). SID: {client.eio_sid}, Events: {received}")
+            self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
             self.assertIn("Invalid token", received[0]["args"][0]["message"])
 
             user1_token = self._get_jwt_token(self.user1.username, "password")
+            self.app.logger.debug(f"test_join_chat_auth: Emitting 'join_chat_room' (valid token). SID: {client.eio_sid}, Data: {{'room_name': '{room_name}', 'token': {user1_token[:20] if user1_token else 'None'}+...}}")
             client.emit("join_chat_room", {"room_name": room_name, "token": user1_token})
-            received = client.get_received(timeout=0.5)
+            received = client.get_received()
+            self.app.logger.debug(f"test_join_chat_auth: Received after 'join_chat_room' (valid token). SID: {client.eio_sid}, Events: {received}")
             if received: self.assertNotEqual(received[0]["name"], "auth_error")
 
             if client.is_connected(): client.disconnect()
@@ -198,19 +217,19 @@ class TestSocketIOEvents(AppTestCase):
             message_text = "Hello from test_socketio_send_chat_message_auth"
 
             sender_client.emit("send_chat_message", {"room_name": room_sio_name, "message": message_text})
-            received = sender_client.get_received(timeout=1); self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
+            received = sender_client.get_received(); self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
             self.assertIn("Authentication token missing", received[0]["args"][0]["message"])
 
             sender_client.emit("send_chat_message", {"room_name": room_sio_name, "message": message_text, "token": "invalid.token"})
-            received = sender_client.get_received(timeout=1); self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
+            received = sender_client.get_received(); self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
             self.assertIn("Invalid token", received[0]["args"][0]["message"])
 
             sender_client.emit("send_chat_message", {"room_name": room_sio_name, "message": message_text, "token": user1_token})
             received_by_receiver = None
-            for _ in range(10):
-                received_by_receiver = receiver_client.get_received(timeout=0.2)
+            for _ in range(10): # Loop with a timeout mechanism
+                received_by_receiver = receiver_client.get_received()
                 if received_by_receiver and received_by_receiver[0]["name"] == "new_chat_message": break
-                time.sleep(0.1)
+                time.sleep(0.1) # Wait a bit before retrying
             self.assertTrue(received_by_receiver)
             self.assertEqual(received_by_receiver[0]["name"], "new_chat_message")
             self.assertEqual(received_by_receiver[0]["args"][0]["message"], message_text)
@@ -234,15 +253,15 @@ class TestSocketIOEvents(AppTestCase):
             edit_payload = {"post_id": post.id, "new_content": "Attempted Content"}
 
             editor_client.emit("edit_post_content", {**edit_payload})
-            received = editor_client.get_received(timeout=1); self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
+            received = editor_client.get_received(); self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
             self.assertIn("Authentication token missing", received[0]["args"][0]["message"])
 
             editor_client.emit("edit_post_content", {**edit_payload, "token": "invalid"})
-            received = editor_client.get_received(timeout=1); self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
+            received = editor_client.get_received(); self.assertTrue(received); self.assertEqual(received[0]["name"], "auth_error")
             self.assertIn("Invalid token", received[0]["args"][0]["message"])
 
             editor_client.emit("edit_post_content", {**edit_payload, "token": owner_token})
-            received = editor_client.get_received(timeout=1); self.assertTrue(received); self.assertEqual(received[0]["name"], "edit_error")
+            received = editor_client.get_received(); self.assertTrue(received); self.assertEqual(received[0]["name"], "edit_error")
             self.assertIn("Post not locked", received[0]["args"][0]["message"])
 
             lock_headers = {"Authorization": f"Bearer {owner_token}"}
@@ -254,19 +273,19 @@ class TestSocketIOEvents(AppTestCase):
 
             successful_edit_payload = {"post_id": post.id, "new_content": "Updated Content by Owner", "token": owner_token}
             editor_client.emit("edit_post_content", successful_edit_payload)
-            received_edit_confirm = editor_client.get_received(timeout=1); self.assertTrue(received_edit_confirm); self.assertEqual(received_edit_confirm[0]["name"], "edit_success")
+            received_edit_confirm = editor_client.get_received(); self.assertTrue(received_edit_confirm); self.assertEqual(received_edit_confirm[0]["name"], "edit_success")
 
             received_broadcast = None
-            for _ in range(10):
-                received_broadcast = listener_client.get_received(timeout=0.2)
+            for _ in range(10): # Loop with a timeout mechanism
+                received_broadcast = listener_client.get_received()
                 if received_broadcast and received_broadcast[0]["name"] == "post_content_updated": break
-                time.sleep(0.1)
+                time.sleep(0.1) # Wait a bit before retrying
             self.assertTrue(received_broadcast)
             self.assertEqual(received_broadcast[0]["name"], "post_content_updated")
             self.assertEqual(received_broadcast[0]["args"][0]["new_content"], "Updated Content by Owner")
 
             editor_client.emit("edit_post_content", {**edit_payload, "token": other_user_token, "new_content": "Other user content"})
-            received = editor_client.get_received(timeout=1); self.assertTrue(received); self.assertEqual(received[0]["name"], "edit_error")
+            received = editor_client.get_received(); self.assertTrue(received); self.assertEqual(received[0]["name"], "edit_error")
             self.assertIn("Post locked by another user", received[0]["args"][0]["message"])
 
             self.client.delete(f"/api/posts/{post.id}/lock", headers=lock_headers); time.sleep(0.1)

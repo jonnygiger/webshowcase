@@ -227,14 +227,6 @@ class AppTestCase(unittest.TestCase):
             client_instance if client_instance else self.socketio_client
         )
 
-        # Extract session cookie
-        session_cookie_obj = self.client.get_cookie('session')
-        session_cookie = session_cookie_obj.value if session_cookie_obj else None
-
-        connect_headers = {}
-        if session_cookie:
-            connect_headers['Cookie'] = f'session={session_cookie}'
-
         # Disconnect if already connected, to ensure a fresh connection attempt
         if socketio_client_to_use.is_connected(namespace="/"):
             # Removed debug print statement about disconnecting existing socketio_client
@@ -245,7 +237,7 @@ class AppTestCase(unittest.TestCase):
         # should automatically use the cookies from the Flask test client's cookie jar.
         # No explicit headers with cookies should be needed here.
         # Removed debug print statement about attempting SocketIO connect
-        socketio_client_to_use.connect(namespace="/", headers=connect_headers)
+        socketio_client_to_use.connect(namespace="/")
 
         # Increased sleep and retry logic for SID acquisition
         time.sleep(0.05)
@@ -263,7 +255,7 @@ class AppTestCase(unittest.TestCase):
                 namespace="/"
             ) and retry_count < (max_retries / 2):
                 # Removed debug print statement about SocketIO client not connected during SID wait
-                socketio_client_to_use.connect(namespace="/", headers=connect_headers) # Ensure no headers here either
+                socketio_client_to_use.connect(namespace="/") # Ensure no headers here either
                 time.sleep(0.05)
 
         if not getattr(socketio_client_to_use, "sid", None):

@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta, timezone
+from tests.test_base import AppTestCase
 
 # Assuming your Flask app and models are set up in a way that they can be imported
 # For example, if 'app.py' or 'models.py' is in the root directory:
@@ -15,55 +16,9 @@ from social_app.models.db_models import User, Post, Like, Comment, SharedPost, B
 from social_app.services.recommendations_service import suggest_trending_posts # Updated service path
 
 
-class TestSuggestTrendingPosts(unittest.TestCase): # Should inherit from AppTestCase
+class TestSuggestTrendingPosts(AppTestCase): # Should inherit from AppTestCase
     def setUp(self):
-        # AppTestCase.setUp() creates self.app and pushes an app_context
-        # and creates db tables.
-        # We need to ensure this class uses AppTestCase for consistent setup.
-        # For now, assuming this test class might be intended to be standalone,
-        # but it would be better to use AppTestCase.
-        # If it were to use AppTestCase, these lines would be:
-        # super().setUp()
-        # For now, I will keep the manual app_context and db setup
-        # but use self.app if available from a base or create one.
-        # To align with the goal of using AppTestCase structure where possible,
-        # this class *should* inherit from AppTestCase.
-        # The prompt implies this file exists and needs import correction.
-        # I will assume it *should* be an AppTestCase.
-        # If it's not, the `self.app` and `self.db` won't be there.
-        # Given the other test files, it's highly likely this is meant to be an AppTestCase.
-        # Let's proceed as if it IS an AppTestCase for consistency.
-        # The original class definition was `class TestSuggestTrendingPosts(unittest.TestCase):`
-        # It needs to be `class TestSuggestTrendingPosts(AppTestCase):`
-        # This change is outside the scope of pure import fixing, but critical for it to run.
-        # I will assume this class *will be* changed to inherit AppTestCase for the purpose of fixing imports.
-        # If so, AppTestCase.setUp() handles app_context and db.create_all().
-
-        # If this were a standalone test (NOT inheriting AppTestCase):
-        # from social_app import create_app
-        # self.app = create_app('testing')
-        # self.app_context = self.app.app_context()
-        # self.app_context.push()
-        # db.init_app(self.app) # Ensure db is initialized with this app if standalone
-        # db.create_all()
-        # For now, I will correct imports assuming it will become an AppTestCase or similar.
-        # The `app.app_context()` line will become `self.app.app_context()` if it were an AppTestCase.
-        # Since the prompt says "replace `from app import app` with `from social_app import create_app`
-        # and `app = create_app('testing')` is used", this implies app should be instantiated.
-        # AppTestCase does this.
-
-        # The provided snippet is `class TestSuggestTrendingPosts(unittest.TestCase):`
-        # This means `self.app` is not available unless I instantiate it here.
-        # For the purpose of correcting imports, I will assume `app` is available globally
-        # if this test is run in a specific way, or `self.app` if it were an AppTestCase.
-        # The current `app.app_context()` will fail if `app` is not defined.
-        # I will change it to use `self.app.app_context()` assuming this class will be
-        # made an AppTestCase.
-        self.app_context = self.app.app_context() # Assuming self.app is provided by a base class like AppTestCase
-        self.app_context.push()
-        # db.create_all() is handled by AppTestCase.setUpClass if this inherits from it.
-        # If not, it needs to be called here after db.init_app(self.app).
-        # For now, let's assume db is already initialized and tables created by AppTestCase.
+        super().setUp()  # Call AppTestCase's setUp
 
         # Create some users
         self.user1 = User(
@@ -79,11 +34,10 @@ class TestSuggestTrendingPosts(unittest.TestCase): # Should inherit from AppTest
         db.session.commit()
 
         # Current time for reference in tests
-        self.now = datetime.utcnow()
+        self.now = datetime.now(timezone.utc) # Use timezone.utc for consistency
 
     def tearDown(self):
-        # db.session.remove() and db.drop_all() handled by AppTestCase.tearDownClass or tearDown
-        self.app_context.pop()
+        super().tearDown() # Call AppTestCase's tearDown
 
     def _create_post(self, user, timestamp, title="Test Post", content="Test content"):
         post = Post(user_id=user.id, timestamp=timestamp, title=title, content=content)

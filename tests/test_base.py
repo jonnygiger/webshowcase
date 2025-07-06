@@ -209,6 +209,8 @@ class AppTestCase(unittest.TestCase):
         self.user3_id = self.user3.id
 
     def login(self, username, password, client_instance=None):
+        jwt_token = self._get_jwt_token(username, password)
+
         # Use the standard Flask test client to log in, which sets the session cookie
         login_response = self.client.post(
             "/login",
@@ -237,12 +239,12 @@ class AppTestCase(unittest.TestCase):
         # should automatically use the cookies from the Flask test client's cookie jar.
         # No explicit headers with cookies should be needed here.
         # Removed debug print statement about attempting SocketIO connect
-        socketio_client_to_use.connect(namespace="/")
+        socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token})
 
         # Increased sleep and retry logic for SID acquisition
         time.sleep(0.05)
         retry_count = 0
-        max_retries = 10  # Increased max_retries
+        max_retries = 20  # Increased max_retries
         wait_interval = 0.02  # Slightly longer wait interval
 
         while (
@@ -255,7 +257,7 @@ class AppTestCase(unittest.TestCase):
                 namespace="/"
             ) and retry_count < (max_retries / 2):
                 # Removed debug print statement about SocketIO client not connected during SID wait
-                socketio_client_to_use.connect(namespace="/") # Ensure no headers here either
+                socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token}) # Ensure no headers here either
                 time.sleep(0.05)
 
         if not getattr(socketio_client_to_use, "sid", None):

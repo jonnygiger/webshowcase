@@ -1,12 +1,13 @@
-from flask import request, session, current_app, g
-from flask_socketio import emit, join_room, leave_room
-# from flask_login import current_user # Removed
-from functools import wraps
-from datetime import datetime, timezone
-
-from .. import socketio, db # Import from social_app parent package
+from flask import request, session, current_app
+from flask_socketio import emit, join_room
+from flask_login import current_user
+from flask_jwt_extended import decode_token
+from jwt import ExpiredSignatureError, InvalidTokenError
+from .. import db, socketio # Or ensure socketio is available if used in @socketio.on
 from ..models.db_models import User, ChatRoom, ChatMessage, Post, PostLock # Import necessary models
-from .socketio_auth import jwt_required_socketio # Added
+from functools import wraps # Keep if jwt_required_socketio or other decorators use it
+from datetime import datetime, timezone # Keep for other event handlers
+from ..core.socketio_auth import jwt_required_socketio # Ensure this path is correct
 
 # SocketIO event handlers previously in app.py
 
@@ -203,96 +204,101 @@ def handle_edit_post_content(data):
         emit('edit_error', {'message': 'Server error saving changes.'}, room=request.sid)
 
 
-@socketio.on("connect", namespace="/") # Matches the namespace in app.py
+@socketio.on("connect", namespace="/")
 def handle_connect():
-    # This handler remains largely unchanged for now.
-    # It uses flask_login.current_user (if available and integrated) or session for initial connection.
-    # This is for identifying the user for their specific room (e.g., user_123) if they have a browser session.
-    # Subsequent authenticated actions will rely on tokens in messages.
-    from flask_login import current_user # Keep local import for this specific handler
+    user_to_auth_on_connect = None
+    user_authenticated_by_jwt = False
+    auth_method = "anonymous"
 
-    # This connection handler needs to align with how Flask-Login and Flask-SocketIO are integrated.
-    # If using current_user proxy from Flask-Login, it should work if session is correctly passed.
-    current_app.logger.info(f"SocketIO: Connect attempt. SID: {request.sid}. Cookies: {request.cookies.get('session')}") # Log session cookie if present
+    auth_header = request.namespace.auth
+    if auth_header and isinstance(auth_header, dict) and 'token' in auth_header:
+        jwt_token = auth_header.get('token')
+        current_app.logger.info(f"SocketIO: Connect attempt with JWT. SID: {request.sid}")
+        try:
+            decoded_token = decode_token(jwt_token)
+            user_identity = decoded_token['sub']
+            # Ensure user_identity can be converted to an integer for DB query
+            try:
+                user_id = int(user_identity)
+            except ValueError:
+                current_app.logger.error(f"SocketIO: JWT 'sub' claim '{user_identity}' is not a valid integer. SID: {request.sid}")
+                emit('auth_error', {'message': 'Invalid user identifier in token.'}, room=request.sid)
+                return False # Deny connection
 
-    # The original app.py had complex logging for flask.session and werkzeug.request.session.
-    # Flask-SocketIO's `current_user` (if Flask-Login is setup correctly) simplifies this.
-    # Or, if session is manually managed for SocketIO, `session.get('user_id')` from `flask import session` might be used.
-
-    user_to_auth_on_connect = None # Renamed
-    if current_user.is_authenticated:
-        user_to_auth_on_connect = current_user
-        current_app.logger.info(f"SocketIO: User authenticated via Flask-Login current_user: {user_to_auth_on_connect.username} (SID: {request.sid})")
-    elif "user_id" in session: # Fallback to flask.session if current_user is not set by Flask-SocketIO/Flask-Login
-        user_id_from_raw_session = session.get("user_id")
-        current_app.logger.info(f"SocketIO: current_user not auth, trying user_id {user_id_from_raw_session} from flask.session. (SID: {request.sid})")
-        user_from_raw_session = db.session.get(User, user_id_from_raw_session)
-        if user_from_raw_session:
-            user_to_auth_on_connect = user_from_raw_session
-            # Manually login this user for the socketio session if needed, or ensure current_user gets set.
-            # This part is tricky and depends on Flask-SocketIO and Flask-Login integration details.
-            # For now, we'll just log. If current_user is not properly set by Flask-SocketIO,
-            # then @login_required_socketio might not work as expected.
-            current_app.logger.info(f"SocketIO: User manually loaded from flask.session: {user_to_auth_on_connect.username} (SID: {request.sid})")
-        else:
-            current_app.logger.warning(f"SocketIO: user_id {user_id_from_raw_session} in session, but no user in DB. (SID: {request.sid})")
-
-    if user_to_auth_on_connect and hasattr(user_to_auth_on_connect, 'is_authenticated') and user_to_auth_on_connect.is_authenticated:
-        join_room(f"user_{user_to_auth_on_connect.id}")
-        current_app.logger.info(f"SocketIO: User {user_to_auth_on_connect.username} (SID: {request.sid}) connected to global ns and joined room user_{user_to_auth_on_connect.id}")
-        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'authenticated', 'username': user_to_auth_on_connect.username}, room=request.sid)
+            jwt_user = db.session.get(User, user_id)
+            if jwt_user:
+                user_to_auth_on_connect = jwt_user
+                user_authenticated_by_jwt = True
+                auth_method = "jwt"
+                current_app.logger.info(f"SocketIO: User '{jwt_user.username}' authenticated via JWT. SID: {request.sid}")
+            else:
+                current_app.logger.warning(f"SocketIO: JWT valid, but user ID '{user_id}' not found in DB. SID: {request.sid}")
+                emit('auth_error', {'message': 'User not found for provided token.'}, room=request.sid)
+                return False # Deny connection
+        except ExpiredSignatureError:
+            current_app.logger.warning(f"SocketIO: JWT connection failed: Token expired. SID: {request.sid}")
+            emit('auth_error', {'message': 'Token has expired.'}, room=request.sid)
+            return False # Deny connection
+        except InvalidTokenError as e:
+            current_app.logger.error(f"SocketIO: JWT connection failed: Invalid token: {e}. SID: {request.sid}")
+            emit('auth_error', {'message': f'Invalid token: {e}'}, room=request.sid)
+            return False # Deny connection
+        except Exception as e: # Catch any other decoding errors or issues
+            current_app.logger.error(f"SocketIO: JWT connection failed due to unexpected error: {e}. SID: {request.sid}")
+            emit('auth_error', {'message': 'Authentication error.'}, room=request.sid)
+            return False # Deny connection
     else:
-        current_app.logger.info(f"SocketIO: User could not be authenticated for SocketIO connection. (SID: {request.sid})")
-        emit('confirm_namespace_connected', {'namespace': request.namespace, 'sid': request.sid, 'status': 'anonymous_after_check'}, room=request.sid)
+        current_app.logger.info(f"SocketIO: No JWT in auth header, attempting session authentication. SID: {request.sid}. Cookies: {request.cookies.get('session')}")
+        if current_user.is_authenticated:
+            user_to_auth_on_connect = current_user
+            auth_method = "session_current_user"
+            current_app.logger.info(f"SocketIO: User '{current_user.username}' authenticated via Flask-Login current_user. SID: {request.sid}")
+        elif "user_id" in session:
+            user_id_from_session = session.get("user_id")
+            current_app.logger.info(f"SocketIO: current_user not authenticated, trying user_id '{user_id_from_session}' from flask.session. SID: {request.sid}")
+            try:
+                # Ensure user_id_from_session is valid integer before querying DB
+                user_id = int(user_id_from_session)
+                user_from_session = db.session.get(User, user_id)
+                if user_from_session:
+                    user_to_auth_on_connect = user_from_session
+                    auth_method = "session_user_id"
+                    current_app.logger.info(f"SocketIO: User '{user_from_session.username}' authenticated via user_id in session. SID: {request.sid}")
+                else:
+                    current_app.logger.warning(f"SocketIO: user_id '{user_id_from_session}' in session, but no such user in DB. SID: {request.sid}")
+            except ValueError:
+                current_app.logger.error(f"SocketIO: user_id '{user_id_from_session}' in session is not a valid integer. SID: {request.sid}")
+            # If user_from_session is None or ValueError, user_to_auth_on_connect remains None
 
-# Note: The `login_required_socketio` decorator relies on `current_user` from Flask-Login.
+    if user_to_auth_on_connect:
+        join_room(f"user_{user_to_auth_on_connect.id}")
+        current_app.logger.info(f"SocketIO: User {user_to_auth_on_connect.username} (SID: {request.sid}, Auth: {auth_method}) connected to namespace '/' and joined room user_{user_to_auth_on_connect.id}")
+        emit('confirm_namespace_connected', {
+            'namespace': request.namespace,
+            'sid': request.sid,
+            'status': 'authenticated',
+            'username': user_to_auth_on_connect.username,
+            'user_id': user_to_auth_on_connect.id,
+            'auth_method': auth_method
+        }, room=request.sid)
+        # No return True explicitly needed, successful connection is the default
+    else:
+        # This block is reached if no JWT was provided AND session auth failed
+        current_app.logger.info(f"SocketIO: User could not be authenticated for SocketIO connection (no JWT, session auth failed). SID: {request.sid}")
+        emit('auth_error', {'message': 'Authentication required.'}, room=request.sid)
+        return False # Deny connection
+
+# Note: `jwt_required_socketio` decorator relies on `g.socketio_user` being set.
+# This `handle_connect` does not set `g.socketio_user`. That's typically done
+# by an authentication decorator or a before_request hook for SocketIO events,
+# *after* the connection is established. This connect handler only authenticates
+# the connection itself and joins the user to their room.
+# Other event handlers decorated with `@jwt_required_socketio` will perform their own JWT checks.
+# The `login_required_socketio` decorator mentioned in original comments might be an alternative
+# if session-based auth is the primary method for event handlers.
+# For now, this `handle_connect` focuses on authenticating the *connection* using JWT first, then session.
 # Flask-SocketIO needs to be properly integrated with Flask-Login for `current_user` to be
-# automatically available and authenticated in SocketIO event handlers.
-# If it's not (e.g. session not correctly passed or handled), then `current_user.is_authenticated`
-# might be false even for logged-in users. This is a common integration challenge.
-# The connect handler above attempts to log this.
-# The `handle_edit_post_content` has its own JWT + session logic that bypasses `login_required_socketio`.
-# All other handlers use `login_required_socketio`.
-# Ensure `flask_jwt_extended.decode_token` is available if that handler is used.
-# `current_app.logger` is used for logging.
-# `socketio` and `db` are imported from `social_app/__init__.py`.
-# Models are imported from `social_app/models/db_models.py`.
-# `request`, `session` are from `flask`.
-# `emit`, `join_room`, `leave_room` are from `flask_socketio`.
-# `datetime`, `timezone` from `datetime`.
-# `wraps` from `functools`.
-# `PostLock` model was added to imports for `handle_edit_post_content`.
-# `ChatRoom`, `ChatMessage` models were added for chat handlers.
-# `User` model is used throughout.
-# `current_app` is from `flask`.
-# Corrected url_for in emit_new_activity_event to use blueprint `core.static` if static files are served via core blueprint,
-# or just `static` if served at app level. Assuming app level for now. It was `url_for("static", ...)`
-# The emit_new_activity_event was in views.py. If it's needed here, it should be imported or moved.
-# For now, assuming SocketIO events here are mostly direct chat/edit events, not activity stream generation.
-# If emit_new_activity_event is called from these SocketIO handlers, it would need to be accessible.
-# It's not called directly by any of these handlers moved from app.py's SocketIO section.
-# It was called by regular view functions after certain actions (like creating post, comment, like).
-# So, it should remain in views.py or a utils.py accessible by views.py.
-# The `handle_connect` function here is the more detailed one from the end of app.py.
-# The simpler `handle_connect` that was also in app.py was a duplicate and thus ignored.
-# The `login_required_socketio` decorator was also defined in app.py; it's replicated here.
-# It should be defined once, perhaps in a `core.utils_socketio` or similar if used by multiple event files.
-# For now, it's here as it's closely tied to these event handlers.
-# Corrected `emit('unauthorized_error', ..., room=request.sid)` for login_required_socketio to target sender.
-# Corrected `emit('chat_error', ..., room=request.sid)` for chat handlers to target sender.
-# Corrected `emit('edit_error', ..., room=request.sid)` for edit handler to target sender.
-# Corrected `emit('confirm_namespace_connected', ..., room=request.sid)` for connect handler.
-# Added PostLock to model imports for edit_post_content handler.
-# The edit_post_content handler's user_id_to_auth logic for session fallback now checks current_user.is_authenticated first,
-# then raw session.get('user_id'). This provides a layer if Flask-Login integration is partially working for SocketIO.
-# It also ensures user_id_to_auth is compared as int with lock.user_id.
-# Username for post_content_updated event is fetched using user_id_to_auth.
-# Ensured all logger calls use current_app.logger.
-# Ensured all db calls use the imported db object.
-# Ensured socketio calls use the imported socketio object.
-# Ensured User, ChatRoom, ChatMessage, Post, PostLock models are imported.
-# `datetime`, `timezone` from `datetime` and `wraps` from `functools` are imported.
-# `decode_token` from `flask_jwt_extended` is imported locally in the function that uses it.
-# `request`, `session`, `current_app` from `flask`.
-# `emit`, `join_room`, `leave_room` from `flask_socketio`.
-# `current_user` from `flask_login`.
+# automatically available and authenticated in SocketIO event handlers for session-based users.
+# If `current_user` isn't populated correctly by the Flask-SocketIO + Flask-Login setup,
+# session-based authentication in this handler might not work as expected,
+# relying solely on the `session.get('user_id')` check.

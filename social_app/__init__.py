@@ -61,8 +61,7 @@ def create_app(config_class=None):
     db.init_app(app)
     migrate.init_app(app, db)
     socketio.init_app(app) # Removed manage_session=False, default is True
-    fr_api = FlaskRestfulApi()
-    fr_api.init_app(app)
+    fr_api = FlaskRestfulApi(app)
     jwt.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = "core.login" # Adjusted to new blueprint structure

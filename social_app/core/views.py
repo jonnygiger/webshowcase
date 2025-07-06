@@ -3900,5 +3900,3 @@ def user_notification_stream():
                 if not current_app.user_notification_queues[current_user_id_val]:
                     del current_app.user_notification_queues[current_user_id_val]
     return Response(event_stream(), mimetype="text/event-stream")
-
-```

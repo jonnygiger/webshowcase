@@ -204,7 +204,7 @@ class AppTestCase(unittest.TestCase):
 
         while time.time() - start_time < timeout_seconds:
             try:
-                received_events = socketio_client_to_use.get_received(namespace="/", timeout=0.1) # Short timeout for non-blocking check
+                received_events = socketio_client_to_use.get_received(namespace="/") # Short timeout for non-blocking check
                 for event in received_events:
                     event_name = event.get('name')
                     event_args = event.get('args')

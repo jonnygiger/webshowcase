@@ -86,12 +86,12 @@ class TestUserFeedAPI(AppTestCase):
             )
             target_user_id_for_api = target_user_instance.id
 
-        response = self.client.get(
-            url_for('userfeedresource', user_id=target_user_id_for_api), headers=headers # Use url_for
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.get_json()
-        self.assertEqual(data, {"feed_posts": []})
-        mock_get_feed_posts_func.assert_called_once_with(
-            target_user_id_for_api, limit=20
-        )  # Original assertion
+            response = self.client.get(
+                url_for('userfeedresource', user_id=target_user_id_for_api), headers=headers # Use url_for
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data, {"feed_posts": []})
+            mock_get_feed_posts_func.assert_called_once_with(
+                target_user_id_for_api, limit=20
+            )  # Original assertion

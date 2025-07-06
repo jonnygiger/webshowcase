@@ -26,7 +26,8 @@ class TestUserFeedAPI(AppTestCase):
         # Obtain a token for an existing user to authenticate the request
         token = self._get_jwt_token(self.user1.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
-        response = self.client.get(url_for('userfeedresource', user_id=99999), headers=headers) # Use url_for
+        with self.app.app_context(): # Add this line
+            response = self.client.get(url_for('userfeedresource', user_id=99999), headers=headers) # Use url_for
         self.assertEqual(
             response.status_code, 404
         )

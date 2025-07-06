@@ -168,8 +168,7 @@ class AppTestCase(unittest.TestCase):
         self.user3_id = self.user3.id
 
     def login(self, username, password, client_instance=None):
-        jwt_token = self._get_jwt_token(username, password)
-
+        # Perform standard HTTP login first to establish session
         login_response = self.client.post(
             "/login",
             data=dict(username=username, password=password),
@@ -179,17 +178,25 @@ class AppTestCase(unittest.TestCase):
         with self.client.session_transaction() as http_session:
             self.assertIn("_user_id", http_session)
 
+        # Then, get the JWT token for SocketIO authentication
+        # This token is obtained by calling /api/login which is separate from the /login above
+        jwt_token = self._get_jwt_token(username, password)
+
         socketio_client_to_use = (
             client_instance if client_instance else self.socketio_client
         )
 
         if socketio_client_to_use.is_connected(namespace="/"):
+            self.app.logger.debug(f"SocketIO client for {username} already connected, disconnecting before reconnecting with token.")
             socketio_client_to_use.disconnect(namespace="/")
-            time.sleep(0.2)
+            time.sleep(0.2) # Give a moment for disconnect to process
 
-        socketio_client_to_use.connect(namespace="/")
+        # Connect SocketIO client with JWT token
+        self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")
+        socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token})
 
-        time.sleep(0.05)
+        # Keep the existing SID waiting logic
+        time.sleep(0.05) # Initial small delay
         retry_count = 0
         max_retries = 20
         wait_interval = 0.02
@@ -203,10 +210,13 @@ class AppTestCase(unittest.TestCase):
             if not socketio_client_to_use.is_connected(
                 namespace="/"
             ) and retry_count < (max_retries / 2):
-                socketio_client_to_use.connect(namespace="/")
-                time.sleep(0.05)
+                self.app.logger.warning(f"SocketIO client for {username} disconnected during SID wait. Attempting reconnect with token. Retry: {retry_count}")
+                # Ensure to pass auth token on reconnect as well
+                socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token})
+                time.sleep(0.05) # Wait after reconnect attempt
 
-        if not getattr(socketio_client_to_use, "sid", None):
+        current_sid = getattr(socketio_client_to_use, "sid", None)
+        if not current_sid:
             eio_sid_val = "N/A"
             if (
                 hasattr(socketio_client_to_use, "eio_test_client")
@@ -218,14 +228,17 @@ class AppTestCase(unittest.TestCase):
                     "N/A (eio_test_client has no sid)",
                 )
             is_connected_status = socketio_client_to_use.is_connected(namespace="/")
-            with self.app.test_request_context("/socket.io"):
-                pass
 
-            raise ConnectionError(
-                f"SocketIO client for {username} failed to get SID after waiting. "
-                f"is_connected: {is_connected_status}, sid: None, eio_sid: {eio_sid_val}. "
-                "Ensure session cookie is correctly passed and processed by SocketIO server-side authentication."
+            error_message = (
+                f"SocketIO client for {username} failed to get SID after {max_retries} retries. "
+                f"is_connected: {is_connected_status}, sid: {current_sid}, eio_sid: {eio_sid_val}. "
+                "Attempted JWT token authentication with connect(auth=...). "
+                "Check server logs for 'handle_connect' and JWT processing details."
             )
+            self.app.logger.error(error_message)
+            raise ConnectionError(error_message)
+
+        self.app.logger.info(f"SocketIO client for {username} connected successfully with SID: {current_sid}. Auth token used.")
         return login_response
 
     def logout(self, client_instance=None):

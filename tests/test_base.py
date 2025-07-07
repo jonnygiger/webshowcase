@@ -200,7 +200,7 @@ class AppTestCase(unittest.TestCase):
 
         # Connect SocketIO client with JWT token
         self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")
-        socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token})
+        socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token}, headers={'Authorization': f'Bearer {jwt_token}'})
 
         # Events received immediately upon connection will now be processed by the auth checking loop.
         start_time = time.time()

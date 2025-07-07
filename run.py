@@ -8,6 +8,10 @@ project_root = os.path.abspath(os.path.dirname(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+import alembic.command
+import alembic.config
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from social_app import create_app, db, scheduler
 from social_app.models.db_models import Achievement
 from social_app.core.utils import generate_activity_summary
@@ -55,9 +59,54 @@ def seed_achievements_cli():
             print(f"Skipped {achievements_skipped_count} achievements (already exist).")
         print("Achievement seeding process complete.")
 
+def apply_migrations(app_instance):
+    """Applies Alembic migrations at startup."""
+    with app_instance.app_context():
+        # Ensure Flask-Migrate extension is initialized
+        if 'migrate' not in app_instance.extensions:
+            app_instance.logger.error("Flask-Migrate extension not found. Skipping migrations.")
+            return
+        try:
+            alembic_cfg = app_instance.extensions['migrate'].get_config()
+            if alembic_cfg is None:
+                # Fallback to a default config if not found, though Flask-Migrate should provide it
+                # This might indicate Flask-Migrate is not properly configured or initialized
+                app_instance.logger.warning("Alembic config not found via Flask-Migrate, attempting default.")
+                alembic_cfg = alembic.config.Config('migrations/alembic.ini') # Assuming default path
+                # We need to set the script location if it's not in the ini or if using a default Config object
+                if not hasattr(alembic_cfg, 'script_location') or not alembic_cfg.script_location:
+                    alembic_cfg.set_main_option("script_location", "migrations")
+                # Database URL needs to be set for Alembic to connect
+                alembic_cfg.set_main_option("sqlalchemy.url", app_instance.config['SQLALCHEMY_DATABASE_URI'])
+
+            app_instance.logger.info("Attempting to apply database migrations...")
+            alembic.command.upgrade(alembic_cfg, "head")
+            app_instance.logger.info("Database migrations applied successfully (or already up to date).")
+        except Exception as e:
+            app_instance.logger.error(f"Error applying database migrations: {e}")
+
+def check_post_table_exists(app_instance):
+    """Checks for the existence of the 'post' table after migrations."""
+    with app_instance.app_context():
+        with db.engine.connect() as connection:
+            try:
+                connection.execute(text("SELECT 1 FROM post LIMIT 1"))
+                app_instance.logger.info("Table 'post' confirmed to exist in the database.")
+            except OperationalError as e: # Catches errors like 'no such table'
+                app_instance.logger.critical(f"CRITICAL: Table 'post' does not exist after migrations. Error: {e}")
+                raise RuntimeError("Application cannot start: 'post' table is missing after migrations.")
+            except Exception as e: # Catch any other unexpected errors during the check
+                app_instance.logger.error(f"An unexpected error occurred while checking for 'post' table: {e}")
+                # Depending on policy, you might want to raise RuntimeError here too
+                # For now, logging it as an error but not halting for non-OperationalErrors.
+                # Consider if this should also halt execution.
+
+
 if __name__ == "__main__":
     if not app.config.get("TESTING", False):
         if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            apply_migrations(app) # Apply migrations
+            check_post_table_exists(app) # Check for 'post' table
             if not scheduler.running:
                 def run_generate_activity_summary():
                     with app.app_context():

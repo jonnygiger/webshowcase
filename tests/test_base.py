@@ -193,11 +193,10 @@ class AppTestCase(unittest.TestCase):
             socketio_client_to_use.disconnect(namespace="/")
             time.sleep(0.2) # Give a moment for disconnect to process
 
-        # Clear any stale events from previous interactions *before* this new connection attempt.
-        # This is important if the client instance is being reused.
-        if socketio_client_to_use.is_connected(namespace="/"): # Check if connected before trying to get received events
-            self.app.logger.debug(f"SocketIO client for {username}: Clearing pre-existing events before connect call.")
-            socketio_client_to_use.get_received(namespace="/")
+        # Always clear any stale events from previous interactions *before* this new connection attempt.
+        # This is important if the client instance is being reused or if an implicit anonymous connection left events.
+        self.app.logger.debug(f"SocketIO client for {username}: Clearing pre-existing events before connect call.")
+        socketio_client_to_use.get_received(namespace="/")
 
         # Connect SocketIO client with JWT token
         self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")

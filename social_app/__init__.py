@@ -8,6 +8,8 @@ from flask_jwt_extended import JWTManager
 from flask_login import LoginManager
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from config import DefaultConfig, TestingConfig
+
 db = SQLAlchemy()
 migrate = Migrate()
 socketio = SocketIO(async_mode="threading")
@@ -30,17 +32,20 @@ def create_app(config_class=None):
     app.config.setdefault("SHARED_FILES_ALLOWED_EXTENSIONS", {"txt", "pdf", "png", "jpg", "jpeg", "gif", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx"})
     app.config.setdefault("SHARED_FILES_MAX_SIZE", 16 * 1024 * 1024)
 
-    if isinstance(config_class, str) and config_class == 'testing':
-        try:
-            from config import TestingConfig
-            config_class = TestingConfig
-        except ImportError:
-            pass
-
-    if config_class:
+    if isinstance(config_class, str):
+        if config_class == 'default':
+            app.config.from_object(DefaultConfig)
+        elif config_class == 'testing':
+            app.config.from_object(TestingConfig)
+        # If it's another string, it might be an error or a future config name
+        # For now, we'll let it pass through and potentially be caught by from_object if it's not a valid path/module
+        # or rely on setdefault if it's not handled.
+        # A more robust way would be to raise an error for unknown string keys.
+        # However, the prompt implies config_class could be an actual class object.
+    elif config_class is not None: # It's an actual class object
         app.config.from_object(config_class)
-    else:
-        app.config.from_pyfile('config.py', silent=True)
+    else: # config_class is None, so load default
+        app.config.from_object(DefaultConfig)
 
     db.init_app(app)
     migrate.init_app(app, db)

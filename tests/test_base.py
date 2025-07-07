@@ -195,8 +195,14 @@ class AppTestCase(unittest.TestCase):
 
         # Connect SocketIO client with JWT token
         self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")
-        socketio_client_to_use.get_received(namespace="/") # Clear any stale events
+        # Do not call get_received before connect if the client might not be connected.
         socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token})
+
+        # Clear any events that might have been received immediately upon connection,
+        # before starting the authentication checking loop.
+        # Only do this if connected.
+        if socketio_client_to_use.is_connected(namespace="/"):
+            socketio_client_to_use.get_received(namespace="/") # Clear any stale events
 
         start_time = time.time()
         timeout_seconds = 10

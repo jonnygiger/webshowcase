@@ -282,7 +282,7 @@ def handle_edit_post_content(data):
 
 
 @socketio.on("connect", namespace="/")
-def handle_connect():
+def handle_connect(auth=None):
     # Log function entry and initial request details
     current_app.logger.debug(
         f"SocketIO: Entering 'handle_connect'. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}, Namespace: {request.namespace}, "
@@ -292,7 +292,7 @@ def handle_connect():
     user_to_auth_on_connect = None
     auth_method = "anonymous" # Default auth method
 
-    auth_header = request.namespace.auth # or request.headers.get('Authorization') depending on client
+    auth_header = auth # or request.headers.get('Authorization') depending on client
     current_app.logger.debug(f"SocketIO: handle_connect - Auth header received: {auth_header}. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}")
 
     if auth_header and isinstance(auth_header, dict) and 'token' in auth_header:

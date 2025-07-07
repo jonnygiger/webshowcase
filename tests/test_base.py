@@ -196,6 +196,16 @@ class AppTestCase(unittest.TestCase):
         # Always clear any stale events from previous interactions *before* this new connection attempt.
         # This is important if the client instance is being reused or if an implicit anonymous connection left events.
         self.app.logger.debug(f"SocketIO client for {username}: Clearing pre-existing events before connect call.")
+        # Loop to clear out any existing events from the socketio_client_to_use
+        for _ in range(5): # Try up to 5 times
+            if not socketio_client_to_use.get_received(namespace="/"):
+                self.app.logger.debug(f"SocketIO client for {username}: Event queue cleared.")
+                break
+            self.app.logger.debug(f"SocketIO client for {username}: Drained some events, checking again.")
+            time.sleep(0.01) # Small delay if events were found, to allow processing/settling
+        else: # Executed if the loop completed without breaking (i.e., events were found each time)
+            self.app.logger.warning(f"SocketIO client for {username}: Event queue still had events after 5 clearing attempts.")
+
 
         # Connect SocketIO client with JWT token
         self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")
@@ -216,20 +226,26 @@ class AppTestCase(unittest.TestCase):
                     self.app.logger.debug(f"SocketIO event received for {username}: Name: {event_name}, Args: {event_args}")
 
                     if event_name == 'confirm_namespace_connected':
+                        # Check if the event is for the current connection attempt and status is authenticated
                         if event_args and event_args[0].get('status') == 'authenticated':
-                            self.app.logger.info(f"SocketIO 'confirm_namespace_connected' received with status 'authenticated' for {username}")
+                            self.app.logger.info(f"SocketIO 'confirm_namespace_connected' (authenticated) received for {username} (Attempt specific).")
                             auth_successful = True
                             break
+                        elif event_args: # Log if 'confirm_namespace_connected' is received but not authenticated
+                            self.app.logger.warning(f"SocketIO 'confirm_namespace_connected' received for {username} but status was not 'authenticated': {event_args[0].get('status')}")
                     elif event_name == 'auth_error':
-                        self.app.logger.error(f"SocketIO 'auth_error' received for {username}: {event_args}")
+                        # This event indicates a failure for the current connection attempt
+                        self.app.logger.error(f"SocketIO 'auth_error' received for {username}: {event_args} (Attempt specific).")
                         auth_error_message = event_args[0].get('message', str(event_args[0])) if event_args and event_args[0] else "Unknown authentication error"
                         break
-                if auth_successful or auth_error_message:
+                    # Other events can be logged but might not terminate the loop unless they signify a different problem.
+
+                if auth_successful or auth_error_message: # If auth success or a specific auth error for this attempt, exit loop.
                     break
             except Exception as e: # get_received might raise if client disconnects unexpectedly
                 self.app.logger.error(f"Error while getting received events for {username}: {e}")
-                # Potentially treat as a connection failure
-                break
+                # Potentially treat as a connection failure, especially if it's persistent.
+                break # Exit loop on error to avoid busy-looping on a broken client.
             time.sleep(0.05) # Small delay to prevent busy-waiting
 
         current_sid = getattr(socketio_client_to_use, "sid", None)

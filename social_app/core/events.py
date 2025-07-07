@@ -323,7 +323,7 @@ def handle_connect(auth=None):
             if user_identity is None:
                 current_app.logger.warning(f"SocketIO: JWT Auth from {auth_method_detail} - 'sub' claim missing in token. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Token: {decoded_token}")
                 current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to missing 'sub' claim. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}")
-                emit('auth_error', {'message': "Token is missing the 'sub' (subject) claim."}, room=request.sid)
+                emit('auth_error', {'message': "Token is missing the 'sub' (subject) claim.", 'sid': request.sid}, room=request.sid)
                 current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Outcome: JWT Auth Error - Missing 'sub' claim. Returning False.")
                 return False
 
@@ -335,7 +335,7 @@ def handle_connect(auth=None):
             except ValueError:
                 current_app.logger.warning(f"SocketIO: JWT Auth from {auth_method_detail} - Invalid user_id format '{user_identity}'. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}")
                 current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to invalid user_id format. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}")
-                emit('auth_error', {'message': 'Invalid user identifier format in token.'}, room=request.sid)
+                emit('auth_error', {'message': 'Invalid user identifier format in token.', 'sid': request.sid}, room=request.sid)
                 current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Outcome: JWT Auth Error - Invalid user_id format. Returning False.")
                 return False
 
@@ -351,26 +351,26 @@ def handle_connect(auth=None):
             else:
                 current_app.logger.warning(f"SocketIO: JWT Auth from {auth_method_detail} - User ID '{user_id}' not found in DB. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}")
                 current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to JWT user not found in DB. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}")
-                emit('auth_error', {'message': 'User not found for provided token.'}, room=request.sid)
+                emit('auth_error', {'message': 'User not found for provided token.', 'sid': request.sid}, room=request.sid)
                 current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Outcome: JWT Auth Error - User not found. Returning False.")
                 return False
 
         except ExpiredSignatureError as e:
             current_app.logger.warning(f"SocketIO: JWT Auth from {auth_method_detail} - Token expired. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Error: {type(e).__name__} - {e}")
             current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to ExpiredSignatureError. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}")
-            emit('auth_error', {'message': 'Token has expired.'}, room=request.sid)
+            emit('auth_error', {'message': 'Token has expired.', 'sid': request.sid}, room=request.sid)
             current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Outcome: JWT Auth Error - ExpiredSignatureError. Returning False.")
             return False
         except InvalidTokenError as e:
             current_app.logger.warning(f"SocketIO: JWT Auth from {auth_method_detail} - Invalid token. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Error: {type(e).__name__} - {e}")
             current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to InvalidTokenError. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}")
-            emit('auth_error', {'message': f'Invalid token supplied: {str(e)}'}, room=request.sid)
+            emit('auth_error', {'message': f'Invalid token supplied: {str(e)}', 'sid': request.sid}, room=request.sid)
             current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Outcome: JWT Auth Error - InvalidTokenError. Returning False.")
             return False
         except Exception as e:
             current_app.logger.error(f"SocketIO: JWT Auth from {auth_method_detail} - Unexpected error during token processing. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Error: {type(e).__name__} - {e}", exc_info=True)
             current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to unexpected JWT exception. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}")
-            emit('auth_error', {'message': 'An unexpected error occurred during authentication.'}, room=request.sid)
+            emit('auth_error', {'message': 'An unexpected error occurred during authentication.', 'sid': request.sid}, room=request.sid)
             current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Outcome: JWT Auth Error - Unexpected Exception. Returning False.")
             return False
     else:
@@ -425,6 +425,6 @@ def handle_connect(auth=None):
         current_app.logger.warning(f"SocketIO: handle_connect - Authentication failed. No JWT, session user, or other method succeeded. Emitting 'auth_error'. Auth method at end: {auth_method}. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}, Auth kwarg provided: {bool(auth_kwarg)}, CurrentUserAuthed: {current_user.is_authenticated}, SessionUserID: {session.get('_user_id')}")
         # Log reason for auth error before emitting
         current_app.logger.debug(f"SocketIO: Emitting 'auth_error' due to failed authentication. SID: {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}")
-        emit('auth_error', {'message': 'Authentication required and failed.'}, room=request.sid)
+        emit('auth_error', {'message': 'Authentication required and failed.', 'sid': request.sid}, room=request.sid)
         current_app.logger.debug(f"SocketIO: Exiting 'handle_connect' for SID {request.sid}, EIO_SID: {getattr(request, 'eio_sid', 'N/A')}. Outcome: Anonymous connection failed / Authentication required. Returning False.")
         return False # Explicitly return False for failed connection

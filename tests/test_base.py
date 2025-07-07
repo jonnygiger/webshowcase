@@ -87,7 +87,29 @@ class AppTestCase(unittest.TestCase):
             self.app, flask_test_client=self.client
         )
         if self.socketio_client.is_connected(namespace="/"):
+            self.app.logger.debug("Implicit SocketIO connection found in setUp, disconnecting and clearing events.")
             self.socketio_client.disconnect(namespace="/")
+            time.sleep(0.1) # Allow disconnect to process
+
+            # Clear any events from the implicit connection
+            for _ in range(5): # Try up to 5 times
+                try:
+                    events = self.socketio_client.get_received(namespace="/")
+                    if not events:
+                        self.app.logger.debug("Event queue cleared in setUp.")
+                        break
+                    self.app.logger.debug(f"Drained {len(events)} events in setUp.")
+                    time.sleep(0.05)
+                except RuntimeError: # In case it fully disconnects and errors on get_received
+                    self.app.logger.debug("SocketIO client disconnected during event clearing in setUp.")
+                    break
+            else:
+                # This else block runs if the loop finished normally (didn't break).
+                # We should check connection status before logging a warning.
+                if self.socketio_client.is_connected(namespace="/"):
+                     self.app.logger.warning("Event queue still had events after 5 clearing attempts in setUp (client still connected).")
+                else:
+                     self.app.logger.info("Event clearing loop in setUp finished; client was or became disconnected during the attempts.")
         with self.app.app_context():
             self._clean_tables_for_setup()
             self._setup_base_users()

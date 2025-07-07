@@ -197,14 +197,36 @@ class AppTestCase(unittest.TestCase):
         # This is important if the client instance is being reused or if an implicit anonymous connection left events.
         self.app.logger.debug(f"SocketIO client for {username}: Clearing pre-existing events before connect call.")
         # Loop to clear out any existing events from the socketio_client_to_use
-        for _ in range(5): # Try up to 5 times
-            if not socketio_client_to_use.get_received(namespace="/"):
-                self.app.logger.debug(f"SocketIO client for {username}: Event queue cleared.")
+        self.app.logger.debug(f"SocketIO client for {username}: Starting pre-connection event clearing loop.")
+        for i in range(5): # Try up to 5 times
+            if not socketio_client_to_use.is_connected(namespace="/"):
+                self.app.logger.debug(f"SocketIO client for {username}: Not connected (attempt {i+1}), so no pre-existing events to clear from server.")
                 break
-            self.app.logger.debug(f"SocketIO client for {username}: Drained some events, checking again.")
-            time.sleep(0.01) # Small delay if events were found, to allow processing/settling
-        else: # Executed if the loop completed without breaking (i.e., events were found each time)
-            self.app.logger.warning(f"SocketIO client for {username}: Event queue still had events after 5 clearing attempts.")
+            try:
+                # Attempt to get received events. If the client is connected but the queue is empty, it returns an empty list.
+                events = socketio_client_to_use.get_received(namespace="/")
+                if not events:
+                    self.app.logger.debug(f"SocketIO client for {username}: Event queue cleared on attempt {i+1}.")
+                    break
+                self.app.logger.debug(f"SocketIO client for {username}: Drained {len(events)} events on attempt {i+1}, checking again.")
+                # time.sleep(0.01) # Small delay if events were found - consider if this sleep is truly needed or if it slows down tests.
+                                 # For now, let's keep it to match original behavior if events are drained.
+                if len(events) > 0: # Only sleep if we actually processed events
+                    time.sleep(0.01)
+
+            except RuntimeError as e: # Catch 'not connected' if is_connected() was true but then it disconnected.
+                self.app.logger.warning(f"SocketIO client for {username}: Error '{e}' during pre-event clearing on attempt {i+1}. Assuming disconnected.")
+                break
+        else: # Executed if the loop completed without breaking (i.e., events were found each time for 5 attempts)
+            # This 'else' block runs if the loop finished normally (didn't break).
+            # We should check connection status before logging a warning.
+            if socketio_client_to_use.is_connected(namespace="/"):
+                # If still connected and loop finished, it means events were received each time.
+                self.app.logger.warning(f"SocketIO client for {username}: Event queue still had events after 5 clearing attempts (client still connected).")
+            else:
+                # If not connected and loop finished, it means it likely disconnected during one of the attempts.
+                self.app.logger.info(f"SocketIO client for {username}: Event clearing loop finished; client was or became disconnected during the attempts.")
+        self.app.logger.debug(f"SocketIO client for {username}: Finished pre-connection event clearing loop.")
 
 
         # Connect SocketIO client with JWT token

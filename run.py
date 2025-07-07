@@ -12,7 +12,7 @@ import alembic.command
 import alembic.config
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
-from social_app import create_app, db, scheduler
+from social_app import create_app, db, scheduler, migrate
 from social_app.models.db_models import Achievement
 from social_app.core.utils import generate_activity_summary
 from social_app.services.recommendations_service import update_trending_hashtags
@@ -62,22 +62,11 @@ def seed_achievements_cli():
 def apply_migrations(app_instance):
     """Applies Alembic migrations at startup."""
     with app_instance.app_context():
-        # Ensure Flask-Migrate extension is initialized
-        if 'migrate' not in app_instance.extensions:
-            app_instance.logger.error("Flask-Migrate extension not found. Skipping migrations.")
-            return
         try:
-            alembic_cfg = app_instance.extensions['migrate'].get_config()
-            if alembic_cfg is None:
-                # Fallback to a default config if not found, though Flask-Migrate should provide it
-                # This might indicate Flask-Migrate is not properly configured or initialized
-                app_instance.logger.warning("Alembic config not found via Flask-Migrate, attempting default.")
-                alembic_cfg = alembic.config.Config('migrations/alembic.ini') # Assuming default path
-                # We need to set the script location if it's not in the ini or if using a default Config object
-                if not hasattr(alembic_cfg, 'script_location') or not alembic_cfg.script_location:
-                    alembic_cfg.set_main_option("script_location", "migrations")
-                # Database URL needs to be set for Alembic to connect
-                alembic_cfg.set_main_option("sqlalchemy.url", app_instance.config['SQLALCHEMY_DATABASE_URI'])
+            app_instance.logger.info("Configuring Alembic for database migrations...")
+            alembic_cfg = alembic.config.Config('migrations/alembic.ini')
+            alembic_cfg.set_main_option("script_location", migrate.directory)
+            alembic_cfg.set_main_option("sqlalchemy.url", app_instance.config['SQLALCHEMY_DATABASE_URI'])
 
             app_instance.logger.info("Attempting to apply database migrations...")
             alembic.command.upgrade(alembic_cfg, "head")

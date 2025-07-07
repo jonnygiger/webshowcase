@@ -4,8 +4,8 @@ pytest
 APScheduler>=3.0.0
 Flask-SQLAlchemy
 Flask-Migrate
-
 Flask-RESTful
 Flask-JWT-Extended
 Flask-Login
 Werkzeug
+python-dotenv

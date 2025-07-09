@@ -210,50 +210,55 @@ class AppTestCase(unittest.TestCase):
             client_instance if client_instance else self.socketio_client
         )
 
+        # Initial Disconnect (as per new requirement)
         if socketio_client_to_use.is_connected(namespace="/"):
-            self.app.logger.debug(f"SocketIO client for {username} already connected, disconnecting before reconnecting with token.")
+            self.app.logger.debug(f"SocketIO client for {username}: Initial check found client connected. Disconnecting before login attempt.")
+            socketio_client_to_use.disconnect(namespace="/")
+            time.sleep(0.1) # Allow disconnect to process
+
+        # Existing disconnect logic (can be redundant if above executed, but kept for safety or different condition)
+        if socketio_client_to_use.is_connected(namespace="/"):
+            self.app.logger.debug(f"SocketIO client for {username} still connected (or reconnected implicitly), disconnecting before reconnecting with token.")
             socketio_client_to_use.disconnect(namespace="/")
             time.sleep(0.2) # Give a moment for disconnect to process
 
-        # Always clear any stale events from previous interactions *before* this new connection attempt.
-        # This is important if the client instance is being reused or if an implicit anonymous connection left events.
-        self.app.logger.debug(f"SocketIO client for {username}: Clearing pre-existing events before connect call.")
-        # Loop to clear out any existing events from the socketio_client_to_use
-        self.app.logger.debug(f"SocketIO client for {username}: Starting pre-connection event clearing loop.")
-        for i in range(5): # Try up to 5 times
-            if not socketio_client_to_use.is_connected(namespace="/"):
-                self.app.logger.debug(f"SocketIO client for {username}: Not connected (attempt {i+1}), so no pre-existing events to clear from server.")
-                break
+        # Revised Pre-Connect Event Clearing
+        self.app.logger.debug(f"SocketIO client for {username}: Starting revised pre-connection event clearing loop.")
+        cleared_in_total = 0
+        for i in range(10): # Try up to 10 times to be thorough
             try:
-                # Attempt to get received events. If the client is connected but the queue is empty, it returns an empty list.
-                events = socketio_client_to_use.get_received(namespace="/")
-                if not events:
-                    self.app.logger.debug(f"SocketIO client for {username}: Event queue cleared on attempt {i+1}.")
-                    break
-                self.app.logger.debug(f"SocketIO client for {username}: Drained {len(events)} events on attempt {i+1}, checking again.")
-                # time.sleep(0.01) # Small delay if events were found - consider if this sleep is truly needed or if it slows down tests.
-                                 # For now, let's keep it to match original behavior if events are drained.
-                if len(events) > 0: # Only sleep if we actually processed events
-                    time.sleep(0.01)
-
-            except RuntimeError as e: # Catch 'not connected' if is_connected() was true but then it disconnected.
-                self.app.logger.warning(f"SocketIO client for {username}: Error '{e}' during pre-event clearing on attempt {i+1}. Assuming disconnected.")
+                # Use a very short timeout for get_received if possible, or rely on its default non-blocking nature
+                # For the test client, get_received() has a default timeout of 1 second,
+                # which is too long for a tight loop.
+                # However, the test client's get_received() actually processes events from an internal queue
+                # and doesn't block if empty, it just returns an empty list.
+                events = socketio_client_to_use.get_received(namespace="/") # Default behavior is okay here
+                if events:
+                    cleared_in_total += len(events)
+                    self.app.logger.debug(f"SocketIO client for {username}: Drained {len(events)} events on attempt {i+1}/{10}.")
+                else:
+                    # If no events for a couple of tries, assume it's clear for now
+                    if i > 2 and cleared_in_total == 0 : # If after 3 tries still nothing, maybe it's truly empty
+                        self.app.logger.debug(f"SocketIO client for {username}: Event queue appears empty after {i+1} attempts with no events drained.")
+                        #break # Optional: break early if consistently empty
+                    elif not events and cleared_in_total > 0:
+                         self.app.logger.debug(f"SocketIO client for {username}: Event queue empty on attempt {i+1}, but previously drained {cleared_in_total}. Continuing checks.")
+                    # else just continue, it might be a race
+                time.sleep(0.01) # Short sleep to prevent busy loop and allow server to process/queue if needed
+            except RuntimeError as e:
+                self.app.logger.warning(f"SocketIO client for {username}: Error '{e}' during pre-event clearing on attempt {i+1}. Stopping clearing.")
                 break
-        else: # Executed if the loop completed without breaking (i.e., events were found each time for 5 attempts)
-            # This 'else' block runs if the loop finished normally (didn't break).
-            # We should check connection status before logging a warning.
-            if socketio_client_to_use.is_connected(namespace="/"):
-                # If still connected and loop finished, it means events were received each time.
-                self.app.logger.warning(f"SocketIO client for {username}: Event queue still had events after 5 clearing attempts (client still connected).")
-            else:
-                # If not connected and loop finished, it means it likely disconnected during one of the attempts.
-                self.app.logger.info(f"SocketIO client for {username}: Event clearing loop finished; client was or became disconnected during the attempts.")
-        self.app.logger.debug(f"SocketIO client for {username}: Finished pre-connection event clearing loop.")
-
+        if cleared_in_total > 0:
+            self.app.logger.info(f"SocketIO client for {username}: Drained a total of {cleared_in_total} pre-existing events.")
+        else:
+            self.app.logger.info(f"SocketIO client for {username}: No pre-existing events were drained.")
+        self.app.logger.debug(f"SocketIO client for {username}: Finished revised pre-connection event clearing loop.")
 
         # Connect SocketIO client with JWT token
         self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")
         socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token}, headers={'Authorization': f'Bearer {jwt_token}'})
+        current_connection_sid = socketio_client_to_use.sid
+        self.app.logger.info(f"SocketIO client for {username} initiated connection, current_connection_sid: {current_connection_sid}")
 
         # Events received immediately upon connection will now be processed by the auth checking loop.
         start_time = time.time()
@@ -269,23 +274,28 @@ class AppTestCase(unittest.TestCase):
                     event_args = event.get('args')
                     self.app.logger.debug(f"SocketIO event received for {username}: Name: {event_name}, Args: {event_args}")
 
+                    # Retrieve SID from event payload to ensure it's for the current connection attempt
+                    event_sid = event_args[0].get('sid') if event_args and isinstance(event_args, list) and len(event_args) > 0 and isinstance(event_args[0], dict) else None
+
+                    if event_sid != current_connection_sid:
+                        self.app.logger.warning(f"SocketIO event for {username}: SID mismatch or missing. Event SID: {event_sid}, Expected SID: {current_connection_sid}. Event Name: {event_name}. Args: {event_args}. Skipping this event.")
+                        continue # Skip this event, it's not for the current connection attempt
+
                     if event_name == 'confirm_namespace_connected':
-                        # Check if the event is for the current connection attempt and status is authenticated
                         if event_args and event_args[0].get('status') == 'authenticated':
-                            self.app.logger.info(f"SocketIO 'confirm_namespace_connected' (authenticated) received for {username} (Attempt specific).")
+                            self.app.logger.info(f"SocketIO 'confirm_namespace_connected' (authenticated) received for {username} with matching SID {current_connection_sid}.")
                             auth_successful = True
-                            break
-                        elif event_args: # Log if 'confirm_namespace_connected' is received but not authenticated
-                            self.app.logger.warning(f"SocketIO 'confirm_namespace_connected' received for {username} but status was not 'authenticated': {event_args[0].get('status')}")
+                            break # Break from for loop (events)
+                        elif event_args:
+                            self.app.logger.warning(f"SocketIO 'confirm_namespace_connected' received for {username} with matching SID {current_connection_sid} but status was not 'authenticated': {event_args[0].get('status')}")
                     elif event_name == 'auth_error':
-                        # This event indicates a failure for the current connection attempt
-                        self.app.logger.error(f"SocketIO 'auth_error' received for {username}: {event_args} (Attempt specific).")
+                        self.app.logger.error(f"SocketIO 'auth_error' received for {username} with matching SID {current_connection_sid}: {event_args}.")
                         auth_error_message = event_args[0].get('message', str(event_args[0])) if event_args and event_args[0] else "Unknown authentication error"
-                        break
-                    # Other events can be logged but might not terminate the loop unless they signify a different problem.
+                        break # Break from for loop (events)
+                    # Other events can be logged but might not terminate the loop unless they signify a different problem for this SID.
 
                 if auth_successful or auth_error_message: # If auth success or a specific auth error for this attempt, exit loop.
-                    break
+                    break # Break from while loop
             except Exception as e: # get_received might raise if client disconnects unexpectedly
                 self.app.logger.error(f"Error while getting received events for {username}: {e}")
                 # Potentially treat as a connection failure, especially if it's persistent.

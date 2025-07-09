@@ -22,7 +22,7 @@
 
             <div class="card shadow-sm">
                 <div class="card-body p-4">
-                    <form method="POST" action="{{ url_for('core.create_event') }}">
+                    <form method="POST" action="{{ custom_url_for_primary('core.create_event') }}">
                         {# Add CSRF token if using Flask-WTF or similar #}
                         {# {{ form.hidden_tag() if form and form.hidden_tag }} #}
                         <div class="mb-3">

@@ -256,9 +256,10 @@ class AppTestCase(unittest.TestCase):
 
         # Connect SocketIO client with JWT token
         self.app.logger.info(f"SocketIO client for {username} attempting to connect with JWT token.")
+        current_connection_sid = None  # Initialize current_connection_sid
         socketio_client_to_use.connect(namespace="/", auth={'token': jwt_token}, headers={'Authorization': f'Bearer {jwt_token}'})
-        current_connection_sid = socketio_client_to_use.sid
-        self.app.logger.info(f"SocketIO client for {username} initiated connection, current_connection_sid: {current_connection_sid}")
+        # current_connection_sid = socketio_client_to_use.sid # Commented out
+        # self.app.logger.info(f"SocketIO client for {username} initiated connection, current_connection_sid: {current_connection_sid}") # Moved
 
         # Events received immediately upon connection will now be processed by the auth checking loop.
         start_time = time.time()
@@ -283,6 +284,8 @@ class AppTestCase(unittest.TestCase):
 
                     if event_name == 'confirm_namespace_connected':
                         if event_args and event_args[0].get('status') == 'authenticated':
+                            current_connection_sid = event_sid # Assign event_sid to current_connection_sid
+                            self.app.logger.info(f"SocketIO client for {username} initiated connection, current_connection_sid: {current_connection_sid}") # Moved logging statement
                             self.app.logger.info(f"SocketIO 'confirm_namespace_connected' (authenticated) received for {username} with matching SID {current_connection_sid}.")
                             auth_successful = True
                             break # Break from for loop (events)

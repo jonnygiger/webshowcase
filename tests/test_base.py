@@ -6,6 +6,7 @@ import io
 import time
 import threading
 from unittest.mock import patch, call, ANY
+from flask_socketio import SocketIOTestClient, sleep as socketio_sleep
 
 from social_app import create_app, db as app_db, socketio as main_app_socketio
 from flask import url_for, Response
@@ -97,41 +98,19 @@ class AppTestCase(unittest.TestCase):
 
         # Initialize the SocketIO test client for this test instance
         self.socketio_client = self.socketio_class_level.test_client(
-            self.app, flask_test_client=self.client
+            self.app
         )
 
-        # Handle and clear any implicit connection or residual events
+        # A new client from test_client(self.app) should be initially disconnected and have no queued events.
+        # If there's an edge case where a client could be connected, a simple check might be needed.
+        # For now, we assume it starts disconnected.
         if self.socketio_client.is_connected(namespace="/"):
-            self.app.logger.debug("Implicit SocketIO connection found on new client in setUp. Disconnecting.")
+            self.app.logger.warning("Newly created SocketIO client was unexpectedly connected. Attempting disconnect.")
             self.socketio_client.disconnect(namespace="/")
-            time.sleep(0.1) # Short pause to allow disconnect to process on server/client side
+            # It's good practice to ensure events are cleared if it was unexpectedly connected,
+            # though ideally this state shouldn't be reached.
+            # self._clear_socketio_events(self.socketio_client, client_name_for_log="self.socketio_client (unexpectedly connected in setUp)")
 
-            # Attempt to clear any events that might have been queued due to the implicit connection
-            # or from a previous test's state if the client wasn't perfectly reset.
-            self.app.logger.debug("Attempting to clear residual events from SocketIO client in setUp.")
-            cleared_event_count = 0
-            for i in range(5): # Try up to 5 times to clear
-                if not self.socketio_client.is_connected(namespace="/"):
-                    # If disconnect happened during server processing or due to an error, stop.
-                    self.app.logger.debug("SocketIO client became disconnected during event clearing loop in setUp.")
-                    break
-                try:
-                    events = self.socketio_client.get_received(namespace="/")
-                    if not events:
-                        self.app.logger.debug(f"SocketIO event queue cleared in setUp after {i+1} attempts.")
-                        break
-                    cleared_event_count += len(events)
-                    self.app.logger.debug(f"Drained {len(events)} events in setUp (attempt {i+1}/5). Total drained so far: {cleared_event_count}.")
-                    time.sleep(0.05) # Brief pause to allow event queue to be processed
-                except RuntimeError: # Can occur if get_received is called on a fully closed client
-                    self.app.logger.debug("SocketIO client reported RuntimeError (likely fully disconnected) during event clearing in setUp.")
-                    break
-            else: # Executed if the loop completes without a 'break'
-                # This means events might still be present or client is still connected.
-                if self.socketio_client.is_connected(namespace="/"):
-                     self.app.logger.warning(f"SocketIO client event queue in setUp might still have events after 5 clearing attempts (client still connected). Drained {cleared_event_count} events.")
-                else:
-                     self.app.logger.info(f"SocketIO client event clearing loop in setUp finished; client was or became disconnected. Drained {cleared_event_count} events.")
 
         # Prepare database: clean tables and set up base users
         with self.app.app_context():
@@ -810,3 +789,51 @@ class AppTestCase(unittest.TestCase):
             if friendship:
                 self.db.session.delete(friendship)
                 self.db.session.commit()
+
+    def _wait_for_socketio_event(self, client: SocketIOTestClient, event_name: str, timeout: float = 3.0, sleep_interval: float = 0.05, namespace: str = "/", consume_other_events: bool = False):
+        """
+        Waits for a specific SocketIO event to be received by the client.
+
+        Args:
+            client: The SocketIO test client instance.
+            event_name: The name of the event to wait for.
+            timeout: Maximum time in seconds to wait for the event.
+            sleep_interval: Time in seconds to sleep between polling attempts using socketio.sleep().
+            namespace: The namespace to get events from.
+            consume_other_events: If True, other received events will be logged and discarded while waiting.
+                                   If False (default), the presence of other events before the target
+                                   event will not stop the search, but they will remain in the queue
+                                   unless the target event is found among them.
+
+        Returns:
+            dict: The data of the found event, or None if timed out.
+        """
+        start_time = time.time()
+        self.app.logger.debug(f"Waiting for event '{event_name}' on namespace '{namespace}' for client SID {client.eio_sid if client else 'N/A'} (timeout: {timeout}s)")
+
+        all_received_events_during_wait = []
+
+        while time.time() - start_time < timeout:
+            if not client.is_connected(namespace=namespace):
+                self.app.logger.warning(f"Client SID {client.eio_sid if client else 'N/A'} disconnected while waiting for event '{event_name}'.")
+                return None
+
+            received_batch = client.get_received(namespace=namespace) # Get all currently queued events
+
+            if received_batch:
+                self.app.logger.debug(f"Received batch of {len(received_batch)} events: {[(e.get('name'), e.get('args')) for e in received_batch]}")
+                all_received_events_during_wait.extend(received_batch) # Add to our collected list
+
+                # Check if the desired event is in the current batch or previously collected events
+                for i, event_data in enumerate(all_received_events_during_wait):
+                    if event_data.get("name") == event_name:
+                        self.app.logger.info(f"Event '{event_name}' found for client SID {client.eio_sid if client else 'N/A'}. Data: {event_data.get('args')}")
+                        # Simplified logic due to get_received() being destructive:
+                        # We search all events received in this polling cycle.
+                        # If found, we return it. Others received in this cycle are consumed.
+                        return event_data
+
+            socketio_sleep(sleep_interval) # Use socketio's sleep for cooperative yielding
+
+        self.app.logger.warning(f"Timeout waiting for event '{event_name}' for client SID {client.eio_sid if client else 'N/A'} after {timeout}s.")
+        return None

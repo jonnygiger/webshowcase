@@ -38,6 +38,8 @@ class Group(db.Model):
         back_populates="joined_groups",
     )
 
+    posts = db.relationship("Post", back_populates="group", lazy="dynamic")
+
     # messages = db.relationship('GroupMessage', backref='group', lazy='dynamic', cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -276,7 +278,9 @@ class Post(db.Model):
     is_featured = db.Column(db.Boolean, default=False)
     featured_at = db.Column(db.DateTime, nullable=True)
     image_url = db.Column(db.String(255), nullable=True)
+    group_id = db.Column(db.Integer, db.ForeignKey("group.id"), nullable=True)
 
+    group = db.relationship("Group", back_populates="posts")
     comments = db.relationship(
         "Comment", backref="post", lazy=True, cascade="all, delete-orphan"
     )

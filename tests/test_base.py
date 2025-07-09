@@ -350,7 +350,7 @@ class AppTestCase(unittest.TestCase):
 
         # Capture the Session ID (SID) immediately after connect. This SID is crucial for
         # associating subsequent events (like auth confirmation) with THIS connection attempt.
-        current_connection_sid = socketio_client_to_use.sid
+        current_connection_sid = getattr(socketio_client_to_use, 'sid', None)
         if not current_connection_sid:
              # This is unexpected if connect() did not raise an error.
              self.app.logger.error(f"{client_log_name}: Connection initiated but SID is immediately unavailable.")

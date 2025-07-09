@@ -6,7 +6,7 @@ import io
 import time
 import threading
 from unittest.mock import patch, call, ANY
-from flask_socketio import SocketIOTestClient, sleep as socketio_sleep
+from flask_socketio import SocketIOTestClient
 
 from social_app import create_app, db as app_db, socketio as main_app_socketio
 from flask import url_for, Response
@@ -833,7 +833,7 @@ class AppTestCase(unittest.TestCase):
                         # If found, we return it. Others received in this cycle are consumed.
                         return event_data
 
-            socketio_sleep(sleep_interval) # Use socketio's sleep for cooperative yielding
+            time.sleep(sleep_interval) # Use time.sleep for cooperative yielding
 
         self.app.logger.warning(f"Timeout waiting for event '{event_name}' for client SID {client.eio_sid if client else 'N/A'} after {timeout}s.")
         return None

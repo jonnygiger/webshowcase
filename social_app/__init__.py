@@ -55,6 +55,7 @@ def create_app(config_class=None):
     login_manager.init_app(app)
     login_manager.login_view = "core.login"
 
+    from .core.utils import custom_url_for_assets, custom_url_for_primary
     # Register custom URL helpers as Jinja globals
     app.add_template_global(custom_url_for_assets, name='custom_url_for_assets')
     app.add_template_global(custom_url_for_primary, name='custom_url_for_primary')
@@ -64,7 +65,6 @@ def create_app(config_class=None):
 
     from .core import views as core_views
     from .core import events as core_events
-    from .core.utils import custom_url_for_assets, custom_url_for_primary
     from .api import routes as api_routes_module
     from .api.routes import (
         UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource,

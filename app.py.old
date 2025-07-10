@@ -18,7 +18,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from datetime import datetime, timezone
 from collections import Counter
-from flask_socketio import SocketIO, emit, join_room
 from flask_login import (
     LoginManager,
     current_user,
@@ -140,9 +139,6 @@ app.config["SECRET_KEY"] = (
 )
 app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"
 
-socketio = SocketIO(
-    app, async_mode="threading"
-)
 api = Api(app)
 jwt = JWTManager(app)
 
@@ -213,7 +209,6 @@ def emit_new_activity_event(activity_log):
         for friend in friends_of_actor:
             if friend.id != actor.id:
                 room = f"user_{friend.id}"
-                socketio.emit("new_activity_event", payload, room=room)
                 app.logger.info(
                     f"Emitted new_activity_event to room {room} for activity {activity_log.id} by user {actor.username}"
                 )
@@ -1100,17 +1095,17 @@ def create_post():
                                 notification_instance.id
                                 and notification_instance.timestamp
                             ):
-                                socketio.emit(
-                                    "new_friend_post",
-                                    {
-                                        "notification_id": notification_instance.id,
-                                        "post_id": new_post_db.id,
-                                        "post_title": new_post_db.title,
-                                        "poster_username": post_author.username,
-                                        "timestamp": notification_instance.timestamp.isoformat(),
-                                    },
-                                    room=f"user_{notification_instance.user_id}",
-                                )
+                                # socketio.emit( # Removed SocketIO emit
+                                # "new_friend_post",
+                                # {
+                                # "notification_id": notification_instance.id,
+                                # "post_id": new_post_db.id,
+                                # "post_title": new_post_db.title,
+                                # "poster_username": post_author.username,
+                                # "timestamp": notification_instance.timestamp.isoformat(),
+                                # },
+                                # room=f"user_{notification_instance.user_id}",
+                                # )
                                 app.logger.info(
                                     f"Sent new_friend_post notification to user_{notification_instance.user_id} for post {new_post_db.id}"
                                 )
@@ -1440,9 +1435,6 @@ def add_comment(post_id):
         "content": new_comment_db.content,
         "timestamp": new_comment_db.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
     }
-    socketio.emit(
-        "new_comment_event", new_comment_data_for_post_room, room=f"post_{post_id}"
-    )
 
     if post_id in app.sse_listeners:
         sse_comment_data = {
@@ -1480,11 +1472,6 @@ def add_comment(post_id):
                 "comment_content": new_comment_db.content,
                 "post_title": post.title,
             }
-            socketio.emit(
-                "new_comment_notification",
-                notification_data,
-                room=f"user_{post_author_id}",
-            )
             app.logger.info(
                 f"Sent new_comment_notification to user_{post_author_id} for post {post.id}"
             )
@@ -1531,17 +1518,17 @@ def like_post(post_id):
                         db.session.add(new_notification)
                         db.session.commit()
 
-                        socketio.emit(
-                            "new_like_notification",
-                            {
-                                "liker_username": liker.username,
-                                "post_id": post.id,
-                                "post_title": post.title,
-                                "message": notification_message,
-                                "notification_id": new_notification.id,
-                            },
-                            room=f"user_{post.author.id}",
-                        )
+                        # socketio.emit( # Removed SocketIO emit
+                        # "new_like_notification",
+                        # {
+                        # "liker_username": liker.username,
+                        # "post_id": post.id,
+                        # "post_title": post.title,
+                        # "message": notification_message,
+                        # "notification_id": new_notification.id,
+                        # },
+                        # room=f"user_{post.author.id}",
+                        # )
                         app.logger.info(
                             f"Sent new_like_notification to user_{post.author.id} for post {post.id}"
                         )
@@ -1694,114 +1681,8 @@ def chat_page():
     return render_template("chat.html")
 
 
-@socketio.on("join_chat_room")
-def handle_join_chat_room_event(data):
-    print(
-        f"SOCKETIO DEBUG (direct print): session in handle_join_chat_room_event: {dict(session)}",
-        flush=True,
-    )
-    room_name = data.get("room_name")
-    user_id = session.get("user_id")
-    username = session.get("username", "Anonymous")
-
-    if not room_name or not user_id:
-        app.logger.error(
-            f"Join chat room event failed: room_name='{room_name}', user_id='{user_id}'"
-        )
-        return
-
-    join_room(room_name)
-    app.logger.info(
-        f"User '{username}' (ID: {user_id}) joined chat room: '{room_name}'"
-    )
-    socketio.emit(
-        "user_joined_chat", {"username": username, "room": room_name}, room=room_name
-    )
-
-
-@socketio.on("leave_chat_room")
-def handle_leave_chat_room_event(data):
-    room_name = data.get("room_name")
-    user_id = session.get("user_id")
-    username = session.get("username", "Anonymous")
-
-    if not room_name or not user_id:
-        app.logger.error(
-            f"Leave chat room event failed: room_name='{room_name}', user_id='{user_id}'"
-        )
-        return
-
-    app.logger.info(
-        f"User '{username}' (ID: {user_id}) left chat room: '{room_name}' (notified others)"
-    )
-    socketio.emit(
-        "user_left_chat", {"username": username, "room": room_name}, room=room_name
-    )
-
-
-@socketio.on("send_chat_message")
-def handle_send_chat_message_event(data):
-    room_name = data.get("room_name")
-    message_text = data.get("message")
-    user_id = session.get("user_id")
-    username = session.get("username")
-
-    if not room_name or not message_text or not user_id:
-        app.logger.error(
-            f"Send chat message event failed: room_name='{room_name}', message='{message_text}', user_id='{user_id}'"
-        )
-        emit(
-            "chat_error",
-            {"message": "Room, message, and user authentication are required."},
-        )
-        return
-
-    try:
-        room_id_str = room_name.split("_")[-1]
-        chat_room_id = int(room_id_str)
-    except (IndexError, ValueError) as e:
-        app.logger.error(
-            f"Could not parse chat_room_id from room_name '{room_name}': {e}"
-        )
-        emit("chat_error", {"message": "Invalid room name format."})
-        return
-
-    chat_room = db.session.get(ChatRoom, chat_room_id)
-    if not chat_room:
-        app.logger.error(
-            f"ChatRoom with id {chat_room_id} not found for message from user {user_id}."
-        )
-        emit("chat_error", {"message": f"Chat room {chat_room_id} not found."})
-        return
-
-    try:
-        new_chat_message = ChatMessage(
-            room_id=chat_room_id, user_id=user_id, message=message_text
-        )
-        db.session.add(new_chat_message)
-        db.session.commit()
-        app.logger.info(
-            f"User '{username}' sent message to room '{room_name}': '{message_text}' (ID: {new_chat_message.id})"
-        )
-
-        message_payload = {
-            "id": new_chat_message.id,
-            "room_id": new_chat_message.room_id,
-            "room_name": room_name,
-            "user_id": new_chat_message.user_id,
-            "username": username,
-            "message": new_chat_message.message,
-            "timestamp": new_chat_message.timestamp.isoformat(),
-        }
-        socketio.emit("new_chat_message", message_payload, room=room_name)
-
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(
-            f"Error saving/sending chat message for room {room_name} by user {user_id}: {e}"
-        )
-        emit("chat_error", {"message": "An error occurred while sending your message."})
-
+# @socketio.on("join_chat_room") # Removed SocketIO event handler
+# Removed commented out SocketIO event handlers and their bodies containing emit and join_room calls
 
 @app.route("/post/<int:post_id>/react", methods=["POST"])
 @login_required
@@ -1990,11 +1871,6 @@ def send_message(receiver_username):
             "timestamp": new_message_db.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
             "sender_username": new_message_db.sender.username,
         }
-        socketio.emit(
-            "new_direct_message",
-            message_payload,
-            room=f"user_{new_message_db.receiver_id}",
-        )
 
         unread_count = (
             db.session.query(Message)
@@ -2019,11 +1895,6 @@ def send_message(receiver_username):
             "conversation_partner_id": new_message_db.sender_id,
             "conversation_partner_username": new_message_db.sender.username,
         }
-        socketio.emit(
-            "update_inbox_notification",
-            inbox_update_payload,
-            room=f"user_{new_message_db.receiver_id}",
-        )
 
         flash("Message sent successfully!", "success")
         return redirect(
@@ -2159,284 +2030,8 @@ def view_notifications():
     return render_template("notifications.html", notifications=notifications_to_display)
 
 
-@socketio.on("join_room")
-def handle_join_room_event(data):
-    app.logger.info(
-        f"User {session.get('username', 'Anonymous')} joined room: {data['room']}"
-    )
-    join_room(data["room"])
-
-
-@socketio.on("join_group_chat")
-def handle_join_group_chat_event(data):
-    group_id = data.get("group_id")
-    if not group_id:
-        app.logger.error("join_group_chat event received without group_id")
-        return
-
-    room_name = f"group_chat_{group_id}"
-    join_room(room_name)
-    username = session.get("username", "Unknown user")
-    app.logger.info(f"User '{username}' joined group chat room: '{room_name}'")
-
-
-@socketio.on("send_group_message")
-def handle_send_group_message_event(data):
-    user_id = session.get("user_id")
-    username = session.get("username")
-
-    if not user_id:
-        app.logger.error("send_group_message event received from unauthenticated user.")
-        emit(
-            "error_event", {"message": "Authentication required to send messages."}
-        )
-        return
-
-    group_id = data.get("group_id")
-    message_content = data.get("message_content")
-
-    if not group_id:
-        app.logger.error(
-            f"User {username} (ID: {user_id}) tried to send group message without group_id."
-        )
-        emit("error_event", {"message": "Group ID is missing."})
-        return
-
-    if not message_content or not message_content.strip():
-        app.logger.info(
-            f"User {username} (ID: {user_id}) tried to send an empty message to group {group_id}."
-        )
-        return
-
-    try:
-        room_name = f"group_chat_{group_id}"
-        message_payload = {
-            "message_content": message_content.strip(),
-            "sender_username": username,
-            "timestamp": datetime.now(timezone.utc).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            ),
-            "group_id": group_id,
-            "user_id": user_id,
-            "message_id": "temp_id_"
-            + datetime.now(
-                timezone.utc
-            ).isoformat(),
-        }
-        socketio.emit("receive_group_message", message_payload, room=room_name)
-        app.logger.info(
-            f"User '{username}' sent message to group {group_id}: '{message_content}' (not saved)"
-        )
-
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(
-            f"Error sending (but not saving) group message for group {group_id} by user {user_id}: {e}"
-        )
-        emit(
-            "error_event", {"message": "An error occurred while sending your message."}
-        )
-
-
-@socketio.on("edit_post_content")
-def handle_edit_post_content(data):
-    app.logger.debug(f"DEBUG: handle_edit_post_content invoked. SID: {request.sid}. Data: {data}")
-    app.logger.debug(f"DEBUG: Session content at handler entry: {dict(session)}")
-
-    user_id = None
-    token = data.get("token")
-
-    app.logger.debug(f"DEBUG: Attempting authentication. Token present: {bool(token)}")
-
-    if token:
-        try:
-            decoded_token = decode_token(token)
-            identity = decoded_token["sub"]
-            if isinstance(identity, str) and identity.isdigit():
-                user_id = int(identity)
-            elif isinstance(identity, int):
-                user_id = identity
-            else:
-                app.logger.warning(
-                    f"DEBUG: Token for edit_post_content yielded non-integer, non-numeric-string sub: {identity}"
-                )
-                user_id = None
-            app.logger.debug(f"DEBUG: Token decoded. User ID from token: {user_id}")
-        except Exception as e:
-            app.logger.error(f"DEBUG: Token validation failed: {e}")
-            emit("edit_error", {"message": f"Token error: {str(e)}"}, room=request.sid)
-            return
-
-    app.logger.debug(f"DEBUG: User ID after token processing: {user_id}")
-
-    if not user_id:
-        user_id_from_session = session.get("user_id")
-        app.logger.debug(f"DEBUG: No valid token user_id. Attempting User ID from session: {user_id_from_session}")
-        if user_id_from_session:
-            user_id = user_id_from_session
-        else:
-            app.logger.debug(f"DEBUG: Authentication failed (no token or session user_id). Emitting auth error. SID: {request.sid}")
-            emit(
-                "edit_error",
-                {
-                    "message": "Authentication required. Please log in or provide a valid token."
-                },
-                room=request.sid,
-            )
-            return
-
-    app.logger.debug(f"DEBUG: Authenticated user_id for edit: {user_id}, type: {type(user_id)}")
-
-    post_id = data.get("post_id")
-    new_content = data.get("new_content")
-
-    app.logger.debug(f"DEBUG: Validating data. post_id: {post_id}, new_content is None: {new_content is None}")
-    if not post_id or new_content is None:
-        app.logger.debug(f"DEBUG: Invalid data (post_id or new_content missing). Emitting data error. SID: {request.sid}")
-        emit(
-            "edit_error",
-            {"message": "Invalid data: Post ID and new content are required."},
-            room=request.sid,
-        )
-        return
-
-    app.logger.debug(f"DEBUG: Fetching post with ID: {post_id}")
-    post = db.session.get(Post, post_id)
-    app.logger.debug(f"DEBUG: Post found status for ID {post_id}: {bool(post)}")
-    if not post:
-        app.logger.debug(f"DEBUG: Post not found for post_id={post_id}. Emitting post not found error. SID: {request.sid}")
-        emit("edit_error", {"message": "Post not found."}, room=request.sid)
-        return
-    app.logger.debug(f"DEBUG: Post found: ID {post.id}, Title: {post.title}")
-
-    lock = post.lock_info
-    app.logger.debug(f"DEBUG: Checking lock for post {post_id}. Lock object: {lock}. request.sid: {request.sid}")
-    if hasattr(lock, 'user_id') and hasattr(lock, 'expires_at'):
-        app.logger.debug(f"DEBUG: Lock details: user_id={lock.user_id}, expires_at={lock.expires_at}")
-    elif lock is not None:
-        app.logger.warning(f"DEBUG: Lock object for post {post_id} exists but lacks user_id or expires_at attributes: {lock}")
-
-    if lock is None:
-        app.logger.debug(f"DEBUG: Post {post_id} has no lock object (lock is None). Emitting 'edit_error'. SID: {request.sid}")
-        if request.sid is None:
-            app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_error' for not locked post {post_id}.")
-        emit(
-            "edit_error",
-            {"message": "Post is not locked for editing. Please acquire a lock first."},
-            room=request.sid,
-        )
-        return
-
-    app.logger.debug(f"DEBUG: Lock user_id: {lock.user_id} (type: {type(lock.user_id)}), Authenticated user_id: {user_id} (type: {type(user_id)})")
-    if lock.user_id != user_id:
-        app.logger.debug(f"DEBUG: Lock user_id ({lock.user_id}) does not match authenticated user_id ({user_id}).")
-        lock_expired = lock.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc)
-        app.logger.debug(f"DEBUG: Lock expired status: {lock_expired}")
-        if lock_expired:
-            app.logger.debug("DEBUG: Lock is expired. Emitting 'edit_error' for expired lock by another user.")
-            if request.sid is None:
-                 app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_error' for expired lock by another user on post {post_id}.")
-            emit(
-                "edit_error",
-                {
-                    "message": "Post lock by another user has expired. Try acquiring the lock."
-                },
-                room=request.sid,
-            )
-        else:
-            app.logger.debug("DEBUG: Lock is held by another user and is not expired. Emitting 'edit_error'.")
-            if request.sid is None:
-                 app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_error' for lock held by another user on post {post_id}.")
-            emit(
-                "edit_error",
-                {"message": "Post is locked by another user."},
-                room=request.sid,
-            )
-        return
-
-    current_time_utc = datetime.now(timezone.utc)
-    lock_expires_at_utc = lock.expires_at.replace(tzinfo=timezone.utc)
-    app.logger.debug(f"DEBUG: Checking user's own lock expiry. Current UTC time: {current_time_utc}, Lock expires at UTC: {lock_expires_at_utc}")
-    if lock_expires_at_utc <= current_time_utc:
-        app.logger.debug("DEBUG: User's own lock has expired. Attempting to delete lock.")
-        db.session.delete(lock)
-        try:
-            db.session.commit()
-            app.logger.debug(f"DEBUG: Expired lock for post {post_id} deleted from DB.")
-            socketio.emit(
-                "post_lock_released",
-                {
-                    "post_id": post_id,
-                    "released_by_user_id": None,
-                    "username": "System (Expired)",
-                },
-                room=f"post_{post_id}",
-            )
-        except Exception as e:
-            db.session.rollback()
-            app.logger.error(f"DEBUG: Error deleting expired lock for post {post_id} during edit attempt: {e}")
-
-        app.logger.debug("DEBUG: Emitting 'edit_error' for user's expired lock.")
-        if request.sid is None:
-            app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_error' for user's own expired lock on post {post_id}.")
-        emit(
-            "edit_error",
-            {
-                "message": "Your lock on the post has expired. Please acquire a new lock."
-            },
-            room=request.sid,
-        )
-        return
-
-    app.logger.debug(f"DEBUG: All checks passed for post {post_id}. Proceeding with update.")
-    post.content = new_content
-    post.last_edited = datetime.now(timezone.utc)
-
-    try:
-        app.logger.debug(f"DEBUG: Attempting to commit content changes for post {post.id}")
-        db.session.commit()
-        app.logger.debug(f"DEBUG: Commit successful for post {post.id}. Broadcasting update.")
-
-        edited_by_user = db.session.get(User, user_id)
-        edited_by_username = edited_by_user.username if edited_by_user else "Unknown User"
-
-        update_payload = {
-            "post_id": post.id,
-            "new_content": post.content,
-            "last_edited": post.last_edited.isoformat(),
-            "edited_by_user_id": user_id,
-            "edited_by_username": edited_by_username,
-        }
-        socketio.emit("post_content_updated", update_payload, room=f"post_{post.id}")
-        app.logger.info(
-            f"DEBUG: User {user_id} ({edited_by_username}) successfully updated post {post.id}. New content broadcasted to room post_{post.id}."
-        )
-
-        app.logger.debug(f"DEBUG: Emitting 'edit_success' to SID: {request.sid} for post {post.id}")
-        if request.sid is None:
-            app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_success' for post {post.id}.")
-        emit(
-            "edit_success",
-            {"message": "Content updated successfully.", "post_id": post.id},
-            room=request.sid,
-        )
-
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(
-            f"DEBUG: Error committing post content update by user {user_id} for post {post.id}: {e}"
-        )
-        app.logger.debug(f"DEBUG: Emitting 'edit_error' due to commit failure to SID: {request.sid} for post {post.id}")
-        if request.sid is None:
-            app.logger.warning(f"DEBUG: request.sid is None before emitting 'edit_error' for commit failure on post {post.id}.")
-        emit(
-            "edit_error",
-            {
-                "message": "A server error occurred while saving changes. Please try again."
-            },
-            room=request.sid,
-        )
-
+# @socketio.on("join_room") # Removed SocketIO event handler
+# Removed commented out SocketIO event handlers and their bodies containing emit and join_room calls
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
@@ -2458,94 +2053,11 @@ def api_login():
         return {"message": "Invalid credentials"}, 401
 
 
-def login_required_socketio(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated:
-            emit(
-                "unauthorized_error",
-                {"message": "User not authenticated for this action."},
-            )
-            return False
-        return f(*args, **kwargs)
-
-    return decorated_function
-
+# Removed commented out SocketIO decorator
 
 import sys
 
-
-@socketio.on("connect", namespace="/")
-def handle_connect():
-    app.logger.info(
-        f"SERVER: SocketIO connect attempt. SID: {request.sid}. Request cookies: {request.cookies}"
-    )
-    flask_request_session = (
-        request.environ.get("werkzeug.request").session
-        if request.environ.get("werkzeug.request")
-        else None
-    )
-    app.logger.info(
-        f"SERVER: Flask session via werkzeug.request.session: {flask_request_session}"
-    )
-    app.logger.info(
-        f"SERVER: Flask session via flask.session: {dict(session)}"
-    )
-
-    user_to_auth = None
-    if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
-        user_to_auth = current_user
-        app.logger.info(
-            f"SERVER: User authenticated via Flask-Login current_user: {user_to_auth.username}"
-        )
-    elif "user_id" in session:
-        user_id_from_session = session["user_id"]
-        app.logger.info(
-            f"SERVER: current_user not authenticated, trying to load user_id {user_id_from_session} from session manually for SocketIO."
-        )
-        user_from_session = db.session.get(User, user_id_from_session)
-        if user_from_session:
-            user_to_auth = user_from_session
-            app.logger.info(
-                f"SERVER: User manually loaded from session for SocketIO: {user_to_auth.username}"
-            )
-        else:
-            app.logger.warning(
-                f"SERVER: user_id {user_id_from_session} found in session, but no user found in DB."
-            )
-
-    if (
-        user_to_auth and user_to_auth.is_authenticated
-    ):
-        app.logger.info(
-            f"SERVER: Authenticated user ID: {user_to_auth.id}, Username: {user_to_auth.username}. SID: {request.sid}"
-        )
-        join_room(f"user_{user_to_auth.id}")
-        app.logger.info(
-            f"User {user_to_auth.username} (SID: {request.sid}) connected to global namespace and joined room user_{user_to_auth.id}"
-        )
-        emit(
-            "confirm_namespace_connected",
-            {
-                "namespace": request.namespace,
-                "sid": request.sid,
-                "status": "authenticated",
-                "username": user_to_auth.username,
-            },
-        )
-    else:
-        app.logger.info(
-            f"SERVER: User could not be authenticated for SocketIO. SID: {request.sid}"
-        )
-        emit(
-            "confirm_namespace_connected",
-            {
-                "namespace": request.namespace,
-                "sid": request.sid,
-                "status": "anonymous_after_manual_check",
-            },
-        )
-
+# Removed commented out SocketIO event handler and its body containing emit and join_room calls
 
 if __name__ == "__main__":
     if not app.config.get("TESTING", False):
@@ -2565,7 +2077,7 @@ if __name__ == "__main__":
 
                 atexit.register(lambda: scheduler.shutdown())
                 print("Scheduler shutdown registered.")
-    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
+    app.run(debug=True) # Replaced with app.run for standard Flask development server
 
 
 def seed_achievements_command():
@@ -4505,15 +4017,4 @@ def post_stream_api_global():
     return Response(event_stream(), mimetype="text/event-stream")
 
 
-def login_required_socketio(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated:
-            emit(
-                "unauthorized_error",
-                {"message": "User not authenticated for this action."},
-            )
-            return False
-        return f(*args, **kwargs)
-
-    return decorated_function
+# Removed commented out SocketIO decorator

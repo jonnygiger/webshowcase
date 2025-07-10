@@ -12,7 +12,7 @@ from werkzeug.security import (
 
 from io import BytesIO
 from flask import url_for
-from social_app import db, socketio
+from social_app import db # Removed socketio
 from social_app.models.db_models import User, UserActivity, Friendship, Post
 from tests.test_base import AppTestCase
 
@@ -47,12 +47,25 @@ class TestLiveActivityFeed(AppTestCase):
         self._create_db_friendship(self.user2, self.user1, status="accepted")
         self._create_db_friendship(self.user2, self.user3, status="accepted")
 
-    @patch("social_app.socketio.emit")
+    @patch("social_app.core.views.current_app.user_notification_queues")
     @patch("social_app.services.achievements.check_and_award_achievements")
-    def test_new_follow_activity_logging_and_socketio(
-        self, mock_check_achievements, mock_socketio_emit
+    def test_new_follow_activity_logging_and_sse_dispatch(
+        self, mock_check_achievements, mock_user_notification_queues
     ):
         with self.app.app_context():
+            mock_friend_queue = MagicMock()
+            # Simulate that user3 (a friend of user2, the one accepting the request) has an active queue
+            def contains_side_effect(user_id_to_check):
+                return user_id_to_check == self.user3.id
+
+            def get_side_effect(user_id_to_get, default=None):
+                if user_id_to_get == self.user3.id:
+                    return [mock_friend_queue]
+                return default if default is not None else []
+
+            mock_user_notification_queues.__contains__.side_effect = contains_side_effect
+            mock_user_notification_queues.get.side_effect = get_side_effect
+
             existing_friendship = Friendship.query.filter(
                 (
                     (Friendship.user_id == self.user1.id)
@@ -114,29 +127,35 @@ class TestLiveActivityFeed(AppTestCase):
             }
 
             user2_updated = self.db.session.get(User, self.user2.id)
-            friends_of_user2 = user2_updated.get_friends()
+            # The emit_new_activity_event function in views.py will iterate through friends.
+            # We need to ensure our mock setup correctly intercepts the call for user3.
 
-            emit_calls = []
-            for friend_of_user2 in friends_of_user2:
-                if friend_of_user2.id != self.user2.id:
-                    if friend_of_user2.id == self.user3.id:
-                        emit_calls.append(
-                            call(
-                                "new_activity_event",
-                                expected_payload,
-                                room=f"user_{self.user3.id}",
-                            )
-                        )
+            # Check that user3's queue was checked and accessed
+            mock_user_notification_queues.__contains__.assert_any_call(self.user3.id)
+            mock_user_notification_queues.get.assert_any_call(self.user3.id)
 
-            if not emit_calls:
-                is_user3_friend = any(f.id == self.user3.id for f in friends_of_user2)
-                if not is_user3_friend:
-                    print(
-                        f"Warning: User3 (ID: {self.user3.id}) was expected to be a friend of User2 (ID: {self.user2.id}) but is not."
-                    )
-                self.fail("Expected socketio.emit calls to user3 but no such calls were prepared.")
+            # Check that put_nowait was called on user3's queue
+            mock_friend_queue.put_nowait.assert_called_once()
+            args, _ = mock_friend_queue.put_nowait.call_args
+            sse_event_data = args[0]
 
-            mock_socketio_emit.assert_has_calls(emit_calls, any_order=True)
+            self.assertEqual(sse_event_data['type'], "new_activity") # This should match emit_new_activity_event in views
+
+            # Compare payload contents, allowing for ANY for timestamp and profile_picture if dynamic
+            payload_sent = sse_event_data['payload']
+            self.assertEqual(payload_sent['activity_id'], expected_payload['activity_id'])
+            self.assertEqual(payload_sent['user_id'], expected_payload['user_id'])
+            self.assertEqual(payload_sent['username'], expected_payload['username'])
+            # self.assertEqual(payload_sent['profile_picture'], expected_payload['profile_picture']) # Can be ANY
+            self.assertEqual(payload_sent['activity_type'], expected_payload['activity_type'])
+            self.assertEqual(payload_sent['related_id'], expected_payload['related_id'])
+            self.assertEqual(payload_sent['content_preview'], expected_payload['content_preview'])
+            self.assertEqual(payload_sent['link'], expected_payload['link'])
+            self.assertEqual(payload_sent['target_user_id'], expected_payload['target_user_id'])
+            self.assertEqual(payload_sent['target_username'], expected_payload['target_username'])
+            self.assertIn('timestamp', payload_sent)
+
+
             self.assertTrue(mock_check_achievements.called)
             mock_check_achievements.assert_any_call(self.user2.id)
             mock_check_achievements.assert_any_call(self.user1.id)

@@ -6,9 +6,9 @@ import io
 import time
 import threading
 from unittest.mock import patch, call, ANY
-from flask_socketio import SocketIOTestClient
+# from flask_socketio import SocketIOTestClient # Removed
 
-from social_app import create_app, db as app_db, socketio as main_app_socketio
+from social_app import create_app, db as app_db #, socketio as main_app_socketio # Removed
 from flask import url_for, Response
 import flask
 
@@ -48,13 +48,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 class AppTestCase(unittest.TestCase):
     app = None
     db = None
-    socketio_class_level = None
+    # socketio_class_level = None # Removed
 
     @classmethod
     def setUpClass(cls):
         cls.app = create_app('testing')
         cls.db = app_db
-        cls.socketio_class_level = main_app_socketio
+        # cls.socketio_class_level = main_app_socketio # Removed
 
         import logging
         cls.app.logger.setLevel(logging.DEBUG)
@@ -68,8 +68,8 @@ class AppTestCase(unittest.TestCase):
             cls.app.logger.removeHandler(h_)
         cls.app.logger.addHandler(handler)
         cls.app.logger.propagate = False
-        logging.getLogger("socketio").setLevel(logging.DEBUG)
-        logging.getLogger("engineio").setLevel(logging.DEBUG)
+        # logging.getLogger("socketio").setLevel(logging.DEBUG) # Removed
+        # logging.getLogger("engineio").setLevel(logging.DEBUG) # Removed
 
         with cls.app.app_context():
             cls.db.create_all()
@@ -82,35 +82,12 @@ class AppTestCase(unittest.TestCase):
     def setUp(self):
         """
         Set up the test environment before each test case.
-        Initializes the Flask test client and a Flask-SocketIO test client.
-        It also ensures that the SocketIO client is in a clean state by:
-        1. Checking if an implicit connection exists upon client creation.
-        2. If so, disconnecting it.
-        3. Attempting to clear any residual events from its queue. This is
-           important because the test client might retain events from previous
-           interactions or states if not properly cleared.
-        Finally, it cleans all database tables and sets up base users.
+        Initializes the Flask test client.
+        It cleans all database tables and sets up base users.
         """
         self.client = self.app.test_client()
-        assert (
-            self.socketio_class_level is not None
-        ), "socketio_class_level is None in setUp instance method!"
 
-        # Initialize the SocketIO test client for this test instance
-        self.socketio_client = self.socketio_class_level.test_client(
-            self.app
-        )
-
-        # A new client from test_client(self.app) should be initially disconnected and have no queued events.
-        # If there's an edge case where a client could be connected, a simple check might be needed.
-        # For now, we assume it starts disconnected.
-        if self.socketio_client.is_connected(namespace="/"):
-            self.app.logger.warning("Newly created SocketIO client was unexpectedly connected. Attempting disconnect.")
-            self.socketio_client.disconnect(namespace="/")
-            # It's good practice to ensure events are cleared if it was unexpectedly connected,
-            # though ideally this state shouldn't be reached.
-            # self._clear_socketio_events(self.socketio_client, client_name_for_log="self.socketio_client (unexpectedly connected in setUp)")
-
+        # All SocketIO client related setup is removed.
 
         # Prepare database: clean tables and set up base users
         with self.app.app_context():
@@ -126,27 +103,10 @@ class AppTestCase(unittest.TestCase):
     def tearDown(self):
         """
         Clean up the test environment after each test case.
-        Ensures the SocketIO client is disconnected.
         Rolls back any pending database transactions and removes the session.
         Deletes any files created in the shared files upload folder during tests.
         """
-        # Ensure the primary SocketIO test client is disconnected
-        if hasattr(self, "socketio_client") and self.socketio_client:
-            client_sid = getattr(self.socketio_client, "sid", "N/A") # Get SID for logging before potential disconnect
-            if self.socketio_client.is_connected():
-                self.app.logger.debug(f"Disconnecting main Flask-SocketIO test_client (SID: {client_sid}) in tearDown.")
-                self.socketio_client.disconnect()
-                # A brief pause can be helpful for the server to fully process the disconnection,
-                # preventing potential state carry-over if tests run very quickly.
-                time.sleep(0.05)
-                if self.socketio_client.is_connected(): # Check if disconnect was successful
-                    self.app.logger.warning(f"Main Flask-SocketIO test_client (SID: {client_sid}) still reported as connected after disconnect call in tearDown.")
-                else:
-                    self.app.logger.debug(f"Main Flask-SocketIO test_client (SID: {client_sid}) successfully disconnected in tearDown.")
-            else:
-                self.app.logger.debug(f"Main Flask-SocketIO test_client (SID: {client_sid}) in tearDown was already disconnected.")
-        else:
-            self.app.logger.debug("No 'socketio_client' attribute found or it was None in tearDown.")
+        # All SocketIO client related teardown is removed.
 
         # Clean up database session
         with self.app.app_context():
@@ -188,108 +148,23 @@ class AppTestCase(unittest.TestCase):
         self.user2_id = self.user2.id
         self.user3_id = self.user3.id
 
-    def _ensure_socketio_disconnected(self, client, client_name_for_log="client", namespace="/", timeout=2, sleep_interval=0.05):
+    # Removed _ensure_socketio_disconnected
+    # Removed _clear_socketio_events
+
+    def login(self, username, password, client_instance=None): # client_instance is no longer used
         """
-        Ensures a SocketIO client is disconnected from a given namespace.
-        It first checks if the client is connected. If so, it calls disconnect
-        and then polls `is_connected()` until it returns False or a timeout occurs.
-
-        Args:
-            client: The SocketIO test client instance.
-            client_name_for_log (str): A descriptive name for the client for logging.
-            namespace (str): The namespace to check and disconnect from.
-            timeout (float): Maximum time in seconds to wait for disconnection.
-            sleep_interval (float): Time in seconds to sleep between connection checks.
-
-        Returns:
-            bool: True if the client is disconnected, False if it timed out.
-        """
-        if not client.is_connected(namespace=namespace):
-            self.app.logger.debug(f"SocketIO {client_name_for_log} already disconnected from namespace '{namespace}'.")
-            return True
-
-        self.app.logger.debug(f"SocketIO {client_name_for_log} is connected to '{namespace}'. Attempting disconnect.")
-        client.disconnect(namespace=namespace)
-
-        # Poll for disconnection
-        start_time = time.time()
-        while client.is_connected(namespace=namespace):
-            if time.time() - start_time > timeout:
-                self.app.logger.warning(
-                    f"SocketIO {client_name_for_log} still connected to namespace '{namespace}' after {timeout}s timeout post-disconnect call."
-                )
-                return False
-            time.sleep(sleep_interval) # Wait before next check
-
-        self.app.logger.debug(f"SocketIO {client_name_for_log} successfully disconnected from namespace '{namespace}'.")
-        return True
-
-    def _clear_socketio_events(self, client, client_name_for_log="client", namespace="/", attempts=5, sleep_interval=0.01):
-        """
-        Clears any pending events from the SocketIO client's internal queue for a namespace.
-        This is useful to ensure a clean state before performing actions that expect specific events.
-        The Flask-SocketIO test client might retain events even after a disconnect/reconnect cycle.
-
-        Args:
-            client: The SocketIO test client instance.
-            client_name_for_log (str): A descriptive name for the client for logging.
-            namespace (str): The namespace from which to clear events.
-            attempts (int): Max number of times to try getting events.
-            sleep_interval (float): Time to sleep between attempts to allow event processing.
-
-        Returns:
-            int: The total number of events cleared.
-        """
-        self.app.logger.debug(f"SocketIO {client_name_for_log}: Starting event clearing for namespace '{namespace}'.")
-        cleared_in_total = 0
-        for i in range(attempts):
-            # If client becomes disconnected (e.g., due to server-side action or error), stop trying.
-            if not client.is_connected(namespace=namespace):
-                self.app.logger.debug(f"SocketIO {client_name_for_log}: Client disconnected during event clearing (attempt {i+1}/{attempts}) for '{namespace}'.")
-                break
-            try:
-                events = client.get_received(namespace=namespace) # Non-blocking if empty
-                if not events:
-                    # If no events received for a couple of tries, assume queue is clear.
-                    # This avoids waiting unnecessarily for all attempts if queue empties quickly.
-                    if i > 1:
-                        self.app.logger.debug(f"SocketIO {client_name_for_log}: Event queue for '{namespace}' appears empty after {i+1} attempts (no recent events).")
-                        break
-                else:
-                    cleared_in_total += len(events)
-                    self.app.logger.debug(f"SocketIO {client_name_for_log}: Drained {len(events)} events on attempt {i+1}/{attempts} for '{namespace}'. Total: {cleared_in_total}.")
-                time.sleep(sleep_interval) # Short pause to allow event loop to cycle
-            except RuntimeError as e: # Can happen if client is forcefully closed
-                self.app.logger.warning(f"SocketIO {client_name_for_log}: Error '{e}' during event clearing (attempt {i+1}) for '{namespace}'. Stopping.")
-                break
-
-        if cleared_in_total > 0:
-            self.app.logger.info(f"SocketIO {client_name_for_log}: Drained a total of {cleared_in_total} pre-existing events from namespace '{namespace}'.")
-        else:
-            self.app.logger.info(f"SocketIO {client_name_for_log}: No pre-existing events were drained from namespace '{namespace}'.")
-        self.app.logger.debug(f"SocketIO {client_name_for_log}: Finished event clearing for namespace '{namespace}'.")
-        return cleared_in_total
-
-    def login(self, username, password, client_instance=None):
-        """
-        Handles the complete login process for a user, including HTTP session login
-        and SocketIO connection authentication.
+        Handles the HTTP session login for a user.
+        JWT token retrieval is kept as it might be used by other API endpoints.
 
         Args:
             username (str): The username to log in with.
             password (str): The password for the user.
-            client_instance (SocketIOTestClient, optional): The specific SocketIO client
-                instance to use. If None, `self.socketio_client` is used.
+            client_instance: This argument is no longer used.
 
         Returns:
             flask.Response: The response object from the initial HTTP POST to /login.
-
-        Raises:
-            ConnectionError: If SocketIO authentication fails or times out.
-            AssertionError: If HTTP login fails or JWT token is not retrieved.
         """
         # Step 1: Perform standard HTTP form login to establish a Flask session.
-        # This is necessary for routes protected by traditional session-based auth.
         self.app.logger.info(f"Initiating HTTP login for user '{username}'.")
         login_response = self.client.post(
             "/login",
@@ -301,205 +176,34 @@ class AppTestCase(unittest.TestCase):
             self.assertIn("_user_id", http_session, f"'_user_id' not found in session after HTTP login for '{username}'.")
         self.app.logger.info(f"HTTP login successful for '{username}', Flask session created.")
 
-        # Step 2: Obtain a JWT token for SocketIO authentication.
-        # This typically involves a separate API endpoint.
-        self.app.logger.debug(f"Fetching JWT token for '{username}'.")
+        # Step 2: Obtain a JWT token. This is kept as JWTs might be used for non-SocketIO API auth.
+        self.app.logger.debug(f"Fetching JWT token for '{username}' (potentially for API use).")
         jwt_token = self._get_jwt_token(username, password)
 
-        # Determine which SocketIO client to use (default or a specific instance)
-        socketio_client_to_use = client_instance if client_instance else self.socketio_client
-        client_log_name = f"SocketIO client for '{username}'" # For logging context
-
-        # Step 3: Prepare the SocketIO client for a new connection.
-        # This involves ensuring it's disconnected and its event queue is clear.
-        self.app.logger.info(f"{client_log_name}: Preparing for new connection attempt.")
-        self._ensure_socketio_disconnected(socketio_client_to_use, client_log_name)
-
-        # Even after a disconnect, the test client might retain events in its internal queue.
-        # Clearing them helps prevent interference from stale events from previous operations.
-        self._clear_socketio_events(socketio_client_to_use, client_log_name)
-
-        # Step 4: Connect the SocketIO client using the obtained JWT token for authentication.
-        self.app.logger.info(f"{client_log_name}: Attempting to connect and authenticate with JWT token.")
-        socketio_client_to_use.connect(
-            namespace="/", # Assuming connection to the default namespace
-            auth={'token': jwt_token},
-            headers={'Authorization': f'Bearer {jwt_token}'} # Common practice for JWT
-        )
-
-        # Capture the Session ID (SID) immediately after connect. This SID is crucial for
-        # associating subsequent events (like auth confirmation) with THIS connection attempt.
-        current_connection_sid = getattr(socketio_client_to_use, 'sid', None)
-        if not current_connection_sid:
-             # This is unexpected if connect() did not raise an error.
-             self.app.logger.error(f"{client_log_name}: Connection initiated but SID is immediately unavailable.")
-             raise ConnectionError(f"SocketIO connection for '{username}' failed: SID not available post-connect call.")
-        self.app.logger.info(f"{client_log_name}: Connection request sent, assigned SID: {current_connection_sid}. Awaiting authentication confirmation event.")
-
-        # Step 5: Wait for authentication confirmation events from the server.
-        # The server should emit an event (e.g., 'confirm_namespace_connected' or 'auth_error')
-        # indicating the success or failure of the token-based authentication.
-        auth_successful = False
-        auth_error_message = None
-        confirm_event_timeout = 10  # Max seconds to wait for auth event
-        event_wait_start_time = time.time()
-
-        while time.time() - event_wait_start_time < confirm_event_timeout:
-            # Check if client disconnected prematurely (e.g., server rejected connection immediately)
-            if not socketio_client_to_use.is_connected(namespace="/"):
-                self.app.logger.error(f"{client_log_name} (SID: {current_connection_sid}): Disconnected while awaiting authentication confirmation.")
-                auth_error_message = "Client disconnected prematurely while awaiting authentication confirmation."
-                break
-            try:
-                # get_received() is non-blocking if the queue is empty for the test client.
-                received_events = socketio_client_to_use.get_received(namespace="/")
-                for event in received_events:
-                    event_name = event.get('name')
-                    event_args = event.get('args') # Usually a list with one dict element
-                    self.app.logger.debug(f"{client_log_name} (SID: {current_connection_sid}): Event received: Name: '{event_name}', Args: {event_args}")
-
-                    # Critical: Filter events based on SID. Ensures the event is for THIS connection attempt.
-                    # Assumes the server includes the client's SID in the auth-related event payload.
-                    payload_sid = event_args[0].get('sid') if event_args and isinstance(event_args, list) and len(event_args) > 0 and isinstance(event_args[0], dict) else None
-
-                    if payload_sid != current_connection_sid:
-                        self.app.logger.warning(
-                            f"{client_log_name}: Received event for SID '{payload_sid}' but expecting SID '{current_connection_sid}'. "
-                            f"Event Name: '{event_name}'. Args: {event_args}. Skipping."
-                        )
-                        continue # Not for us, or SID missing in payload
-
-                    # Process relevant authentication events
-                    if event_name == 'confirm_namespace_connected':
-                        if event_args and event_args[0].get('status') == 'authenticated':
-                            self.app.logger.info(f"{client_log_name} (SID: {current_connection_sid}): Authentication successful ('confirm_namespace_connected' received).")
-                            auth_successful = True
-                            break # Exit event processing loop
-                        elif event_args: # confirm_namespace_connected but status is not 'authenticated'
-                            status = event_args[0].get('status', 'N/A')
-                            self.app.logger.error(f"{client_log_name} (SID: {current_connection_sid}): Namespace connected but status was '{status}'.")
-                            auth_error_message = f"Namespace connected with unauthenticated status: '{status}'"
-                            break # Exit event processing loop
-                    elif event_name == 'auth_error':
-                        raw_error_detail = event_args[0].get('message', str(event_args[0])) if event_args and event_args[0] else "Unknown auth error"
-                        self.app.logger.error(f"{client_log_name} (SID: {current_connection_sid}): Authentication failed ('auth_error' received): {raw_error_detail}.")
-                        auth_error_message = raw_error_detail
-                        break # Exit event processing loop
-
-                if auth_successful or auth_error_message:
-                    break # Exit the while loop for waiting
-            except RuntimeError as e: # Can happen if get_received is called on a catastrophically failed client
-                self.app.logger.error(f"{client_log_name} (SID: {current_connection_sid}): Runtime error while polling for events: {e}. Assuming disconnection.")
-                auth_error_message = f"Runtime error during event polling: {e}"
-                break # Exit while loop
-            time.sleep(0.05) # Brief pause to prevent busy-looping, allows other threads to run
-
-        # Step 6: Finalize login status based on authentication events.
-        final_sid = getattr(socketio_client_to_use, "sid", None) # Re-check SID, in case of very quick transparent reconnect
-
-        if auth_error_message: # If any explicit error was captured
-            # Ensure client is disconnected if an error occurred during auth.
-            if socketio_client_to_use.is_connected(namespace="/"):
-                 self.app.logger.debug(f"{client_log_name} (Last SID: {final_sid or current_connection_sid}): Disconnecting due to auth error: {auth_error_message}")
-                 self._ensure_socketio_disconnected(socketio_client_to_use, client_log_name, timeout=1) # Quick disconnect attempt
-            raise ConnectionError(f"SocketIO authentication failed for '{username}' (Attempted SID: {current_connection_sid}): {auth_error_message}")
-
-        if not auth_successful: # If loop timed out without explicit success or error
-            eio_sid_val = "N/A" # For debugging, engineio SID might be informative
-            if hasattr(socketio_client_to_use, 'eio_test_client') and socketio_client_to_use.eio_test_client:
-                eio_sid_val = getattr(socketio_client_to_use.eio_test_client, 'sid', "N/A (eio_test_client has no sid)")
-            is_connected_status = socketio_client_to_use.is_connected(namespace="/")
-
-            if is_connected_status: # If timed out but still connected, disconnect it.
-                 self.app.logger.debug(f"{client_log_name} (SID: {final_sid or current_connection_sid}): Disconnecting due to auth event timeout.")
-                 self._ensure_socketio_disconnected(socketio_client_to_use, client_log_name, timeout=1)
-
-            error_message = (
-                f"SocketIO connection for '{username}' (Attempted SID: {current_connection_sid}) timed out after {confirm_event_timeout}s "
-                f"waiting for authentication confirmation ('confirm_namespace_connected' or 'auth_error'). "
-                f"Final state - is_connected: {is_connected_status}, final_sid: {final_sid}, eio_sid: {eio_sid_val}."
-            )
-            self.app.logger.error(error_message)
-            raise ConnectionError(error_message)
-
-        if not final_sid:
-            # This would mean client disconnected AFTER successful auth event but before this check.
-            # This is unusual but possible if server immediately disconnects post-auth.
-            error_message = (
-                f"SocketIO client for '{username}' (Initial SID: {current_connection_sid}) authenticated but current SID is now missing. "
-                "Client may have disconnected immediately after authentication."
-            )
-            self.app.logger.error(error_message)
-            # Depending on strictness, this could be an error or a warning.
-            # For now, let's assume if auth_successful was true, it's a transient state.
-            # raise ConnectionError(error_message) # Uncomment if this should be a hard failure
-
-        if final_sid != current_connection_sid:
-            # This is highly unusual: SID changed after successful authentication for the original SID,
-            # without an explicit disconnect/reconnect cycle handled by this login logic.
-            # Could indicate a transparent reconnect by the underlying client library.
-            self.app.logger.warning(
-                f"{client_log_name}: SID mismatch after authentication. Initial SID: {current_connection_sid}, Final SID: {final_sid}. "
-                "Connection considered successful for initial SID, but this may indicate unexpected client behavior."
-            )
-            # Not raising an error, as 'confirm_namespace_connected' was for 'current_connection_sid'.
-            # The current connection (new SID) might not be the one we expect to use going forward.
-            # This might require further investigation if it occurs frequently.
-
-        self.app.logger.info(f"{client_log_name} (Authenticated SID: {current_connection_sid}, Final/Current SID: {final_sid}): SocketIO login and authentication successful.")
+        self.app.logger.info(f"HTTP login for '{username}' completed.")
         return login_response
 
-    def logout(self, client_instance=None, username_for_log=None):
+    def logout(self, client_instance=None, username_for_log=None): # client_instance is no longer used
         """
-        Logs out the user by clearing the HTTP session and disconnecting the SocketIO client.
+        Logs out the user by clearing the HTTP session.
 
         Args:
-            client_instance (SocketIOTestClient, optional): The specific SocketIO client
-                             instance to disconnect. If None, `self.socketio_client` is used.
+            client_instance: This argument is no longer used.
             username_for_log (str, optional): An optional username string to make log
                                               messages more descriptive.
         Returns:
             flask.Response: The response object from the HTTP GET request to /logout.
         """
-        http_client = self.client # Standard Flask test client
-        socket_client_to_use = (
-            client_instance
-            if client_instance
-            else getattr(self, "socketio_client", None) # Default to self.socketio_client
-        )
+        http_client = self.client
 
-        # Determine a descriptive name for the SocketIO client for logging purposes
-        client_log_name = "SocketIO client"
-        if username_for_log:
-            client_log_name = f"SocketIO client for '{username_for_log}'"
-        elif socket_client_to_use == self.socketio_client: # Check if it's the default instance
-            client_log_name = "default self.socketio_client"
-        elif client_instance is not None: # If a specific instance was passed
-            client_log_name = "provided client_instance"
-        # Else, it remains "SocketIO client" if socket_client_to_use is None or not self.socketio_client
-
-        # Step 1: Disconnect the SocketIO client, if it exists and is connected.
-        if socket_client_to_use and hasattr(socket_client_to_use, "is_connected"):
-            self.app.logger.info(f"Logout process: Attempting to disconnect {client_log_name}.")
-            # Use the robust disconnect helper. Timeout can be short as logout disconnections are usually quick.
-            self._ensure_socketio_disconnected(socket_client_to_use, client_log_name, timeout=1.0)
-            # Event clearing is usually not necessary on logout, as the client is being discarded or will be
-            # re-initialized/re-authenticated for any subsequent use.
-            # self._clear_socketio_events(socket_client_to_use, client_log_name)
-        else:
-            self.app.logger.debug(f"Logout process: {client_log_name} not found, is None, or not a valid client object. Skipping SocketIO disconnect.")
-
-        # Step 2: Perform HTTP session logout.
         user_context_log = f"for '{username_for_log}'" if username_for_log else "for current user"
         self.app.logger.info(f"Logout process: Performing HTTP session logout {user_context_log}.")
-        response = http_client.get("/logout", follow_redirects=True) # Standard Flask logout
+        response = http_client.get("/logout", follow_redirects=True)
         self.assertEqual(response.status_code, 200, f"HTTP Logout failed {user_context_log}: {response.data.decode()}")
         self.app.logger.info(f"HTTP session logout successful {user_context_log}.")
 
-        # Step 3: Verify that the Flask session is actually cleared.
-        # This is an important check for the integrity of the logout process.
         with http_client.session_transaction() as http_session:
-            if "_user_id" in http_session: # '_user_id' is commonly used by Flask-Login
+            if "_user_id" in http_session:
                 self.app.logger.warning(f"Session check: '_user_id' still found in session after HTTP logout {user_context_log}. This might indicate an issue with server-side session clearing.")
             else:
                 self.app.logger.debug(f"Session check: '_user_id' confirmed removed after HTTP logout {user_context_log}.")
@@ -790,50 +494,4 @@ class AppTestCase(unittest.TestCase):
                 self.db.session.delete(friendship)
                 self.db.session.commit()
 
-    def _wait_for_socketio_event(self, client: SocketIOTestClient, event_name: str, timeout: float = 3.0, sleep_interval: float = 0.05, namespace: str = "/", consume_other_events: bool = False):
-        """
-        Waits for a specific SocketIO event to be received by the client.
-
-        Args:
-            client: The SocketIO test client instance.
-            event_name: The name of the event to wait for.
-            timeout: Maximum time in seconds to wait for the event.
-            sleep_interval: Time in seconds to sleep between polling attempts using socketio.sleep().
-            namespace: The namespace to get events from.
-            consume_other_events: If True, other received events will be logged and discarded while waiting.
-                                   If False (default), the presence of other events before the target
-                                   event will not stop the search, but they will remain in the queue
-                                   unless the target event is found among them.
-
-        Returns:
-            dict: The data of the found event, or None if timed out.
-        """
-        start_time = time.time()
-        self.app.logger.debug(f"Waiting for event '{event_name}' on namespace '{namespace}' for client SID {client.eio_sid if client else 'N/A'} (timeout: {timeout}s)")
-
-        all_received_events_during_wait = []
-
-        while time.time() - start_time < timeout:
-            if not client.is_connected(namespace=namespace):
-                self.app.logger.warning(f"Client SID {client.eio_sid if client else 'N/A'} disconnected while waiting for event '{event_name}'.")
-                return None
-
-            received_batch = client.get_received(namespace=namespace) # Get all currently queued events
-
-            if received_batch:
-                self.app.logger.debug(f"Received batch of {len(received_batch)} events: {[(e.get('name'), e.get('args')) for e in received_batch]}")
-                all_received_events_during_wait.extend(received_batch) # Add to our collected list
-
-                # Check if the desired event is in the current batch or previously collected events
-                for i, event_data in enumerate(all_received_events_during_wait):
-                    if event_data.get("name") == event_name:
-                        self.app.logger.info(f"Event '{event_name}' found for client SID {client.eio_sid if client else 'N/A'}. Data: {event_data.get('args')}")
-                        # Simplified logic due to get_received() being destructive:
-                        # We search all events received in this polling cycle.
-                        # If found, we return it. Others received in this cycle are consumed.
-                        return event_data
-
-            time.sleep(sleep_interval) # Use time.sleep for cooperative yielding
-
-        self.app.logger.warning(f"Timeout waiting for event '{event_name}' for client SID {client.eio_sid if client else 'N/A'} after {timeout}s.")
-        return None
+    # _wait_for_socketio_event method was here. It has been removed as it's no longer used.

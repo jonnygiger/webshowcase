@@ -3,7 +3,7 @@ import json
 from unittest.mock import patch, ANY
 from datetime import datetime
 from werkzeug.security import generate_password_hash
-from social_app import create_app, db, socketio
+from social_app import create_app, db # Removed socketio
 from social_app.models.db_models import (
     User,
     Post,

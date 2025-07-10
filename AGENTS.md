@@ -22,7 +22,7 @@ The Flask Social App is a feature-rich social media application built with Pytho
 - "On This Day" feature (revisiting past content)
 - Content moderation (flagging, moderator dashboard)
 - RESTful API for programmatic access
-- SocketIO for real-time communication
+- Server-Sent Events (SSE) for real-time communication updates. (Chat may use WebSockets independently if Flask-SocketIO is fully removed)
 
 The application uses a Flask backend, SQLAlchemy for database interactions, and Jinja2 for templating.
 
@@ -102,14 +102,14 @@ feat: Add user profile bio editing
 - **Authentication**: Secure API endpoints appropriately, typically using JWT or OAuth.
 - **Documentation**: Document API endpoints (e.g., using Swagger/OpenAPI or in the README/API documentation file). The existing README has a good start on this.
 
-### 7. Real-time Features (SocketIO)
+### 7. Real-time Features (Server-Sent Events & WebSockets for Chat)
 
-- **Event Naming**: Use clear and consistent names for SocketIO events.
-- **Room Management**: Utilize SocketIO rooms effectively to target messages to specific clients or groups of clients.
-- **Payloads**: Keep data payloads concise and relevant.
-- **Error Handling**: Implement error handling for SocketIO events on both client and server sides.
-- **Security**: Be mindful of authentication and authorization for SocketIO events, especially those that trigger actions or modify data.
-- **Documentation**: Document SocketIO events, their purpose, and their payloads, as seen in the README.
+- **Event Naming**: Use clear and consistent names for SSE event types. For WebSocket messages, define a clear message structure.
+- **Stream/Channel Management**: For SSE, use distinct event stream URLs for different resources (e.g., `/post-stream/<post_id>`, `/chat-stream/<room_id>`). For WebSockets, manage channels or rooms appropriately if used for chat.
+- **Payloads**: Keep data payloads concise and relevant for both SSE and WebSocket messages.
+- **Error Handling**: Implement error handling for SSE connections and WebSocket communications on both client and server sides.
+- **Security**: Be mindful of authentication and authorization for accessing SSE streams and sending/receiving WebSocket messages.
+- **Documentation**: Document SSE event types and their payloads, and any WebSocket message formats, as seen in the README.
 
 ### 8. Dependency Management
 
@@ -135,10 +135,3 @@ feat: Add user profile bio editing
   ```
 
 By following these guidelines, we can ensure the codebase remains maintainable, scalable, and of high quality.
-
-## Plan to Fix SocketIO Test Cases
-1. **Identify Failing Test Cases:** Systematically run all SocketIO-related tests to pinpoint which specific test cases are failing. Document the exact errors and failure conditions for each.
-2. **Analyze Root Causes:** For each failing test, dive into the application code (SocketIO event handlers, related services, models) and the test code itself to understand why it's failing. This could involve issues with event emission, reception, data validation, session management, or race conditions.
-3. **Implement Fixes:** Based on the analysis, implement the necessary code changes in the application or test suite to address the identified issues. This might involve correcting logic in event handlers, adjusting test assertions, improving test setup/teardown, or mocking dependencies more effectively.
-4. **Verify Fixes and Run All Tests:** After applying fixes for a specific test or group of tests, re-run them to ensure they pass. Once individual fixes are verified, run the entire SocketIO test suite and then all application tests to check for any regressions or unintended side effects.
-5. **Refactor and Document (If Necessary):** If the fixes involve significant changes or reveal underlying issues in the test design or application code, take the time to refactor for clarity and maintainability. Add comments or update documentation (like this plan) to explain the changes and reasoning.

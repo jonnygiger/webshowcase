@@ -34,7 +34,7 @@ This is a basic Flask application.
 
 1. Run the Flask development server:
    ```bash
-   python app.py
+   python run.py
    ```
 2. Open your web browser and go to `http://127.0.0.1:5000/` to see the app in action.
 
@@ -92,9 +92,9 @@ The application features a real-time Live Activity Feed, providing users with im
     *   Keeps users engaged by showing them what their connections are up to in real-time.
     *   Reduces the need to manually check profiles or refresh pages to see new interactions.
 *   **How it Works**:
-    *   Utilizes WebSockets via the Flask-SocketIO extension for instant communication between the server and connected clients.
-    *   When a user performs a relevant action, the server logs the activity and then broadcasts an event to the friends of that user.
-    *   Client-side JavaScript listens for these events and dynamically prepends new activity items to the feed.
+    *   Utilizes Server-Sent Events (SSE) for instant communication updates from the server to connected clients.
+    *   When a user performs a relevant action, the server logs the activity and then makes this information available via SSE streams that friends can subscribe to.
+    *   Client-side JavaScript listens for these SSE events and dynamically prepends new activity items to the feed.
 *   **Access**:
     *   Logged-in users can access their personalized Live Activity Feed by navigating to the `/live_feed` URL.
     *   (A direct link in the navigation bar could be added in future enhancements for easier access).
@@ -183,7 +183,7 @@ This application now includes a fully functional blog where users can share thei
     *   **Templating**: Several new templates (`blog.html`, `create_post.html`, `view_post.html`, `edit_post.html`) extend `base.html` to provide views for blog functionalities.
     *   **Form Handling**: Processing form submissions for creating and editing posts.
     *   **Session Management**: Tracking the logged-in user to associate posts with authors and for authorization checks.
-    *   **In-Memory Data Storage**: Blog posts are stored in a Python list of dictionaries within the application for simplicity.
+    *   **Database Storage**: Blog posts are stored in the database.
 
 *   **Routes & Usage**:
     *   `/blog`: (GET) Displays a list of all blog posts, with the newest posts appearing first.
@@ -221,7 +221,6 @@ This feature provides a dedicated page for each user, showcasing their activity 
     *   **Dynamic Content Generation**: The content of the profile page is dynamically generated based on the `username` parameter in the URL and the associated user data.
     *   **Data Aggregation**: Information (blog posts, uploaded images) is filtered and aggregated specifically for the viewed user.
     *   **User-Specific Views**: Enhances the application by providing views tailored to individual users, improving personalization.
-    *   **Data Structures for User Association**: User data (like associated image filenames and blog post IDs) is managed within the `users` dictionary in `app.py`.
 
 ### Profile Pictures
 
@@ -328,13 +327,13 @@ To enhance interactivity, users can now add comments to blog posts.
 To further enhance interactivity, the blog now features real-time comment notifications.
 
 *   **Instant Updates**: When a user submits a comment on a blog post, other users currently viewing the same post will see the new comment appear instantly on their page without needing to manually refresh.
-*   **Technology**: This is implemented using Flask-SocketIO, enabling bidirectional real-time communication between the server and clients (browsers).
+*   **Technology**: This is implemented using Server-Sent Events (SSE), enabling efficient real-time updates from the server to clients (browsers).
 *   **Enhanced Engagement**: This feature makes discussions more dynamic and engaging, as users can see new contributions as they happen.
 
 ### Author Comment Notifications
 
 *   **Targeted Alerts**: Post authors receive instant, targeted notifications when another user comments on one of their posts. This ensures authors are promptly informed of new interactions with their content.
-*   **Implementation**: This is also powered by Flask-SocketIO, delivering notifications to the author's specific user channel.
+*   **Implementation**: This is also powered by Server-Sent Events (SSE), delivering notifications to the author's specific user event stream.
 *   **User Experience**: Authors are notified via a browser alert when viewing their post and a new comment arrives from someone else.
 
 ### Live Blog Post Updates (SSE)
@@ -369,7 +368,7 @@ Users can now interact with blog posts by liking or unliking them, providing a s
     *   Handling POST requests for actions that modify data.
 
 ### Real-time Like Notifications
-*   **Real-time Like Notifications**: When a user's post is liked by another user, the author of the post receives an instant notification. This is implemented using SocketIO for real-time communication and also creates a persistent notification in their notification list.
+*   **Real-time Like Notifications**: When a user's post is liked by another user, the author of the post receives an instant notification. This is implemented using Server-Sent Events (SSE) for real-time updates and also creates a persistent notification in their notification list.
 
 ### Post Reactions
 
@@ -429,7 +428,7 @@ This application now supports private messaging between registered users, allowi
     *   **Dynamic Content Generation**: The inbox and conversation views are dynamically generated based on the logged-in user's messages.
     *   **Form Handling**: Uses forms for composing and sending messages.
     *   **Session Management**: Leverages user sessions to identify the sender and receiver, and to authorize access to messages.
-    *   **Data Persistence**: Messages are stored in-memory (similar to blog posts and comments) and include sender, receiver, content, timestamp, and a read status.
+    *   **Data Persistence**: Messages are stored in the database.
     *   **Conditional Logic**: Used extensively in templates and views to display appropriate information (e.g., unread message counts, user-specific conversation views).
 
 *   **Routes & Usage**:
@@ -458,10 +457,10 @@ Enhancing the private communication capabilities, the application now supports r
 
 *   **Functionality**:
     *   Users can send direct messages to other registered users.
-    *   Conversations update instantly without requiring a page reload, showing new messages as they arrive.
-    *   The user's inbox also dynamically updates to reflect new messages and unread counts, ensuring users are always aware of new communications.
-*   **Technology Stack**: This feature is powered by Flask, Flask-SocketIO for real-time bidirectional communication, and SQLAlchemy for database interactions with the `Message` model.
-*   **User Experience**: Provides a seamless and interactive messaging experience, similar to modern chat applications.
+    *   Conversations update instantly without requiring a page reload, showing new messages as they arrive (via SSE).
+    *   The user's inbox also dynamically updates to reflect new messages and unread counts (via SSE).
+*   **Technology Stack**: This feature is powered by Flask, Server-Sent Events (SSE) for receiving messages and inbox updates in real-time, HTTP endpoints for sending messages, and SQLAlchemy for database interactions with the `Message` model.
+*   **User Experience**: Provides a seamless and interactive messaging experience.
 
 ### User Notifications (Real-time via SSE)
 
@@ -475,7 +474,7 @@ This SSE-based system complements other real-time features, providing lightweigh
 ### Real-time Friend Post Notifications
 *   **Instant Alerts**: Users receive immediate toast notifications when a friend they are connected with creates a new blog post. This allows for timely discovery of content shared by friends.
 *   **Dedicated Activity Page**: A "Friend Activity" page (`/friend_post_notifications`) provides a chronological history of these notifications. Users can view details, link directly to the friend's post, and manage the read status of each notification (mark as read individually or mark all as read).
-*   **Technology**: Leverages Flask-SocketIO for real-time event emission and client-side JavaScript to display these toast notifications dynamically.
+*   **Technology**: Leverages Server-Sent Events (SSE) for real-time event emission and client-side JavaScript to display these toast notifications dynamically.
 
 ### User-to-User File Sharing
 
@@ -638,7 +637,7 @@ To foster community building, the application now supports User Groups. This fea
     *   `/group/<int:group_id>/leave` (POST): Allows a logged-in user to leave the specified group.
 
 ### Real-time Group Chat
-*   Allows members of a group to send and receive messages in real-time within the group's page. Messages are stored, and the chat history is loaded upon visiting the group page. This feature is powered by Flask-SocketIO, enabling instant communication and a dynamic chat experience.
+*   Allows members of a group to send and receive messages in real-time within the group's page. Messages are stored, and the chat history is loaded upon visiting the group page. This feature is now powered by Server-Sent Events (SSE) for receiving messages and HTTP endpoints for sending them, enabling instant communication and a dynamic chat experience.
 
 ### In-App Notifications
 
@@ -731,13 +730,14 @@ This feature enables multiple users to see live updates when a post is being edi
 
 *   **How it Works**:
     *   **Locking Mechanism**: A user must acquire an "edit lock" on a post before they can make changes. This prevents simultaneous edits by different users. The lock is temporary and expires after a set duration (e.g., 15 minutes).
-    *   **Real-time Updates**: When the user holding the lock types, their changes are sent to the server and broadcast to all other users viewing or editing the same post. These updates appear live on their screens.
+    *   **Real-time Updates**: When the user holding the lock types, their changes are sent to the server (via HTTP) and then broadcast to all other users viewing the same post via Server-Sent Events (SSE). These updates appear live on their screens.
     *   **Lock Status Display**: The UI clearly indicates if a post is locked, who is currently editing it, and when their lock expires.
-    *   **API for Locking**: Lock acquisition and release are handled via dedicated RESTful API endpoints.
+    *   **API for Locking**: Lock acquisition and release are handled via dedicated RESTful API endpoints, which also trigger SSE events for lock status changes.
 *   **Technologies Used**:
-    *   **Flask-SocketIO**: For real-time bidirectional communication between clients and the server, used for broadcasting content changes and lock status updates.
+    *   **Server-Sent Events (SSE)**: For broadcasting content changes and lock status updates from the server to clients.
+    *   **HTTP Endpoints**: For users to submit their edits and for acquiring/releasing locks.
     *   **Flask-RESTful**: For creating the API endpoints (`/api/posts/<post_id>/lock`) that manage the lifecycle of post locks.
-    *   **JavaScript (Client-Side)**: Handles acquiring/releasing locks, sending content changes, and updating the UI based on server events.
+    *   **JavaScript (Client-Side)**: Handles acquiring/releasing locks, sending content changes (via HTTP), listening for SSE events, and updating the UI based on server events.
 
 ### Real-Time Chat
 
@@ -745,17 +745,18 @@ The application now features a real-time chat system, allowing users to communic
 
 *   **Functionality**:
     *   **Chat Rooms**: Users can create new chat rooms or join existing public ones.
-    *   **Real-Time Messaging**: Messages sent in a room are broadcast instantly to all other participants in that room.
-    *   **User Presence**: Users are notified when other users join or leave the chat room they are in.
+    *   **Real-Time Messaging**: Messages sent in a room are broadcast instantly to all other participants in that room via SSE.
+    *   **User Presence**: (This part might need adjustment - traditional WebSocket-based presence is easier. SSE would require clients to poll or a separate mechanism if live presence is needed beyond message delivery).
     *   **Message Persistence**: Chat messages are saved to the database, allowing users to view conversation history.
 *   **Access**:
     *   A "Chat" link in the main navigation bar leads to the chat interface (`/chat`).
     *   The chat page displays a list of available chat rooms and the main chat area.
 *   **Technology**:
-    *   **Flask-SocketIO**: Powers the real-time communication for sending and receiving messages and presence updates.
+    *   **Server-Sent Events (SSE)**: Powers the real-time reception of messages. Clients listen to an SSE stream for new messages in a specific room.
+    *   **HTTP Endpoints**: Used for sending messages (e.g., `POST /api/chat/rooms/<room_id>/messages`).
     *   **SQLAlchemy**: Manages `ChatRoom` and `ChatMessage` models for storing room information and message history.
-    *   **RESTful API**: Endpoints under `/api/chat/` allow for listing rooms, creating rooms, and fetching message history for a room.
-    *   **JavaScript**: Client-side logic handles SocketIO connections, sending/receiving messages, and dynamically updating the chat UI.
+    *   **RESTful API**: Endpoints under `/api/chat/` allow for listing rooms, creating rooms, and fetching/posting messages.
+    *   **JavaScript**: Client-side logic handles connecting to SSE streams, sending messages via HTTP, and dynamically updating the chat UI.
 
 ### On This Day
 
@@ -871,43 +872,31 @@ Include the obtained `access_token` in the `Authorization` header as a Bearer to
         }
         ```
 
-## SocketIO Events Documentation
+## Real-time Event Documentation (SSE & API)
 
-This section outlines the key SocketIO events used for real-time features within the application.
+This section outlines the key Server-Sent Events (SSE) and related API usage for real-time features.
 
-### Real-time Editing SocketIO Events
+### Real-time Editing Events (SSE & API)
 
-These events facilitate the collaborative editing feature for posts.
+These events and API calls facilitate the collaborative editing feature for posts.
+Clients should connect to `/post-stream/<post_id>` to receive these SSEs for a specific post.
 
-**Server-to-Client Events (Listen for these on the client):**
+**Server-Sent Events (from `/post-stream/<post_id>`):**
 
-*   **`post_lock_acquired`**
-    *   **Room**: `post_<post_id>` (Broadcast to all clients viewing/editing the specific post)
+*   **Event Type: `post_lock_changed`** (Replaces `post_lock_acquired` and `post_lock_released` from previous SocketIO implementation)
     *   **Payload**:
         ```json
         {
             "post_id": 123,
-            "user_id": 1,
-            "username": "testuser",
-            "expires_at": "YYYY-MM-DDTHH:MM:SS.ffffff" // ISO format UTC timestamp
+            "status": "acquired" / "released", // Indicates if lock was acquired or released
+            "user_id": 1, // User who acquired/released the lock, or null if system (e.g., expired)
+            "username": "testuser", // Username of the user, or "System (Expired)"
+            "expires_at": "YYYY-MM-DDTHH:MM:SS.ffffff" // ISO format (only present for 'acquired')
         }
         ```
-    *   **Description**: Sent when a user successfully acquires an editing lock on a post. Clients should use this to update their UI (e.g., disable editing for others, show who has the lock).
+    *   **Description**: Sent when a user successfully acquires or releases an editing lock on a post, or when a lock expires. Clients should use this to update their UI (e.g., disable editing for others, show who has the lock, or indicate it's available).
 
-*   **`post_lock_released`**
-    *   **Room**: `post_<post_id>`
-    *   **Payload**:
-        ```json
-        {
-            "post_id": 123,
-            "released_by_user_id": 1, // User who released it, or null if system (e.g., expired)
-            "username": "testuser" // Username of user who released, or "System (Expired)"
-        }
-        ```
-    *   **Description**: Sent when a lock on a post is released (either manually or due to expiration). Clients should update their UI to show the post is now available for editing.
-
-*   **`post_content_updated`**
-    *   **Room**: `post_<post_id>`
+*   **Event Type: `post_content_updated`**
     *   **Payload**:
         ```json
         {
@@ -918,42 +907,140 @@ These events facilitate the collaborative editing feature for posts.
             "edited_by_username": "testuser"
         }
         ```
-    *   **Description**: Broadcast when the content of a post is updated by the user holding the lock. Clients should update the displayed post content in real-time.
+    *   **Description**: Broadcast when the content of a post is updated by an authorized user. Clients should update the displayed post content in real-time.
 
-*   **`edit_error`** (Emitted to a specific client, not a room)
-    *   **Recipient**: Sender of an `edit_post_content` event that failed.
-    *   **Payload**:
+**Related API Endpoints (Client actions for editing):**
+
+*   **Acquiring a Lock**: `POST /api/posts/<post_id>/lock` (See API Documentation below). This API call will trigger a `post_lock_changed` SSE.
+*   **Releasing a Lock**: `DELETE /api/posts/<post_id>/lock` (See API Documentation below). This API call will trigger a `post_lock_changed` SSE.
+*   **Submitting Content Changes**: `POST /blog/edit/<post_id>` (Standard HTTP form submission). This HTTP request triggers the `post_content_updated` SSE if successful.
+
+### Real-time Chat Events (SSE & API)
+Clients connect to `/chat-stream/<room_id>` to receive messages for a specific chat room.
+
+**Server-Sent Events (from `/chat-stream/<room_id>`):**
+*   **Event Type: `new_chat_message`**
+    *   **Payload**: (Matches the `chat_message` object returned by the POST API)
         ```json
-        { "message": "Error description (e.g., 'You do not hold the lock for this post.')" }
+        {
+            "id": 1,
+            "room_id": 10,
+            "user_id": 1,
+            "username": "testuser",
+            "content": "Hello world!",
+            "timestamp": "YYYY-MM-DDTHH:MM:SS.ffffff"
+        }
         ```
-    *   **Description**: Sent to a client if their attempt to edit content (via `edit_post_content`) fails due to server-side validation (e.g., not holding the lock, lock expired).
+    *   **Description**: Sent when a new message is posted to the chat room.
 
-*   **`edit_success`** (Emitted to a specific client, not a room)
-    *   **Recipient**: Sender of a successfully processed `edit_post_content` event.
+**Related API Endpoints (Client actions for chat):**
+*   **Sending a Message**: `POST /api/chat/rooms/<room_id>/messages` (See API Documentation below). This API call will trigger the `new_chat_message` SSE to all listeners of that room.
+*   **Fetching Message History**: `GET /api/chat/rooms/<room_id>/messages`
+*   **Listing/Creating Rooms**: `GET /api/chat/rooms`, `POST /api/chat/rooms`
+
+### Other Real-time Notifications (SSE via `/user/notifications/stream`)
+Clients connect to `/user/notifications/stream` (after authentication) to receive personalized real-time notifications.
+
+*   **Event Type: `new_friend_post`**
     *   **Payload**:
         ```json
         {
-            "message": "Content updated successfully.",
-            "post_id": 123
+            "notification_id": 1, // ID of the FriendPostNotification object
+            "post_id": 123,
+            "post_title": "My New Post",
+            "poster_username": "friend_user",
+            "timestamp": "YYYY-MM-DDTHH:MM:SS.ffffff"
         }
         ```
-    *   **Description**: Confirms to the editing client that their content change was received and processed by the server.
+    *   **Description**: Sent to a user when one of their friends creates a new post.
 
-**Client-to-Server Events (Emit these from the client):**
+*   **Event Type: `new_like`** (for post authors)
+    *   **Payload**:
+        ```json
+        {
+            "liker_username": "liking_user",
+            "post_id": 123,
+            "post_title": "Your Awesome Post",
+            "message": "liking_user liked your post: 'Your Awesome Post'",
+            "notification_id": 2 // ID of the Notification object
+        }
+        ```
+    *   **Description**: Sent to the author of a post when someone likes their post.
 
-*   **`join_room`**
-    *   **Payload**: `{'room': 'post_<post_id>'}`
-    *   **Description**: Client sends this event when they start viewing/editing a specific post to join the dedicated SocketIO room for that post. This allows them to receive targeted updates. (This is a general event, its usage for post editing is noted here).
-
-*   **`edit_post_content`**
+*   **Event Type: `new_comment_on_post`** (for post authors)
     *   **Payload**:
         ```json
         {
             "post_id": 123,
-            "new_content": "User's typed content..."
+            "commenter_username": "commenting_user",
+            "comment_content": "Great post!",
+            "post_title": "Your Insightful Article"
         }
         ```
-    *   **Description**: Sent by the client when a user (who holds the lock) modifies the content of the post in the editor. This event is typically debounced to avoid excessive emissions.
+    *   **Description**: Sent to the author of a post when someone comments on it.
+
+*   **Event Type: `new_activity`** (for friends of the actor)
+    *   **Payload**: (Structure of a UserActivity object, see `emit_new_activity_event` in `social_app/core/views.py`)
+        ```json
+        {
+            "activity_id": 1,
+            "user_id": 1, // User who performed the activity
+            "username": "actor_user",
+            // ... other UserActivity fields
+        }
+        ```
+    *   **Description**: Sent to friends of a user when that user performs a new activity (e.g., new post, new comment, new follow).
+
+*   **Event Type: `new_direct_message`**
+    *   **Payload**: (Structure of a Message object)
+        ```json
+        {
+            "id": 1,
+            "sender_id": 1,
+            "receiver_id": 2,
+            "content": "Hello!",
+            "timestamp": "YYYY-MM-DDTHH:MM:SS.ffffff",
+            "sender_username": "sender_user"
+        }
+        ```
+    *   **Description**: Sent to a user when they receive a new direct message.
+
+*   **Event Type: `update_inbox`**
+    *   **Payload**:
+        ```json
+        {
+            "sender_id": 1,
+            "sender_username": "sender_user",
+            "message_snippet": "Hello!...",
+            "timestamp": "YYYY-MM-DDTHH:MM:SS.ffffff",
+            "unread_count": 1,
+            "conversation_partner_id": 1,
+            "conversation_partner_username": "sender_user"
+        }
+        ```
+    *   **Description**: Sent to a user to update their inbox view, typically after a new message is sent or received in a conversation.
+
+*   **Event Type: `friend_request_received`**
+    *   **Payload**:
+        ```json
+        {
+            "message": "some_user sent you a friend request.",
+            "sender_username": "some_user",
+            "profile_link": "/user/some_user"
+        }
+        ```
+    *   **Description**: Sent when a user receives a new friend request.
+
+*   **Event Type: `new_follower`** (Friend request accepted)
+    *   **Payload**:
+        ```json
+        {
+            "message": "another_user accepted your friend request.",
+            "follower_username": "another_user",
+            "profile_link": "/user/another_user"
+        }
+        ```
+    *   **Description**: Sent to a user when another user accepts their friend request.
 
 *   **GET /api/users/<user_id>**
     *   Description: Retrieves a specific user by ID.
@@ -972,7 +1059,7 @@ These events facilitate the collaborative editing feature for posts.
 ### Post Locking API
 
 *   **POST /api/posts/<int:post_id>/lock**
-    *   **Description**: Acquires an exclusive lock for editing a post.
+    *   **Description**: Acquires an exclusive lock for editing a post. This will trigger a `post_lock_changed` SSE.
     *   **Authentication**: Required (JWT Bearer Token).
     *   **Response (Success 200 OK)**: JSON object with lock details.
         ```json
@@ -1005,7 +1092,7 @@ These events facilitate the collaborative editing feature for posts.
         ```
 
 *   **DELETE /api/posts/<int:post_id>/lock**
-    *   **Description**: Releases an existing lock on a post.
+    *   **Description**: Releases an existing lock on a post. This will trigger a `post_lock_changed` SSE.
     *   **Authentication**: Required (JWT Bearer Token). User must be the lock owner.
     *   **Response (Success 200 OK)**:
         ```json

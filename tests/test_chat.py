@@ -79,114 +79,125 @@ class ChatTestCase(AppTestCase):
             self.assertEqual(data["messages"][0]["message"], "Hello from user1")
             self.assertEqual(data["messages"][0]["user_id"], self.user1_id)
 
-    def test_socketio_join_and_send_message(self):
+    @patch("social_app.api.routes.current_app.chat_room_listeners")
+    def test_sse_send_and_receive_message(self, mock_chat_room_listeners):
         with self.app.app_context():
+            # 1. Create a room via API
             room_response = self.client.post(
                 "/api/chat/rooms",
-                json={"name": "Socket Test Room"},
+                json={"name": "SSE Test Room"},
                 headers={"Authorization": f"Bearer {self.user1_token}"},
             )
             self.assertEqual(room_response.status_code, 201)
             room_data = room_response.get_json()["chat_room"]
             room_id = room_data["id"]
-            socket_room_name = f"chat_room_{room_id}"
 
-            self.login(self.user1.username, "password")
+            # 2. Setup mock SSE listener for this room
+            mock_room_queue = MagicMock()
+            # Simulate that when the room_id is looked up, our mock_queue is returned
+            mock_chat_room_listeners.get.return_value = [mock_room_queue]
+            # Simulate that the room_id is in the listeners
+            mock_chat_room_listeners.__contains__.return_value = True
 
-            self.socketio_client.emit(
-                "join_chat_room", {"room_name": socket_room_name}, namespace="/"
+            # 3. User1 sends a message to this room via API
+            test_message = "Hello from SSE test!"
+            send_message_response = self.client.post(
+                f"/api/chat/rooms/{room_id}/messages",
+                json={"message": test_message},
+                headers={"Authorization": f"Bearer {self.user1_token}"},
             )
+            self.assertEqual(send_message_response.status_code, 201)
+            sent_message_data = send_message_response.get_json()["chat_message"]
 
-            test_message = "Hello from SocketIO test!"
-            self.socketio_client.emit(
-                "send_chat_message",
-                {"room_name": socket_room_name, "message": test_message},
-                namespace="/",
-            )
+            # 4. Verify the message was put into the mock queue for SSE dispatch
+            mock_chat_room_listeners.__contains__.assert_called_with(room_id)
+            mock_chat_room_listeners.get.assert_called_with(room_id)
+            mock_room_queue.put_nowait.assert_called_once()
 
-            received = self.socketio_client.get_received()
+            args, _ = mock_room_queue.put_nowait.call_args
+            sse_event_data = args[0]
 
-            new_message_events = [
-                r for r in received if r["name"] == "new_chat_message"
-            ]
-            self.assertTrue(len(new_message_events) > 0)
+            self.assertEqual(sse_event_data['type'], "new_chat_message")
+            payload = sse_event_data['payload']
+            self.assertEqual(payload['id'], sent_message_data['id'])
+            self.assertEqual(payload['content'], test_message)
+            self.assertEqual(payload['user_id'], self.user1_id)
+            self.assertEqual(payload['username'], self.user1.username)
+            self.assertEqual(payload['room_id'], room_id)
 
-            found_message = False
-            for event_data in new_message_events:
-                args = event_data["args"][0]
-                if (
-                    args["message"] == test_message
-                    and args["username"] == self.user1.username
-                ):
-                    found_message = True
-                    self.assertEqual(args["room_name"], socket_room_name)
-                    self.assertEqual(args["user_id"], self.user1_id)
-                    break
-            self.assertTrue(found_message)
-
-            message_in_db = ChatMessage.query.filter_by(
-                room_id=room_id, user_id=self.user1_id, message=test_message
-            ).first()
+            # 5. Verify message is in DB
+            message_in_db = db.session.get(ChatMessage, sent_message_data['id'])
             self.assertIsNotNone(message_in_db)
-            self.logout()
+            self.assertEqual(message_in_db.content, test_message)
 
-    def test_send_message_to_unjoined_room(self):
+    @patch("social_app.api.routes.current_app.chat_room_listeners")
+    def test_message_delivery_to_sse_listeners(self, mock_chat_room_listeners):
         with self.app.app_context():
+            # 1. User1 creates a room
             room_response = self.client.post(
                 "/api/chat/rooms",
-                json={"name": "Unjoined Test Room"},
+                json={"name": "SSE Listener Test Room"},
                 headers={"Authorization": f"Bearer {self.user1_token}"},
             )
             self.assertEqual(room_response.status_code, 201)
             room_data = room_response.get_json()["chat_room"]
             room_id = room_data["id"]
-            socket_room_name = f"chat_room_{room_id}"
 
-            self.login(self.user1.username, "password")
-            self.socketio_client.emit(
-                "join_chat_room", {"room_name": socket_room_name}, namespace="/"
+            # 2. Simulate User1 listening to this room's SSE stream
+            mock_user1_queue = MagicMock()
+            # Simulate User3 (another user) also listening
+            mock_user3_queue = MagicMock()
+
+            # Configure the mock_chat_room_listeners
+            # It should return the correct queues when .get(room_id) is called
+            # And indicate that room_id is a key when `in` is used.
+
+            # Store queues by user ID or some identifier if needed for more complex scenarios,
+            # but for this test, we just need to ensure all listeners for THIS room_id get the message.
+            # The API route iterates over current_app.chat_room_listeners[room_id] which is a list of queues.
+
+            listening_queues_for_room = [mock_user1_queue, mock_user3_queue]
+            mock_chat_room_listeners.get.return_value = listening_queues_for_room
+            mock_chat_room_listeners.__contains__.return_value = True # room_id is in listeners
+
+            # 3. User2 sends a message to this room via API
+            test_message_by_user2 = "Hello to all listeners from User2!"
+            send_response = self.client.post(
+                f"/api/chat/rooms/{room_id}/messages",
+                json={"message": test_message_by_user2},
+                headers={"Authorization": f"Bearer {self.user2_token}"}, # User2 sends
             )
-            self.socketio_client.get_received()
+            self.assertEqual(send_response.status_code, 201)
+            sent_message_details = send_response.get_json()["chat_message"]
 
-            socketio_client_user2 = self.create_socketio_client()
-            self.login(
-                self.user2.username, "password", client_instance=socketio_client_user2
-            )
+            # 4. Verify the message was put into User1's mock queue
+            mock_chat_room_listeners.__contains__.assert_called_with(room_id)
+            mock_chat_room_listeners.get.assert_called_with(room_id)
 
-            test_message_by_user2 = "Hello from User2 (unjoined)"
-            socketio_client_user2.emit(
-                "send_chat_message",
-                {"room_name": socket_room_name, "message": test_message_by_user2},
-                namespace="/",
-            )
+            mock_user1_queue.put_nowait.assert_called_once()
+            args_user1, _ = mock_user1_queue.put_nowait.call_args
+            sse_event_data_user1 = args_user1[0]
+            self.assertEqual(sse_event_data_user1['type'], "new_chat_message")
+            payload_user1 = sse_event_data_user1['payload']
+            self.assertEqual(payload_user1['content'], test_message_by_user2)
+            self.assertEqual(payload_user1['user_id'], self.user2_id) # Message is from User2
+            self.assertEqual(payload_user1['username'], self.user2.username)
 
-            time.sleep(0.1)
-            received_by_user1 = self.socketio_client.get_received()
-            user1_messages = [
-                r for r in received_by_user1 if r["name"] == "new_chat_message"
-            ]
-            for event_data in user1_messages:
-                args = event_data["args"][0]
-                self.assertNotEqual(args["message"], test_message_by_user2)
+            # 5. Verify the message was also put into User3's mock queue
+            mock_user3_queue.put_nowait.assert_called_once()
+            args_user3, _ = mock_user3_queue.put_nowait.call_args
+            sse_event_data_user3 = args_user3[0]
+            self.assertEqual(sse_event_data_user3['type'], "new_chat_message")
+            payload_user3 = sse_event_data_user3['payload']
+            self.assertEqual(payload_user3['content'], test_message_by_user2)
+            self.assertEqual(payload_user3['user_id'], self.user2_id)
 
-            received_by_user2 = socketio_client_user2.get_received()
-            user2_own_messages = [
-                r
-                for r in received_by_user2
-                if r["name"] == "new_chat_message"
-                and r["args"][0]["message"] == test_message_by_user2
-            ]
-            self.assertEqual(len(user2_own_messages), 0)
-
-            message_in_db = ChatMessage.query.filter_by(
-                room_id=room_id, user_id=self.user2_id, message=test_message_by_user2
-            ).first()
-            self.assertIsNone(message_in_db)
-
-            self.logout(client_instance=socketio_client_user2)
-            if self.socketio_client and self.socketio_client.is_connected():
-                self.socketio_client.disconnect()
-            self.logout()
+            # 6. Verify message is in DB, sent by User2
+            message_in_db = db.session.get(ChatMessage, sent_message_details['id'])
+            self.assertIsNotNone(message_in_db)
+            self.assertEqual(message_in_db.content, test_message_by_user2)
+            self.assertEqual(message_in_db.user_id, self.user2_id)
+            self.assertEqual(message_in_db.room_id, room_id)
 
     def test_chat_page_loads_for_logged_in_user(self):
         self.login(self.user1.username, "password")

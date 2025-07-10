@@ -11,7 +11,7 @@
         <p class="text-muted">
             Created by:
             {% if series.author %}
-                <a href="{{ url_for('user_profile', username=series.author.username) }}">{{ series.author.username }}</a>
+                <a href="{{ url_for('core.user_profile', username=series.author.username) }}">{{ series.author.username }}</a>
             {% else %}
                 Anonymo_user
             {% endif %}
@@ -41,7 +41,7 @@
                             <small class="text-muted">
                                 Author:
                                 {% if post_in_series.author %}
-                                    <a href="{{ url_for('user_profile', username=post_in_series.author.username) }}">{{ post_in_series.author.username }}</a>
+                                    <a href="{{ url_for('core.user_profile', username=post_in_series.author.username) }}">{{ post_in_series.author.username }}</a>
                                 {% else %}
                                     Unknown
                                 {% endif %}

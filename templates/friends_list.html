@@ -12,7 +12,7 @@
         <div class="list-group">
             {% for friend_user in friends_list %}
                 <div class="list-group-item d-flex justify-content-between align-items-center mb-2 shadow-sm p-3">
-                    <a href="{{ url_for('user_profile', username=friend_user.username) }}" class="text-decoration-none d-flex align-items-center">
+                    <a href="{{ url_for('core.user_profile', username=friend_user.username) }}" class="text-decoration-none d-flex align-items-center">
                         <img src="{{ friend_user.profile_picture or url_for('static', filename='profile_pics/default.png') }}" alt="{{ friend_user.username }}" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;">
                         <span class="fw-bold">{{ friend_user.username }}</span>
                     </a>
@@ -33,7 +33,7 @@
     {% endif %}
 
     <div class="mt-4">
-        <a href="{{ url_for('user_profile', username=user.username) }}" class="btn btn-outline-secondary">
+        <a href="{{ url_for('core.user_profile', username=user.username) }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left-circle"></i> Back to {{ user.username }}'s Profile
         </a>
     </div>

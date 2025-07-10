@@ -27,7 +27,7 @@
                         <small class="text-muted">{{ file.upload_timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
                     </div>
                     <p class="mb-1">
-                        Sent by: <a href="{{ url_for('user_profile', username=file.sender.username) }}" class="text-decoration-none">{{ file.sender.username }}</a>
+                        Sent by: <a href="{{ url_for('core.user_profile', username=file.sender.username) }}" class="text-decoration-none">{{ file.sender.username }}</a>
                     </p>
                     {% if file.message %}
                         <p class="mb-1 fst-italic">Message: "{{ file.message }}"</p>

@@ -12,7 +12,7 @@
 
   {% if post %}
     <h2 id="post-title">{{ post.title }}</h2>
-    <p><small>By <a href="{{ custom_url_for_primary('user_profile', username=post.author_username) }}">{{ post.author_username }}</a> on {{ post.timestamp }}</small></p>
+    <p><small>By <a href="{{ custom_url_for_primary('core.user_profile', username=post.author_username) }}">{{ post.author_username }}</a> on {{ post.timestamp }}</small></p>
 
     {# Series Information and Next/Previous Navigation #}
     {% if post.series_associated_with %}
@@ -186,7 +186,7 @@
             {% for review in post_reviews %}
                 <div class="review" style="margin-bottom: 15px; padding: 10px; border: 1px solid #eee;">
                     <p>
-                        <strong><a href="{{ custom_url_for_primary('user_profile', username=review.reviewer_username) }}">{{ review.reviewer_username }}</a></strong>
+                        <strong><a href="{{ custom_url_for_primary('core.user_profile', username=review.reviewer_username) }}">{{ review.reviewer_username }}</a></strong>
                         rated: <strong>{{ review.rating }}/5 stars</strong>
                         <small class="text-muted">({{ review.timestamp }})</small>
                     </p>
@@ -231,7 +231,7 @@
         {% if comments and comments|length > 0 %}
             {% for comment in comments %}
                 <div class="comment" style="margin-bottom: 15px; padding: 10px; border: 1px solid #eee;">
-                    <p><strong><a href="{{ custom_url_for_primary('user_profile', username=comment.author_username) }}">{{ comment.author_username }}</a></strong> <small class="text-muted">({{ comment.timestamp }})</small></p> {# Assuming comment.author_username and comment.timestamp are directly available as per original file #}
+                    <p><strong><a href="{{ custom_url_for_primary('core.user_profile', username=comment.author_username) }}">{{ comment.author_username }}</a></strong> <small class="text-muted">({{ comment.timestamp }})</small></p> {# Assuming comment.author_username and comment.timestamp are directly available as per original file #}
                     <p style="white-space: pre-wrap;">{{ comment.content }}</p>
                     {# Flag Comment Form - Placed inside the comment div #}
                     {% if current_user and current_user.is_authenticated and comment.user_id != current_user.id %}

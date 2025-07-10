@@ -24,7 +24,7 @@
             <textarea name="message" id="message" class="form-control" placeholder="Enter an optional message for {{ receiver_user.username }}"></textarea>
         </div>
         <button type="submit" class="btn btn-primary">Send File</button>
-        <a href="{{ url_for('user_profile', username=receiver_user.username) }}" class="btn btn-secondary">Cancel</a>
+        <a href="{{ url_for('core.user_profile', username=receiver_user.username) }}" class="btn btn-secondary">Cancel</a>
     </form>
 </div>
 {% endblock %}

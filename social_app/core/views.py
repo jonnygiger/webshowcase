@@ -25,7 +25,7 @@ from flask_login import (
 )
 from sqlalchemy import or_
 
-from .. import db, socketio, login_manager
+from .. import db, login_manager # Removed socketio
 from ..models.db_models import (
     User, Post, Comment, Like, Review, Message, Poll, PollOption, PollVote, Event, EventRSVP,
     Notification, TodoItem, Group, Reaction, Bookmark, Friendship, SharedPost, UserActivity,

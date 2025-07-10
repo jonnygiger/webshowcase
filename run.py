@@ -124,7 +124,5 @@ if __name__ == "__main__":
     else:
         app.logger.info("Scheduler not started (app is in TESTING mode).")
 
-    from social_app import socketio as global_socketio
-
     app_port = int(os.environ.get("PORT", 5000))
-    global_socketio.run(app, host='0.0.0.0', port=app_port, debug=app.debug, allow_unsafe_werkzeug=True if app.debug else False)
+    app.run(host='0.0.0.0', port=app_port, debug=app.debug)

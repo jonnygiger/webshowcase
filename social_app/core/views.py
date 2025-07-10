@@ -97,12 +97,23 @@ def emit_new_activity_event(activity_log):
     friends_of_actor = actor.get_friends()
     if friends_of_actor:
         for friend in friends_of_actor:
-            if friend.id != actor.id:
-                room = f"user_{friend.id}"
-                socketio.emit("new_activity_event", payload, room=room)
-                current_app.logger.info(
-                    f"Emitted new_activity_event to room {room} for activity {activity_log.id} by user {actor.username}"
-                )
+            if friend.id != actor.id: # Don't send to self
+                if friend.id in current_app.user_notification_queues:
+                    queues_for_friend = current_app.user_notification_queues[friend.id]
+                    if queues_for_friend:
+                        sse_event_data = {"type": "new_activity", "payload": payload}
+                        for q_item in queues_for_friend:
+                            try:
+                                q_item.put_nowait(sse_event_data)
+                                current_app.logger.info(f"Dispatched new_activity_event (SSE) to user {friend.id} for activity {activity_log.id}")
+                            except queue.Full:
+                                current_app.logger.error(f"SSE queue full for user {friend.id} (new_activity_event).")
+                            except Exception as e:
+                                current_app.logger.error(f"Error putting new_activity_event to SSE queue for user {friend.id}: {e}")
+                    else:
+                        current_app.logger.info(f"No active SSE queues for user {friend.id} (new_activity_event).")
+                else:
+                    current_app.logger.info(f"User {friend.id} not in user_notification_queues (new_activity_event).")
     else:
         current_app.logger.info(
             f"No friends found for actor {actor.username} to emit activity {activity_log.id}"
@@ -584,15 +595,30 @@ def create_post():
                         db.session.commit()
                         for notification_instance in notifications_to_send:
                             if notification_instance.id and notification_instance.timestamp:
-                                socketio.emit(
-                                    "new_friend_post",
-                                    {
-                                        "notification_id": notification_instance.id, "post_id": new_post_db.id,
-                                        "post_title": new_post_db.title, "poster_username": post_author.username,
-                                        "timestamp": notification_instance.timestamp.isoformat(),
-                                    },
-                                    room=f"user_{notification_instance.user_id}",
-                                )
+                                friend_id_for_notification = notification_instance.user_id
+                                if friend_id_for_notification in current_app.user_notification_queues:
+                                    queues_for_friend = current_app.user_notification_queues[friend_id_for_notification]
+                                    if queues_for_friend:
+                                        sse_payload = {
+                                            "notification_id": notification_instance.id,
+                                            "post_id": new_post_db.id,
+                                            "post_title": new_post_db.title,
+                                            "poster_username": post_author.username,
+                                            "timestamp": notification_instance.timestamp.isoformat(),
+                                        }
+                                        sse_event_data = {"type": "new_friend_post", "payload": sse_payload}
+                                        for q_item in queues_for_friend:
+                                            try:
+                                                q_item.put_nowait(sse_event_data)
+                                                current_app.logger.info(f"Dispatched new_friend_post (SSE) to user {friend_id_for_notification} for post {new_post_db.id}")
+                                            except queue.Full:
+                                                current_app.logger.error(f"SSE queue full for user {friend_id_for_notification} (new_friend_post).")
+                                            except Exception as e_sse:
+                                                current_app.logger.error(f"Error putting new_friend_post to SSE queue for user {friend_id_for_notification}: {e_sse}")
+                                    else:
+                                        current_app.logger.info(f"No active SSE queues for user {friend_id_for_notification} (new_friend_post).")
+                                else:
+                                    current_app.logger.info(f"User {friend_id_for_notification} not in user_notification_queues (new_friend_post).")
                     except Exception as e:
                         db.session.rollback()
                         current_app.logger.error(f"Error creating/sending friend post notifications: {e}")
@@ -674,15 +700,28 @@ def edit_post(post_id):
         post.hashtags = request.form.get("hashtags", "")
         post.last_edited = datetime.now(timezone.utc)
         db.session.commit()
-        if post_id in current_app.sse_listeners:
-            listeners = list(current_app.sse_listeners.get(post_id, []))
-            if listeners:
-                sse_post_data = {"id": post.id, "title": post.title, "content": post.content,
-                                 "last_edited": post.last_edited.strftime("%Y-%m-%d %H:%M:%S") if post.last_edited else None}
-                sse_event = {"type": "post_edited", "payload": sse_post_data}
-                for q_item in listeners:
-                    try: q_item.put_nowait(sse_event)
-                    except Exception as e: current_app.logger.error(f"SSE: Error putting post_edited event for post {post_id}: {e}")
+
+        # Dispatch post_content_updated event to SSE listeners
+        post_data_for_sse = {
+            "post_id": post.id,
+            "title": post.title,
+            "content": post.content, # This is the updated content
+            "last_edited": post.last_edited.isoformat() if post.last_edited else None,
+            "edited_by_user_id": current_user.id, # current_user is available here
+            "edited_by_username": current_user.username
+        }
+        if post.id in current_app.post_event_listeners:
+            listeners = list(current_app.post_event_listeners[post.id]) # Iterate over a copy
+            current_app.logger.debug(f"Dispatching post_content_updated from edit_post view to {len(listeners)} listeners for post {post.id}")
+            for q_item in listeners:
+                try:
+                    sse_data = {"type": "post_content_updated", "payload": post_data_for_sse}
+                    q_item.put_nowait(sse_data)
+                except Exception as e: # queue.Full or other errors
+                    current_app.logger.error(f"Error putting post_content_updated to SSE queue from edit_post view for post {post.id}: {e}")
+        else:
+            current_app.logger.debug(f"No active SSE listeners in post_event_listeners for post {post.id} to dispatch post_content_updated from edit_post view.")
+
         flash("Post updated successfully!", "success")
         return redirect(url_for("core.view_post", post_id=post_id))
     return render_template("edit_post.html", post=post)
@@ -767,17 +806,30 @@ def add_comment(post_id):
     new_comment_data_for_post_room = {
         "id": new_comment_db.id, "post_id": new_comment_db.post_id,
         "author_username": new_comment_db.author.username, "content": new_comment_db.content,
-        "timestamp": new_comment_db.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": new_comment_db.timestamp.isoformat(), # Use isoformat
     }
-    socketio.emit("new_comment_event", new_comment_data_for_post_room, room=f"post_{post_id}")
+    # Dispatch to post-specific SSE stream (replaces old socketio.emit to post_X room)
+    if post_id in current_app.post_event_listeners:
+        comment_data_for_post_stream = {
+            "id": new_comment_db.id,
+            "author_username": new_comment_db.author.username,
+            "content": new_comment_db.content,
+            "timestamp": new_comment_db.timestamp.isoformat(),
+            "post_id": post_id
+        }
+        sse_event_for_post_stream = {"type": "new_comment", "payload": comment_data_for_post_stream}
+        listeners = list(current_app.post_event_listeners[post_id])
+        for q_item in listeners:
+            try:
+                q_item.put_nowait(sse_event_for_post_stream)
+                current_app.logger.info(f"Dispatched new_comment (SSE) to post_event_listeners for post {post_id}")
+            except queue.Full:
+                current_app.logger.error(f"SSE queue full for post {post_id} (new_comment on post stream).")
+            except Exception as e:
+                current_app.logger.error(f"Error putting new_comment to post SSE queue for post {post_id}: {e}")
+    else:
+        current_app.logger.debug(f"No active post_event_listeners for post {post_id} for new_comment event.")
 
-    if post_id in current_app.sse_listeners:
-        sse_comment_data = {"id": new_comment_db.id, "author_username": new_comment_db.author.username,
-                            "content": new_comment_db.content, "timestamp": new_comment_db.timestamp.strftime("%Y-%m-%d %H:%M:%S")}
-        sse_event = {"type": "new_comment", "payload": sse_comment_data}
-        for q_item in current_app.sse_listeners[post_id]:
-            try: q_item.put_nowait(sse_event)
-            except Exception as e: current_app.logger.error(f"SSE: Error putting new_comment event for post {post_id}: {e}")
 
     if new_comment_db.user_id: check_and_award_achievements(new_comment_db.user_id)
     post_author_id = post.user_id
@@ -785,9 +837,30 @@ def add_comment(post_id):
     if post_author_id != commenter_id:
         commenter_user = db.session.get(User, commenter_id)
         if commenter_user:
-            notification_data = {"post_id": post.id, "commenter_username": commenter_user.username,
-                                 "comment_content": new_comment_db.content, "post_title": post.title}
-            socketio.emit("new_comment_notification", notification_data, room=f"user_{post_author_id}")
+            # Notification to post author via user-specific SSE queue
+            if post_author_id in current_app.user_notification_queues:
+                queues_for_author = current_app.user_notification_queues[post_author_id]
+                if queues_for_author:
+                    notification_payload = {
+                        "post_id": post.id,
+                        "commenter_username": commenter_user.username,
+                        "comment_content": new_comment_db.content,
+                        "post_title": post.title
+                    }
+                    sse_event_data = {"type": "new_comment_on_post", "payload": notification_payload}
+                    for q_item in queues_for_author:
+                        try:
+                            q_item.put_nowait(sse_event_data)
+                            current_app.logger.info(f"Dispatched new_comment_on_post (SSE) to user {post_author_id} for post {post.id}")
+                        except queue.Full:
+                            current_app.logger.error(f"SSE queue full for user {post_author_id} (new_comment_on_post).")
+                        except Exception as e:
+                            current_app.logger.error(f"Error putting new_comment_on_post to SSE queue for user {post_author_id}: {e}")
+                else:
+                    current_app.logger.info(f"No active SSE queues for user {post_author_id} (new_comment_on_post).")
+            else:
+                current_app.logger.info(f"User {post_author_id} not in user_notification_queues (new_comment_on_post).")
+
     flash("Comment added successfully!", "success")
     return redirect(url_for("core.view_post", post_id=post_id))
 
@@ -811,12 +884,33 @@ def like_post(post_id):
                     try:
                         db.session.add(new_notification)
                         db.session.commit()
-                        socketio.emit("new_like_notification", {"liker_username": liker.username, "post_id": post.id, "post_title": post.title,
-                                                               "message": notification_message, "notification_id": new_notification.id},
-                                      room=f"user_{post.author.id}")
+                        # SSE Notification to post author
+                        if post.author.id in current_app.user_notification_queues:
+                            queues_for_author = current_app.user_notification_queues[post.author.id]
+                            if queues_for_author:
+                                sse_payload = {
+                                    "liker_username": liker.username,
+                                    "post_id": post.id,
+                                    "post_title": post.title,
+                                    "message": notification_message,
+                                    "notification_id": new_notification.id
+                                }
+                                sse_event_data = {"type": "new_like", "payload": sse_payload}
+                                for q_item in queues_for_author:
+                                    try:
+                                        q_item.put_nowait(sse_event_data)
+                                        current_app.logger.info(f"Dispatched new_like (SSE) to user {post.author.id} for post {post.id}")
+                                    except queue.Full:
+                                        current_app.logger.error(f"SSE queue full for user {post.author.id} (new_like).")
+                                    except Exception as e_sse:
+                                        current_app.logger.error(f"Error putting new_like to SSE queue for user {post.author.id}: {e_sse}")
+                            else:
+                                current_app.logger.info(f"No active SSE queues for user {post.author.id} (new_like).")
+                        else:
+                            current_app.logger.info(f"User {post.author.id} not in user_notification_queues (new_like).")
                     except Exception as e_notify:
                         db.session.rollback()
-                        current_app.logger.error(f"Error creating/sending like notification: {e_notify}")
+                        current_app.logger.error(f"Error creating like notification DB entry: {e_notify}")
             try:
                 activity = UserActivity(user_id=user_id, activity_type="new_like", related_id=post.id,
                                         content_preview=post.content[:100] if post.content else "",
@@ -905,6 +999,101 @@ def post_stream(post_id):
                 if not current_app.sse_listeners[post_id]:
                     del current_app.sse_listeners[post_id]
     return Response(event_stream(), mimetype="text/event-stream")
+
+
+@core_bp.route("/post-stream/<int:post_id>")
+def post_event_stream(post_id):
+    # Optional: Validate post_id exists
+    # post = Post.query.get(post_id)
+    # if not post:
+    #     # Return an empty response or an error if preferred for non-existent posts
+    #     return Response(mimetype="text/event-stream", status=404)
+
+    q_local = queue.Queue()
+    if post_id not in current_app.post_event_listeners:
+        current_app.post_event_listeners[post_id] = []
+
+    current_app.post_event_listeners[post_id].append(q_local)
+    # Use a generic term like 'client' for logging if user is not authenticated for this stream
+    client_id_for_log = current_user.id if current_user.is_authenticated else request.remote_addr
+    current_app.logger.info(f"Client {client_id_for_log} connected to post event stream for post {post_id}. Active listeners: {len(current_app.post_event_listeners[post_id])}")
+
+    def event_generator():
+        try:
+            while True:
+                data = q_local.get() # Blocks until an item is available
+                if data is None:
+                    current_app.logger.info(f"Post event stream for post {post_id}, client {client_id_for_log} received None, closing.")
+                    break
+
+                event_type = data.get("type", "message")
+                payload = data.get("payload", {})
+
+                sse_message = f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+                yield sse_message
+                current_app.logger.debug(f"Sent SSE event '{event_type}' for post {post_id} to client {client_id_for_log}")
+
+        except GeneratorExit:
+            current_app.logger.info(f"Post event stream for post {post_id}, client {client_id_for_log} disconnected (GeneratorExit).")
+        except Exception as e:
+            current_app.logger.error(f"Error in post event_generator for post {post_id}, client {client_id_for_log}: {e}", exc_info=True)
+        finally:
+            current_app.logger.info(f"Cleaning up queue for post {post_id}, client {client_id_for_log}.")
+            if post_id in current_app.post_event_listeners and q_local in current_app.post_event_listeners[post_id]:
+                current_app.post_event_listeners[post_id].remove(q_local)
+                if not current_app.post_event_listeners[post_id]:
+                    del current_app.post_event_listeners[post_id]
+                    current_app.logger.info(f"Removed post {post_id} from post_event_listeners as it's empty.")
+
+    return Response(event_generator(), mimetype="text/event-stream")
+
+@core_bp.route("/chat-stream/<int:room_id>")
+@login_required
+def chat_stream(room_id):
+    # Ensure the room exists (optional, but good practice)
+    # room = ChatRoom.query.get_or_404(room_id)
+    # Simplified: directly use room_id for listeners
+
+    q_local = queue.Queue()
+    if room_id not in current_app.chat_room_listeners:
+        current_app.chat_room_listeners[room_id] = []
+
+    # Check if user is authorized to join this chat room (e.g., member of a private group chat)
+    # For now, assume public rooms or authorization handled elsewhere if needed.
+    # Add user specific details if needed, e.g. current_user.id for logging
+
+    current_app.chat_room_listeners[room_id].append(q_local)
+    current_app.logger.info(f"User {current_user.id if current_user.is_authenticated else 'Unknown'} connected to chat stream for room {room_id}. Active listeners: {len(current_app.chat_room_listeners[room_id])}")
+
+    def event_generator():
+        try:
+            while True:
+                data = q_local.get() # Blocks until an item is available
+                if data is None: # Sentinel for closing the stream for this client
+                    current_app.logger.info(f"SSE stream for room {room_id}, user {current_user.id if current_user.is_authenticated else 'Unknown'} received None, closing.")
+                    break
+
+                # Assuming data is already a dict like {"type": "new_chat_message", "payload": message_dict}
+                event_type = data.get("type", "message")
+                payload = data.get("payload", {})
+
+                sse_message = f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+                yield sse_message
+                current_app.logger.debug(f"Sent SSE event '{event_type}' to room {room_id} for user {current_user.id if current_user.is_authenticated else 'Unknown'}")
+
+        except GeneratorExit:
+            current_app.logger.info(f"SSE stream for room {room_id}, user {current_user.id if current_user.is_authenticated else 'Unknown'} disconnected (GeneratorExit).")
+        except Exception as e:
+            current_app.logger.error(f"Error in SSE event_generator for room {room_id}, user {current_user.id if current_user.is_authenticated else 'Unknown'}: {e}", exc_info=True)
+        finally:
+            current_app.logger.info(f"Cleaning up queue for room {room_id}, user {current_user.id if current_user.is_authenticated else 'Unknown'}.")
+            if room_id in current_app.chat_room_listeners and q_local in current_app.chat_room_listeners[room_id]:
+                current_app.chat_room_listeners[room_id].remove(q_local)
+                if not current_app.chat_room_listeners[room_id]: # If list is empty, remove key
+                    del current_app.chat_room_listeners[room_id]
+                    current_app.logger.info(f"Removed room {room_id} from chat_room_listeners as it's empty.")
+
+    return Response(event_generator(), mimetype="text/event-stream")
 
 @core_bp.route("/chat")
 @login_required
@@ -1019,18 +1208,35 @@ def send_message(receiver_username):
         db.session.commit()
         message_payload = {
             "id": new_message_db.id, "sender_id": new_message_db.sender_id, "receiver_id": new_message_db.receiver_id,
-            "content": new_message_db.content, "timestamp": new_message_db.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "content": new_message_db.content, "timestamp": new_message_db.timestamp.isoformat(), # Use isoformat
             "sender_username": new_message_db.sender.username,
         }
-        socketio.emit("new_direct_message", message_payload, room=f"user_{new_message_db.receiver_id}")
+        # SSE for new_direct_message
+        if new_message_db.receiver_id in current_app.user_notification_queues:
+            queues_for_receiver = current_app.user_notification_queues[new_message_db.receiver_id]
+            if queues_for_receiver:
+                sse_event_dm = {"type": "new_direct_message", "payload": message_payload}
+                for q_item in queues_for_receiver:
+                    try: q_item.put_nowait(sse_event_dm)
+                    except Exception as e: current_app.logger.error(f"SSE: Error putting new_direct_message for user {new_message_db.receiver_id}: {e}")
+
         unread_count = db.session.query(Message).filter(Message.sender_id == new_message_db.sender_id, Message.receiver_id == new_message_db.receiver_id, Message.is_read == False).count()
         inbox_update_payload = {
             "sender_id": new_message_db.sender_id, "sender_username": new_message_db.sender.username,
             "message_snippet": (new_message_db.content[:30] + "...") if len(new_message_db.content) > 30 else new_message_db.content,
-            "timestamp": new_message_db.timestamp.strftime("%Y-%m-%d %H:%M:%S"), "unread_count": unread_count,
-            "conversation_partner_id": new_message_db.sender_id, "conversation_partner_username": new_message_db.sender.username,
+            "timestamp": new_message_db.timestamp.isoformat(), "unread_count": unread_count, # Use isoformat
+            "conversation_partner_id": new_message_db.sender_id,
+            "conversation_partner_username": new_message_db.sender.username,
         }
-        socketio.emit("update_inbox_notification", inbox_update_payload, room=f"user_{new_message_db.receiver_id}")
+        # SSE for update_inbox_notification
+        if new_message_db.receiver_id in current_app.user_notification_queues:
+            queues_for_receiver_inbox = current_app.user_notification_queues[new_message_db.receiver_id]
+            if queues_for_receiver_inbox:
+                sse_event_inbox = {"type": "update_inbox", "payload": inbox_update_payload}
+                for q_item in queues_for_receiver_inbox:
+                    try: q_item.put_nowait(sse_event_inbox)
+                    except Exception as e: current_app.logger.error(f"SSE: Error putting update_inbox for user {new_message_db.receiver_id}: {e}")
+
         flash("Message sent successfully!", "success")
         return redirect(url_for("core.view_conversation", username=receiver_user.username))
     return render_template("send_message.html", receiver_username=receiver_user.username)

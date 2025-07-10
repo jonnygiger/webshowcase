@@ -272,16 +272,23 @@ class PostLockResource(Resource):
             current_app.logger.error(f"Error creating lock: {str(e)}")
             return {"message": f"Error creating lock: {str(e)}"}, 500
 
-        current_app.extensions["socketio"].emit(
-            "post_lock_acquired",
-            {
-                "post_id": new_lock.post_id,
-                "user_id": new_lock.user_id,
-                "username": user.username,
-                "expires_at": new_lock.expires_at.isoformat(),
-            },
-            room=f"post_{new_lock.post_id}",
-        )
+        # Dispatch to SSE listeners for this post
+        lock_payload_for_sse = {
+            "post_id": new_lock.post_id,
+            "status": "acquired",
+            "user_id": new_lock.user_id,
+            "username": user.username,
+            "expires_at": new_lock.expires_at.isoformat()
+        }
+        if new_lock.post_id in current_app.post_event_listeners:
+            listeners = list(current_app.post_event_listeners[new_lock.post_id])
+            current_app.logger.debug(f"Dispatching post_lock_changed (acquired) to {len(listeners)} listeners for post {new_lock.post_id}")
+            for q_item in listeners:
+                try:
+                    sse_data = {"type": "post_lock_changed", "payload": lock_payload_for_sse}
+                    q_item.put_nowait(sse_data)
+                except Exception as e:
+                    current_app.logger.error(f"Error putting post_lock_changed (acquired) to SSE queue for post {new_lock.post_id}: {e}")
 
         return {
             "message": "Post locked successfully.",
@@ -332,15 +339,22 @@ class PostLockResource(Resource):
             current_app.logger.error(f"Error unlocking post: {str(e)}")
             return {"message": f"Error unlocking post: {str(e)}"}, 500
 
-        current_app.extensions["socketio"].emit(
-            "post_lock_released",
-            {
-                "post_id": post_id,
-                "released_by_user_id": current_user_id,
-                "username": user.username,
-            },
-            room=f"post_{post_id}",
-        )
+        # Dispatch to SSE listeners for this post
+        release_payload_for_sse = {
+            "post_id": post_id,
+            "status": "released",
+            "user_id": current_user_id,
+            "username": user.username
+        }
+        if post_id in current_app.post_event_listeners:
+            listeners = list(current_app.post_event_listeners[post_id])
+            current_app.logger.debug(f"Dispatching post_lock_changed (released) to {len(listeners)} listeners for post {post_id}")
+            for q_item in listeners:
+                try:
+                    sse_data = {"type": "post_lock_changed", "payload": release_payload_for_sse}
+                    q_item.put_nowait(sse_data)
+                except Exception as e:
+                    current_app.logger.error(f"Error putting post_lock_changed (released) to SSE queue for post {post_id}: {e}")
 
         return {"message": "Post unlocked successfully."}, 200
 
@@ -348,6 +362,73 @@ class PostLockResource(Resource):
 class PostResource(Resource):
     def get(self, post_id):
         return {"message": f"Post resource placeholder for post_id {post_id}"}, 200
+
+    # It is recommended to add a PUT/PATCH method here for updating post content
+    # and include the SSE dispatch logic for "post_content_updated" within it.
+    # For example:
+    # @jwt_required()
+    # def put(self, post_id):
+    #     current_user_id = int(get_jwt_identity())
+    #     user = db.session.get(User, current_user_id)
+    #     if not user:
+    #         return {"message": "User not found"}, 404
+    #
+    #     post = db.session.get(Post, post_id)
+    #     if not post:
+    #         return {"message": "Post not found"}, 404
+    #
+    #     if post.user_id != current_user_id:
+    #         # Add check for moderators or other roles if they are allowed to edit
+    #         return {"message": "Not authorized to edit this post"}, 403
+    #
+    #     parser = reqparse.RequestParser()
+    #     parser.add_argument("title", type=str, help="Title of the post")
+    #     parser.add_argument("content", type=str, help="Content of the post")
+    #     parser.add_argument("hashtags", type=str, help="Hashtags for the post")
+    #     data = parser.parse_args()
+    #
+    #     updated = False
+    #     if data.get("title") is not None:
+    #         post.title = data["title"]
+    #         updated = True
+    #     if data.get("content") is not None:
+    #         post.content = data["content"]
+    #         updated = True
+    #     if data.get("hashtags") is not None:
+    #         post.hashtags = data["hashtags"]
+    #         updated = True
+    #
+    #     if updated:
+    #         post.last_edited = datetime.now(timezone.utc)
+    #         try:
+    #             db.session.commit()
+    #
+    #             # Dispatch to SSE listeners for post content update
+    #             post_data_for_sse = {
+    #                 "post_id": post.id,
+    #                 "title": post.title,
+    #                 "content": post.content,
+    #                 "last_edited": post.last_edited.isoformat() if post.last_edited else None,
+    #                 "edited_by_user_id": current_user_id,
+    #                 "edited_by_username": user.username
+    #             }
+    #             if post.id in current_app.post_event_listeners:
+    #                 listeners = list(current_app.post_event_listeners[post.id])
+    #                 current_app.logger.debug(f"Dispatching post_content_updated to {len(listeners)} listeners for post {post.id}")
+    #                 for q_item in listeners:
+    #                     try:
+    #                         sse_data = {"type": "post_content_updated", "payload": post_data_for_sse}
+    #                         q_item.put_nowait(sse_data)
+    #                     except Exception as e:
+    #                         current_app.logger.error(f"Error putting post_content_updated to SSE queue for post {post.id}: {e}")
+    #
+    #             return {"message": "Post updated successfully", "post": post.to_dict()}, 200
+    #         except Exception as e:
+    #             db.session.rollback()
+    #             current_app.logger.error(f"Error updating post {post_id}: {e}")
+    #             return {"message": "Error updating post"}, 500
+    #     else:
+    #         return {"message": "No update data provided"}, 400
 
 
 class EventListResource(Resource):
@@ -934,6 +1015,44 @@ class ChatRoomMessagesResource(Resource):
             "total_pages": paginated_messages.pages,
             "total_messages": paginated_messages.total,
         }, 200
+
+    @jwt_required()
+    def post(self, room_id):
+        current_user_id = int(get_jwt_identity())
+        user = db.session.get(User, current_user_id)
+        if not user:
+            return {"message": "User not found"}, 404
+
+        chat_room = db.session.get(ChatRoom, room_id)
+        if not chat_room:
+            return {"message": "Chat room not found"}, 404
+
+        parser = reqparse.RequestParser()
+        parser.add_argument("message", required=True, help="Message cannot be blank")
+        data = parser.parse_args()
+
+        new_message = ChatMessage(
+            content=data["message"], user_id=user.id, room_id=chat_room.id
+        )
+        db.session.add(new_message)
+        db.session.commit()
+
+        # Dispatch to SSE listeners for this room
+        message_dict_for_sse = new_message.to_dict() # Assuming to_dict() gives a serializable dict
+        if room_id in current_app.chat_room_listeners:
+            listeners = list(current_app.chat_room_listeners[room_id]) # Iterate over a copy
+            current_app.logger.debug(f"Dispatching message to {len(listeners)} listeners for room {room_id}")
+            for q_item in listeners:
+                try:
+                    # Structure the data as expected by the SSE handler
+                    sse_data = {"type": "new_chat_message", "payload": message_dict_for_sse}
+                    q_item.put_nowait(sse_data)
+                except Exception as e: # queue.Full or other errors
+                    current_app.logger.error(f"Error putting message to SSE queue for room {room_id}: {e}")
+        else:
+            current_app.logger.debug(f"No active SSE listeners for room {room_id} to dispatch message.")
+
+        return {"message": "Message posted successfully", "chat_message": new_message.to_dict()}, 201
 
 
 from flask_jwt_extended import create_access_token

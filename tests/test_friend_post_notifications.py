@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch, ANY
+from unittest.mock import patch, ANY, MagicMock # Added MagicMock
 from datetime import datetime, timedelta, timezone
 
 from social_app.models.db_models import (
@@ -18,16 +18,20 @@ class TestFriendPostNotifications(AppTestCase):
         """Logs in a user, creates a post via the /blog/create route, and logs out."""
         self.login(username, password)
         response = self.client.post(
-            "/blog/create",
+            "/blog/create", # Assuming core.create_post is the correct endpoint
             data={"title": title, "content": content, "hashtags": hashtags},
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         self.logout()
 
-    @patch("social_app.socketio.emit")
-    def test_notification_creation_and_socketio_emit(self, mock_socketio_emit):
+    @patch("social_app.core.views.current_app.user_notification_queues")
+    def test_notification_creation_and_sse_dispatch(self, mock_user_notification_queues):
         with self.app.app_context():
+            mock_friend_queue = MagicMock()
+            mock_user_notification_queues.get.return_value = [mock_friend_queue]
+            mock_user_notification_queues.__contains__.return_value = True
+
             self._create_db_friendship(self.user1, self.user2, status="accepted")
 
             post_title = "User A's Exciting Post"
@@ -59,7 +63,7 @@ class TestFriendPostNotifications(AppTestCase):
             ).first()
             self.assertIsNone(notification_for_c)
 
-            expected_socket_payload = {
+            expected_sse_payload = {
                 "notification_id": notification_for_b.id,
                 "post_id": created_post.id,
                 "post_title": created_post.title,
@@ -67,9 +71,19 @@ class TestFriendPostNotifications(AppTestCase):
                 "timestamp": ANY,
             }
 
-            mock_socketio_emit.assert_any_call(
-                "new_friend_post", expected_socket_payload, room=f"user_{self.user2_id}"
-            )
+            mock_user_notification_queues.__contains__.assert_any_call(self.user2_id)
+            mock_friend_queue.put_nowait.assert_called_once()
+
+            args, _ = mock_friend_queue.put_nowait.call_args
+            sse_event_data = args[0]
+            self.assertEqual(sse_event_data['type'], "new_friend_post")
+
+            payload_sent = sse_event_data['payload']
+            self.assertEqual(payload_sent['notification_id'], expected_sse_payload['notification_id'])
+            self.assertEqual(payload_sent['post_id'], expected_sse_payload['post_id'])
+            self.assertEqual(payload_sent['post_title'], expected_sse_payload['post_title'])
+            self.assertEqual(payload_sent['poster_username'], expected_sse_payload['poster_username'])
+            self.assertIn('timestamp', payload_sent)
 
     def test_view_friend_post_notifications_page(self):
         with self.app.app_context():
@@ -250,9 +264,15 @@ class TestFriendPostNotifications(AppTestCase):
             )
             self.logout()
 
-    @patch("social_app.socketio.emit")
-    def test_no_notification_for_own_post(self, mock_socketio_emit):
+    @patch("social_app.core.views.current_app.user_notification_queues")
+    def test_no_notification_for_own_post(self, mock_user_notification_queues):
         with self.app.app_context():
+            mock_own_queue = MagicMock()
+            mock_user_notification_queues.get.return_value = [mock_own_queue]
+            # Simulate user1 is not in queues for their own post notification
+            mock_user_notification_queues.__contains__.return_value = False
+
+
             post_title = "My Own Test Post"
             post_content = "This is content of my own post."
             self._make_post_via_route(
@@ -269,21 +289,19 @@ class TestFriendPostNotifications(AppTestCase):
             ).first()
             self.assertIsNone(notification_for_self)
 
-            called_for_own_post = False
-            for call_args_item in mock_socketio_emit.call_args_list:
-                args, kwargs = call_args_item
-                if (
-                    args[0] == "new_friend_post"
-                    and kwargs.get("room") == f"user_{self.user1_id}"
-                    and args[1].get("post_id") == created_post.id
-                ):
-                    called_for_own_post = True
-                    break
-            self.assertFalse(called_for_own_post)
+            # Check that user1's queue was not accessed for putting a new_friend_post event
+            mock_user_notification_queues.__contains__.assert_not_any_call(self.user1_id)
+            mock_own_queue.put_nowait.assert_not_called()
 
-    @patch("social_app.socketio.emit")
-    def test_no_notification_for_post_before_friendship(self, mock_socketio_emit):
+
+    @patch("social_app.core.views.current_app.user_notification_queues")
+    def test_no_notification_for_post_before_friendship(self, mock_user_notification_queues):
         with self.app.app_context():
+            mock_friend_queue = MagicMock()
+            mock_user_notification_queues.get.return_value = [mock_friend_queue]
+            mock_user_notification_queues.__contains__.return_value = False
+
+
             post_title = "Post Before Friendship"
             post_content = "Content of post made before friendship"
             self._make_post_via_route(
@@ -294,30 +312,27 @@ class TestFriendPostNotifications(AppTestCase):
                 user_id=self.user1_id, title=post_title
             ).first()
             self.assertIsNotNone(created_post)
-            post_id = created_post.id
 
-            self._create_friendship(self.user1_id, self.user2_id, status="accepted")
+            # Create friendship AFTER the post
+            self._create_db_friendship(self.user1, self.user2, status="accepted")
 
             notification_for_user2 = FriendPostNotification.query.filter_by(
                 user_id=self.user2_id, post_id=created_post.id
             ).first()
             self.assertIsNone(notification_for_user2)
 
-            called_for_user2 = False
-            for call_args_item in mock_socketio_emit.call_args_list:
-                args, kwargs = call_args_item
-                if (
-                    args[0] == "new_friend_post"
-                    and kwargs.get("room") == f"user_{self.user2_id}"
-                    and args[1].get("post_id") == created_post.id
-                ):
-                    called_for_user2 = True
-                    break
-            self.assertFalse(called_for_user2)
+            mock_user_notification_queues.__contains__.assert_not_any_call(self.user2_id)
+            mock_friend_queue.put_nowait.assert_not_called()
 
-    @patch("social_app.socketio.emit")
-    def test_no_notification_if_poster_is_blocked(self, mock_socketio_emit):
+
+    @patch("social_app.core.views.current_app.user_notification_queues")
+    def test_no_notification_if_poster_is_blocked(self, mock_user_notification_queues):
         with self.app.app_context():
+            mock_friend_queue = MagicMock()
+            mock_user_notification_queues.get.return_value = [mock_friend_queue]
+            mock_user_notification_queues.__contains__.return_value = False
+
+
             self._create_db_friendship(self.user1, self.user2, status="accepted")
 
             user_block = UserBlock(blocker_id=self.user2_id, blocked_id=self.user1_id)
@@ -340,21 +355,17 @@ class TestFriendPostNotifications(AppTestCase):
             ).first()
             self.assertIsNone(notification_for_user2)
 
-            called_for_user2 = False
-            for call_args_item in mock_socketio_emit.call_args_list:
-                args, kwargs = call_args_item
-                if (
-                    args[0] == "new_friend_post"
-                    and kwargs.get("room") == f"user_{self.user2_id}"
-                    and args[1].get("post_id") == created_post.id
-                ):
-                    called_for_user2 = True
-                    break
-            self.assertFalse(called_for_user2)
+            mock_user_notification_queues.__contains__.assert_not_any_call(self.user2_id)
+            mock_friend_queue.put_nowait.assert_not_called()
 
-    @patch("social_app.socketio.emit")
-    def test_notification_persists_after_unfriend(self, mock_socketio_emit_unfriend):
+    @patch("social_app.core.views.current_app.user_notification_queues")
+    def test_notification_persists_after_unfriend(self, mock_user_notification_queues):
         with self.app.app_context():
+            mock_friend_queue = MagicMock() # Renamed for clarity
+            mock_user_notification_queues.get.return_value = [mock_friend_queue]
+            mock_user_notification_queues.__contains__.return_value = True
+
+
             self._create_db_friendship(self.user1, self.user2, status="accepted")
 
             post_title = "User A's Post Before Unfriend"
@@ -376,7 +387,10 @@ class TestFriendPostNotifications(AppTestCase):
             self.assertIsNotNone(notification_for_b)
             self.assertFalse(notification_for_b.is_read)
 
-            mock_socketio_emit_unfriend.reset_mock()
+            mock_friend_queue.put_nowait.assert_called_once()
+            mock_friend_queue.reset_mock()
+            mock_user_notification_queues.reset_mock()
+            # After this point, we expect no more calls for user2 regarding new posts from user1
 
             friendship_record = Friendship.query.filter(
                 (
@@ -408,14 +422,13 @@ class TestFriendPostNotifications(AppTestCase):
             self.assertEqual(persisted_notification_for_b.poster_id, self.user1_id)
             self.assertFalse(persisted_notification_for_b.is_read)
 
-            called_again_for_user2 = False
-            for call_args_item in mock_socketio_emit_unfriend.call_args_list:
-                args, kwargs = call_args_item
-                if (
-                    args[0] == "new_friend_post"
-                    and kwargs.get("room") == f"user_{self.user2_id}"
-                    and args[1].get("post_id") == created_post.id
-                ):
-                    called_again_for_user2 = True
-                    break
-            self.assertFalse(called_again_for_user2)
+            # Make another post by user1 to ensure user2 doesn't get notified
+            mock_user_notification_queues.__contains__.return_value = False # Simulate user2 no longer has a relevant queue or is not checked
+            self._make_post_via_route(
+                self.user1.username,
+                "password",
+                title="User A's Post After Unfriend",
+                content="This should not notify user2.",
+            )
+            mock_friend_queue.put_nowait.assert_not_called()
+            mock_user_notification_queues.__contains__.assert_not_any_call(self.user2_id)

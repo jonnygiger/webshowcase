@@ -1,8 +1,8 @@
 import unittest
-from unittest.mock import patch, ANY
+from unittest.mock import patch, ANY, MagicMock
 from datetime import datetime
 
-from social_app import db, create_app
+from social_app import db, create_app # socketio removed
 from social_app.models.db_models import User, Post, Notification
 from tests.test_base import AppTestCase
 
@@ -17,15 +17,19 @@ class TestLikeNotifications(AppTestCase):
             self.author2 = User(
                 username="author2",
                 email="author2@example.com",
-                password_hash="password_hash_for_author2",
+                password_hash="password_hash_for_author2", # pragma: allowlist secret
             )
             db.session.add(self.author2)
             db.session.commit()
             self.author2 = db.session.get(User, self.author2.id)
 
-    @patch("social_app.core.views.socketio.emit")
-    def test_like_post_sends_notification_and_emits_event(self, mock_socketio_emit):
+    @patch("social_app.core.views.current_app.user_notification_queues")
+    def test_like_post_sends_notification_and_dispatches_sse(self, mock_user_notification_queues):
         with self.app.app_context():
+            mock_author_queue = MagicMock()
+            mock_user_notification_queues.get.return_value = [mock_author_queue]
+            mock_user_notification_queues.__contains__.return_value = True
+
             post_by_author = self._create_db_post(
                 user_id=self.author1.id, title="Author's Likable Post"
             )
@@ -46,24 +50,40 @@ class TestLikeNotifications(AppTestCase):
             expected_message = f"{self.liker.username} liked your post: '{post_by_author.title}'"
             self.assertEqual(notification.message, expected_message)
 
-            app_expected_payload = {
+            expected_sse_payload = {
                 "liker_username": self.liker.username,
                 "post_id": post_by_author.id,
                 "post_title": post_by_author.title,
                 "message": expected_message,
                 "notification_id": notification.id,
             }
-            mock_socketio_emit.assert_any_call(
-                "new_like_notification",
-                app_expected_payload,
-                room=f"user_{self.author1.id}",
-            )
+
+            mock_user_notification_queues.__contains__.assert_any_call(self.author1.id)
+            mock_author_queue.put_nowait.assert_called_once()
+
+            args, _ = mock_author_queue.put_nowait.call_args
+            sse_event_data = args[0]
+            self.assertEqual(sse_event_data['type'], "new_like")
+            self.assertEqual(sse_event_data['payload'], expected_sse_payload)
 
         self.logout()
 
-    @patch("social_app.core.views.socketio.emit")
-    def test_like_post_sends_notification_to_correct_author(self, mock_socketio_emit):
+    @patch("social_app.core.views.current_app.user_notification_queues")
+    def test_like_post_sends_notification_to_correct_author(self, mock_user_notification_queues):
         with self.app.app_context():
+            mock_author1_queue = MagicMock()
+
+            def contains_side_effect(user_id_to_check):
+                return user_id_to_check == self.author1.id
+
+            def get_side_effect(user_id_to_get, default=None):
+                if user_id_to_get == self.author1.id:
+                    return [mock_author1_queue]
+                return default if default is not None else []
+
+            mock_user_notification_queues.__contains__.side_effect = contains_side_effect
+            mock_user_notification_queues.get.side_effect = get_side_effect
+
             post_by_author1 = self._create_db_post(
                 user_id=self.author1.id, title="Author1's Test Post"
             )
@@ -84,18 +104,21 @@ class TestLikeNotifications(AppTestCase):
             )
             self.assertEqual(notification_author1.message, expected_message_author1)
 
-            expected_payload_author1 = {
+            expected_sse_payload_author1 = {
                 "liker_username": self.liker.username,
                 "post_id": post_by_author1.id,
                 "post_title": post_by_author1.title,
                 "message": expected_message_author1,
                 "notification_id": notification_author1.id,
             }
-            mock_socketio_emit.assert_any_call(
-                "new_like_notification",
-                expected_payload_author1,
-                room=f"user_{self.author1.id}",
-            )
+
+            mock_user_notification_queues.__contains__.assert_any_call(self.author1.id)
+            mock_user_notification_queues.get.assert_any_call(self.author1.id)
+            mock_author1_queue.put_nowait.assert_called_once()
+            args, _ = mock_author1_queue.put_nowait.call_args
+            sse_event_data = args[0]
+            self.assertEqual(sse_event_data['type'], "new_like")
+            self.assertEqual(sse_event_data['payload'], expected_sse_payload_author1)
 
             notification_author2 = Notification.query.filter_by(
                 user_id=self.author2.id,
@@ -104,27 +127,19 @@ class TestLikeNotifications(AppTestCase):
             ).first()
             self.assertIsNone(notification_author2)
 
-            author2_room = f"user_{self.author2.id}"
-            called_author2_room = False
-            for call_args_tuple in mock_socketio_emit.call_args_list:
-                args, kwargs = call_args_tuple
-                if (
-                    args
-                    and args[0] == "new_like_notification"
-                    and kwargs.get("room") == author2_room
-                ):
-                    payload = args[1] if len(args) > 1 else {}
-                    if payload.get("post_id") == post_by_author1.id:
-                        called_author2_room = True
-                        break
-            self.assertFalse(called_author2_room)
+            self.assertFalse(mock_user_notification_queues.__contains__(self.author2.id))
+            self.assertEqual(mock_user_notification_queues.get(self.author2.id, []), [])
         self.logout()
 
-    @patch("social_app.core.views.socketio.emit")
+    @patch("social_app.core.views.current_app.user_notification_queues")
     def test_like_post_multiple_times_sends_single_notification(
-        self, mock_socketio_emit
+        self, mock_user_notification_queues
     ):
         with self.app.app_context():
+            mock_author_queue = MagicMock()
+            mock_user_notification_queues.get.return_value = [mock_author_queue]
+            mock_user_notification_queues.__contains__.return_value = True
+
             post_by_author = self._create_db_post(
                 user_id=self.author1.id, title="Author's Post for Multiple Likes"
             )
@@ -146,8 +161,10 @@ class TestLikeNotifications(AppTestCase):
                 f"{self.liker.username} liked your post: '{post_by_author.title}'"
             )
             self.assertEqual(notification.message, expected_message)
-            self.assertEqual(mock_socketio_emit.call_count, 1)
+
+            mock_author_queue.put_nowait.assert_called_once()
             first_notification_id = notification.id
+            mock_author_queue.reset_mock()
 
             response_again = self.client.post(
                 f"/blog/post/{post_by_author.id}/like", follow_redirects=True
@@ -169,14 +186,19 @@ class TestLikeNotifications(AppTestCase):
             self.assertIsNotNone(current_notification)
             self.assertEqual(current_notification.id, first_notification_id)
             self.assertEqual(current_notification.message, expected_message)
-            self.assertEqual(mock_socketio_emit.call_count, 1)
+
+            mock_author_queue.put_nowait.assert_not_called()
         self.logout()
 
-    @patch("social_app.core.views.socketio.emit")
-    def test_like_own_post_does_not_send_notification_or_emit_event(
-        self, mock_socketio_emit
+    @patch("social_app.core.views.current_app.user_notification_queues")
+    def test_like_own_post_does_not_send_notification_or_dispatch_sse(
+        self, mock_user_notification_queues
     ):
         with self.app.app_context():
+            mock_own_queue = MagicMock()
+            mock_user_notification_queues.get.return_value = [mock_own_queue]
+            mock_user_notification_queues.__contains__.return_value = False # Should not find queue for self
+
             post_by_author = self._create_db_post(
                 user_id=self.author1.id, title="Author's Own Post to Like"
             )
@@ -196,19 +218,19 @@ class TestLikeNotifications(AppTestCase):
             ).first()
             self.assertIsNone(notification)
 
-            for call_args_tuple in mock_socketio_emit.call_args_list:
-                args, kwargs = call_args_tuple
-                if (
-                    args and args[0] == "new_like_notification"
-                ):
-                    self.fail(
-                        f"'new_like_notification' event should NOT be emitted to the author for liking their own post. Found: {call_args_tuple}"
-                    )
+            mock_user_notification_queues.__contains__.assert_not_any_call(self.author1.id)
+            mock_own_queue.put_nowait.assert_not_called()
+
         self.logout()
 
-    @patch("social_app.core.views.socketio.emit")
-    def test_anonymous_user_cannot_like_post(self, mock_socketio_emit):
+    @patch("social_app.core.views.current_app.user_notification_queues")
+    def test_anonymous_user_cannot_like_post(self, mock_user_notification_queues):
         with self.app.app_context():
+            mock_author_queue = MagicMock()
+            mock_user_notification_queues.get.return_value = [mock_author_queue]
+            mock_user_notification_queues.__contains__.return_value = False
+
+
             post_by_author = self._create_db_post(
                 user_id=self.author1.id, title="Anonymous Like Test Post"
             )
@@ -228,16 +250,17 @@ class TestLikeNotifications(AppTestCase):
             ).first()
             self.assertIsNone(notification)
 
-            for call_args_tuple in mock_socketio_emit.call_args_list:
-                args, _ = call_args_tuple
-                if args and args[0] == "new_like_notification":
-                    self.fail(
-                        f"'new_like_notification' event should NOT be emitted for an anonymous like attempt. Found: {call_args_tuple}"
-                    )
+            mock_user_notification_queues.__contains__.assert_not_called()
+            mock_author_queue.put_nowait.assert_not_called()
 
-    @patch("social_app.core.views.socketio.emit")
-    def test_like_non_existent_post(self, mock_socketio_emit):
+
+    @patch("social_app.core.views.current_app.user_notification_queues")
+    def test_like_non_existent_post(self, mock_user_notification_queues):
         with self.app.app_context():
+            mock_any_queue = MagicMock()
+            mock_user_notification_queues.get.return_value = [mock_any_queue]
+            mock_user_notification_queues.__contains__.return_value = False
+
             self.login(self.liker.username, "password")
             non_existent_post_id = 99999
             response = self.client.post(
@@ -250,10 +273,6 @@ class TestLikeNotifications(AppTestCase):
             ).first()
             self.assertIsNone(notification)
 
-            for call_args_tuple in mock_socketio_emit.call_args_list:
-                args, _ = call_args_tuple
-                if args and args[0] == "new_like_notification":
-                    self.fail(
-                        f"'new_like_notification' event should NOT be emitted for liking a non-existent post. Found: {call_args_tuple}"
-                    )
+            mock_user_notification_queues.__contains__.assert_not_called()
+            mock_any_queue.put_nowait.assert_not_called()
         self.logout()

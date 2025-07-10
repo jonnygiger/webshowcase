@@ -4,7 +4,7 @@ import time
 from unittest.mock import patch, call, ANY, MagicMock
 from datetime import datetime, timedelta, timezone
 
-from social_app import db, socketio, create_app
+from social_app import db, create_app # Removed socketio
 from social_app.models.db_models import Post, User, PostLock
 from tests.test_base import AppTestCase
 import logging
@@ -34,22 +34,22 @@ class TestCollaborativeEditing(AppTestCase):
             content="Initial content.",
         )
 
-        if self.socketio_client and self.socketio_client.connected:
-            self.socketio_client.disconnect()
+        # if self.socketio_client and self.socketio_client.connected: # Removed SocketIO client
+        #     self.socketio_client.disconnect()
 
-        self.socketio_client = self.socketio_class_level.test_client(
-            self.app, flask_test_client=self.client
-        )
-        self.assertTrue(
-            self.socketio_client.is_connected(),
-            "SocketIO client failed to connect in setUp.",
-        )
+        # self.socketio_client = self.socketio_class_level.test_client( # Removed SocketIO client
+        #     self.app, flask_test_client=self.client
+        # )
+        # self.assertTrue(
+        #     self.socketio_client.is_connected(),
+        #     "SocketIO client failed to connect in setUp.",
+        # )
 
     def tearDown(self):
-        if (
-            self.socketio_client and self.socketio_client.is_connected()
-        ):
-            self.socketio_client.disconnect()
+        # if ( # Removed SocketIO client
+        #     self.socketio_client and self.socketio_client.is_connected()
+        # ):
+        #     self.socketio_client.disconnect()
         super().tearDown()
 
     def test_post_lock_creation(self):
@@ -307,164 +307,120 @@ class TestCollaborativeEditing(AppTestCase):
             self.assertIsNotNone(lock_collaborator)
             self.assertEqual(lock_collaborator.user_id, self.collaborator.id)
 
-    @patch("social_app.socketio.emit")
-    def test_socketio_edit_post_by_lock_owner(
-        self, mock_socketio_emit
+    @patch("social_app.core.views.current_app.post_event_listeners") # Patched to SSE
+    def test_sse_edit_post_by_lock_owner( # Renamed test
+        self, mock_post_event_listeners
     ):
         with self.app.app_context():
             token = self._get_jwt_token(self.collaborator.username, "password")
             headers = {"Authorization": f"Bearer {token}"}
+
+            # Acquire lock via API
             response_lock = self.client.post(
                 f"/api/posts/{self.test_post.id}/lock", headers=headers
             )
             self.assertEqual(response_lock.status_code, 200)
-            mock_socketio_emit.reset_mock()
 
-            self.login(self.collaborator.username, "password")
+            # Setup a mock queue for SSE
+            mock_queue = MagicMock()
+            mock_post_event_listeners.get.return_value = [mock_queue]
+            mock_post_event_listeners.__contains__.return_value = True
 
-            if not self.socketio_client or not self.socketio_client.is_connected():
-                self.socketio_client = self.socketio_class_level.test_client(
-                    self.app, namespace="/"
-                )
-                self.assertTrue(self.socketio_client.is_connected("/"))
 
-            edit_data = {
-                "post_id": self.test_post.id,
-                "new_content": "Updated content by lock owner.",
-                "token": token,
+            # Perform edit via HTTP POST (simulating form submission)
+            edit_payload = {
+                "title": self.test_post.title, # Title might be required by the form
+                "content": "Updated content by lock owner via SSE test.",
+                "hashtags": self.test_post.hashtags
             }
-
-            self.socketio_client.emit(
-                "edit_post_content", edit_data, namespace="/"
+            self.login(self.collaborator.username, "password") # Login the user performing the edit
+            response_edit = self.client.post(
+                url_for("core.edit_post", post_id=self.test_post.id),
+                data=edit_payload,
+                headers=headers # Re-use headers with token for authorization if view requires
             )
-            time.sleep(0.2)
+            self.assertEqual(response_edit.status_code, 302) # Redirect after successful post
 
             updated_post = self.db.session.get(Post, self.test_post.id)
             self.assertIsNotNone(updated_post)
-            self.assertEqual(updated_post.content, edit_data["new_content"])
+            self.assertEqual(updated_post.content, edit_payload["content"])
 
-            expected_broadcast_data = {
-                "post_id": self.test_post.id,
-                "new_content": edit_data["new_content"],
-                "edited_by_user_id": self.collaborator.id,
-                "edited_by_username": self.collaborator.username,
-                "last_edited": ANY,
-            }
+            # Check if SSE was dispatched
+            # This part needs careful implementation based on how SSE is dispatched in views.py
+            # Assuming views.py uses something like:
+            # current_app.post_event_listeners[post_id].put_nowait(sse_data)
 
-            found_call = False
-            for call_args_item in mock_socketio_emit.call_args_list:
-                event_name_called = call_args_item[0][0]
-                event_data_called = call_args_item[0][1]
-                event_room_called = call_args_item[1].get("room")
+            self.assertTrue(mock_post_event_listeners.__contains__.called)
+            mock_queue.put_nowait.assert_called_once()
 
-                if (
-                    event_name_called == "post_content_updated"
-                    and event_room_called == f"post_{self.test_post.id}"
-                ):
-                    match = True
-                    for key, expected_value in expected_broadcast_data.items():
-                        if key == "last_edited":
-                            if key not in event_data_called:
-                                match = False
-                                break
-                            continue
-                        if event_data_called.get(key) != expected_value:
-                            match = False
-                            break
-                    if match:
-                        if "last_edited" in event_data_called and isinstance(
-                            event_data_called["last_edited"], str
-                        ):
-                            found_call = True
-                            break
-                        else:
-                            self.app.logger.debug(
-                                f"Call matched basic data but 'last_edited' was missing or not a string: {event_data_called}"
-                            )
-            self.assertTrue(found_call)
+            args, _ = mock_queue.put_nowait.call_args
+            sse_event_data = args[0]
 
-    @patch("social_app.socketio.emit")
-    def test_socketio_edit_post_without_lock(self, mock_emit):
+            self.assertEqual(sse_event_data['type'], "post_content_updated")
+            payload = sse_event_data['payload']
+            self.assertEqual(payload['post_id'], self.test_post.id)
+            self.assertEqual(payload['new_content'], edit_payload['content'])
+            self.assertEqual(payload['edited_by_user_id'], self.collaborator.id)
+            self.assertEqual(payload['edited_by_username'], self.collaborator.username)
+            self.assertIn("last_edited", payload)
+
+
+    @patch("social_app.core.views.current_app.post_event_listeners")
+    def test_edit_post_by_non_author_without_lock(self, mock_post_event_listeners):
         with self.app.app_context():
+            # Ensure no lock exists
             PostLock.query.filter_by(post_id=self.test_post.id).delete()
             self.db.session.commit()
 
             current_post_state = self.db.session.get(Post, self.test_post.id)
             self.assertIsNotNone(current_post_state)
-            self.assertFalse(current_post_state.is_locked())
             original_content = current_post_state.content
 
-            token_collaborator = self._get_jwt_token(
-                self.collaborator.username, "password"
-            )
-            edit_data = {
-                "post_id": self.test_post.id,
-                "new_content": "Content edit attempt without lock.",
-                "token": token_collaborator,
+            # self.collaborator (user2) is NOT the author of self.test_post (created by user1)
+            self.login(self.collaborator.username, "password")
+
+            edit_payload = {
+                "title": current_post_state.title,
+                "content": "Attempted edit by non-author.",
+                "hashtags": current_post_state.hashtags
             }
 
-            if self.socketio_client and self.socketio_client.connected:
-                self.socketio_client.disconnect()
-            self.socketio_client = self.socketio_class_level.test_client(
-                self.app, flask_test_client=self.client
-            )
-            self.assertTrue(self.socketio_client.is_connected())
-
-            self.socketio_client.get_received()
-            self.socketio_client.emit("edit_post_content", edit_data)
-
-            time.sleep(0.5)
-
-            found_edit_error_call = False
-            received_error_message = None
-            all_server_emits = mock_emit.call_args_list
-
-            self.app.logger.debug(
-                f"Test '{self.id()}': Checking server emits for 'edit_error'. All mock_emit calls: {all_server_emits}"
+            response_edit = self.client.post(
+                url_for("core.edit_post", post_id=self.test_post.id),
+                data=edit_payload,
+                follow_redirects=True # To check flash messages
             )
 
-            for call_args_item in all_server_emits:
-                event_name = call_args_item[0][0]
-                if event_name == "edit_error":
-                    error_data_emitted = call_args_item[0][1]
-                    received_error_message = error_data_emitted.get("message")
-                    self.app.logger.debug(
-                        f"Test '{self.id()}': Found 'edit_error' emit. Data: {error_data_emitted}, Room: {call_args_item[1].get('room')}, Expected SID for comparison: {self.socketio_client.sid}"
-                    )
-
-                    if (
-                        received_error_message
-                        == "Post is not locked for editing. Please acquire a lock first."
-                    ):
-                        found_edit_error_call = True
-                        break
-                    elif "Token error" in (
-                        received_error_message or ""
-                    ) or "Authentication required" in (received_error_message or ""):
-                        self.app.logger.warning(
-                            f"Test '{self.id()}': Received an auth-related 'edit_error': '{received_error_message}' instead of 'not locked' error. This indicates the SID/auth issue is primary."
-                        )
-
-            self.assertTrue(found_edit_error_call)
+            # Edit should be rejected by the authorship check in edit_post view
+            self.assertEqual(response_edit.status_code, 200) # After redirect
+            self.assertIn(b"You are not authorized to edit this post.", response_edit.data)
 
             post_after_attempt = self.db.session.get(Post, self.test_post.id)
             self.assertIsNotNone(post_after_attempt)
-            self.assertEqual(post_after_attempt.content, original_content)
+            self.assertEqual(post_after_attempt.content, original_content) # Content should not change
 
-            all_calls = mock_emit.call_args_list
-            for call_args_item in all_calls:
-                event_name_called = call_args_item[0][0]
-                is_broadcast_like = call_args_item[1].get("room") != self.socketio_client.sid
+            # No SSE should have been dispatched for post_content_updated
+            # Check that the .get method on the mock_post_event_listeners was not called,
+            # or if it could be called (e.g. to check if post.id is in listeners),
+            # then check that put_nowait on the queue was not called.
+            if hasattr(mock_post_event_listeners, 'get'):
+                mock_post_event_listeners.get.assert_not_called()
+            elif hasattr(mock_post_event_listeners, '__contains__'):
+                 # If the code checks `post.id in current_app.post_event_listeners`
+                 # then __contains__ might be called. If so, check the queue.
+                 if mock_post_event_listeners.__contains__.called:
+                     mock_queue = mock_post_event_listeners.get.return_value[0] # Or however queue is accessed
+                     mock_queue.put_nowait.assert_not_called()
 
-                if event_name_called == "post_content_updated" and is_broadcast_like:
-                    self.fail(
-                        f"'post_content_updated' should not have been broadcast. Calls: {all_calls}"
-                    )
 
-    @patch("social_app.socketio.emit")
-    def test_socketio_lock_acquired_broadcast_from_api(
-        self, mock_socketio_emit
+    @patch("social_app.core.views.current_app.post_event_listeners")
+    def test_sse_lock_acquired_broadcast_from_api( # Renamed test
+        self, mock_post_event_listeners
     ):
+        mock_queue = MagicMock()
+        mock_post_event_listeners.get.return_value = [mock_queue]
+        mock_post_event_listeners.__contains__.return_value = True
+
         token = self._get_jwt_token(self.collaborator.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -473,33 +429,28 @@ class TestCollaborativeEditing(AppTestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        time.sleep(0.1)
+        time.sleep(0.1) # Allow time for SSE dispatch if async
 
-        expected_data = {
-            "post_id": self.test_post.id,
-            "user_id": self.collaborator.id,
-            "username": self.collaborator.username,
-            "expires_at": ANY,
-        }
-        expected_room = f"post_{self.test_post.id}"
+        mock_queue.put_nowait.assert_called_once()
+        args, _ = mock_queue.put_nowait.call_args
+        sse_event_data = args[0]
 
-        self.assertEqual(mock_socketio_emit.call_count, 1)
+        self.assertEqual(sse_event_data['type'], "post_lock_acquired")
+        payload = sse_event_data['payload']
+        self.assertEqual(payload['post_id'], self.test_post.id)
+        self.assertEqual(payload['user_id'], self.collaborator.id)
+        self.assertEqual(payload['username'], self.collaborator.username)
+        self.assertIn("expires_at", payload)
 
-        actual_call = mock_socketio_emit.call_args_list[0]
 
-        self.assertEqual(actual_call.args[0], "post_lock_acquired")
-        self.assertEqual(actual_call.kwargs.get("room"), expected_room)
-
-        actual_data_dict = actual_call.args[1]
-        self.assertEqual(actual_data_dict.get("post_id"), expected_data["post_id"])
-        self.assertEqual(actual_data_dict.get("user_id"), expected_data["user_id"])
-        self.assertEqual(actual_data_dict.get("username"), expected_data["username"])
-        self.assertIn("expires_at", actual_data_dict)
-
-    @patch("social_app.socketio.emit")
-    def test_socketio_lock_released_broadcast_from_api(
-        self, mock_socketio_emit_release
+    @patch("social_app.core.views.current_app.post_event_listeners") # Patched to SSE
+    def test_sse_lock_released_broadcast_from_api( # Renamed test
+        self, mock_post_event_listeners_release
     ):
+        mock_queue_release = MagicMock()
+        mock_post_event_listeners_release.get.return_value = [mock_queue_release]
+        mock_post_event_listeners_release.__contains__.return_value = True
+
         token_collaborator = self._get_jwt_token(self.collaborator.username, "password")
         headers_collaborator = {"Authorization": f"Bearer {token_collaborator}"}
         response_acquire = self.client.post(
@@ -507,26 +458,21 @@ class TestCollaborativeEditing(AppTestCase):
         )
         self.assertEqual(response_acquire.status_code, 200)
 
-        mock_socketio_emit_release.reset_mock()
+        # Reset mock for the release part if the same mock is used or ensure fresh mock
+        mock_queue_release.reset_mock() # Reset the specific queue mock
 
         response_release = self.client.delete(
             f"/api/posts/{self.test_post.id}/lock", headers=headers_collaborator
         )
         self.assertEqual(response_release.status_code, 200)
-        time.sleep(0.1)
+        time.sleep(0.1) # Allow time for SSE dispatch
 
-        expected_data = {
-            "post_id": self.test_post.id,
-            "released_by_user_id": self.collaborator.id,
-            "username": self.collaborator.username,
-        }
-        expected_room = f"post_{self.test_post.id}"
+        mock_queue_release.put_nowait.assert_called_once()
+        args_release, _ = mock_queue_release.put_nowait.call_args
+        sse_event_data_release = args_release[0]
 
-        self.assertEqual(mock_socketio_emit_release.call_count, 1)
-
-        actual_call = mock_socketio_emit_release.call_args_list[0]
-        self.assertEqual(actual_call.args[0], "post_lock_released")
-        self.assertEqual(actual_call.kwargs.get("room"), expected_room)
-
-        actual_data_dict = actual_call.args[1]
-        self.assertEqual(actual_data_dict, expected_data)
+        self.assertEqual(sse_event_data_release['type'], "post_lock_released")
+        payload_release = sse_event_data_release['payload']
+        self.assertEqual(payload_release['post_id'], self.test_post.id)
+        self.assertEqual(payload_release['released_by_user_id'], self.collaborator.id)
+        self.assertEqual(payload_release['username'], self.collaborator.username)

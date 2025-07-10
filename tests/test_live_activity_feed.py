@@ -12,7 +12,7 @@ from werkzeug.security import (
 
 from io import BytesIO
 from flask import url_for
-from social_app import db # Removed socketio
+from social_app import db
 from social_app.models.db_models import User, UserActivity, Friendship, Post
 from tests.test_base import AppTestCase
 
@@ -255,7 +255,7 @@ class TestLiveActivityFeed(AppTestCase):
 
     @patch("social_app.core.views.emit_new_activity_event")
     @patch("social_app.services.achievements.check_and_award_achievements")
-    def test_new_post_activity_logging_and_socketio(
+    def test_new_post_activity_logging_and_sse_dispatch(
         self, mock_check_achievements, mock_emit_new_activity_event
     ):
         self.login(self.user2.username, "password")
@@ -299,7 +299,7 @@ class TestLiveActivityFeed(AppTestCase):
 
     @patch("social_app.core.views.emit_new_activity_event")
     @patch("social_app.services.achievements.check_and_award_achievements")
-    def test_new_comment_activity_logging_and_socketio(
+    def test_new_comment_activity_logging_and_sse_dispatch(
         self, mock_check_achievements, mock_emit_new_activity_event
     ):
         with self.app.app_context():
@@ -339,7 +339,7 @@ class TestLiveActivityFeed(AppTestCase):
 
     @patch("social_app.core.views.emit_new_activity_event")
     @patch("social_app.services.achievements.check_and_award_achievements")
-    def test_new_like_activity_logging_and_socketio(
+    def test_new_like_activity_logging_and_sse_dispatch(
         self, mock_check_achievements, mock_emit_new_activity_event
     ):
         with self.app.app_context():
@@ -395,7 +395,7 @@ class TestLiveActivityFeed(AppTestCase):
 
     @patch("social_app.core.views.emit_new_activity_event")
     @patch("social_app.services.achievements.check_and_award_achievements")
-    def test_new_share_activity_logging_and_socketio(
+    def test_new_share_activity_logging_and_sse_dispatch(
         self, mock_check_achievements, mock_emit_new_activity_event
     ):
         self.login(self.user2.username, "password")
@@ -444,7 +444,7 @@ class TestLiveActivityFeed(AppTestCase):
 
     @patch("social_app.core.views.emit_new_activity_event")
     @patch("social_app.services.achievements.check_and_award_achievements")
-    def test_updated_profile_picture_activity_logging_and_socketio(
+    def test_updated_profile_picture_activity_logging_and_sse_dispatch(
         self, mock_check_achievements, mock_emit_new_activity_event
     ):
         self.login(self.user1.username, "password")

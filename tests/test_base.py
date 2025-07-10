@@ -6,9 +6,8 @@ import io
 import time
 import threading
 from unittest.mock import patch, call, ANY
-# from flask_socketio import SocketIOTestClient # Removed
 
-from social_app import create_app, db as app_db #, socketio as main_app_socketio # Removed
+from social_app import create_app, db as app_db
 from flask import url_for, Response
 import flask
 
@@ -48,13 +47,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 class AppTestCase(unittest.TestCase):
     app = None
     db = None
-    # socketio_class_level = None # Removed
 
     @classmethod
     def setUpClass(cls):
         cls.app = create_app('testing')
         cls.db = app_db
-        # cls.socketio_class_level = main_app_socketio # Removed
 
         import logging
         cls.app.logger.setLevel(logging.DEBUG)
@@ -68,8 +65,6 @@ class AppTestCase(unittest.TestCase):
             cls.app.logger.removeHandler(h_)
         cls.app.logger.addHandler(handler)
         cls.app.logger.propagate = False
-        # logging.getLogger("socketio").setLevel(logging.DEBUG) # Removed
-        # logging.getLogger("engineio").setLevel(logging.DEBUG) # Removed
 
         with cls.app.app_context():
             cls.db.create_all()
@@ -147,9 +142,6 @@ class AppTestCase(unittest.TestCase):
         self.user1_id = self.user1.id
         self.user2_id = self.user2.id
         self.user3_id = self.user3.id
-
-    # Removed _ensure_socketio_disconnected
-    # Removed _clear_socketio_events
 
     def login(self, username, password, client_instance=None): # client_instance is no longer used
         """
@@ -493,5 +485,3 @@ class AppTestCase(unittest.TestCase):
             if friendship:
                 self.db.session.delete(friendship)
                 self.db.session.commit()
-
-    # _wait_for_socketio_event method was here. It has been removed as it's no longer used.

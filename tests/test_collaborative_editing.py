@@ -4,7 +4,7 @@ import time
 from unittest.mock import patch, call, ANY, MagicMock
 from datetime import datetime, timedelta, timezone
 
-from social_app import db, create_app # Removed socketio
+from social_app import db, create_app
 from social_app.models.db_models import Post, User, PostLock
 from tests.test_base import AppTestCase
 import logging
@@ -34,22 +34,7 @@ class TestCollaborativeEditing(AppTestCase):
             content="Initial content.",
         )
 
-        # if self.socketio_client and self.socketio_client.connected: # Removed SocketIO client
-        #     self.socketio_client.disconnect()
-
-        # self.socketio_client = self.socketio_class_level.test_client( # Removed SocketIO client
-        #     self.app, flask_test_client=self.client
-        # )
-        # self.assertTrue(
-        #     self.socketio_client.is_connected(),
-        #     "SocketIO client failed to connect in setUp.",
-        # )
-
     def tearDown(self):
-        # if ( # Removed SocketIO client
-        #     self.socketio_client and self.socketio_client.is_connected()
-        # ):
-        #     self.socketio_client.disconnect()
         super().tearDown()
 
     def test_post_lock_creation(self):

@@ -2,7 +2,6 @@ import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_socketio import SocketIO
 from flask_restful import Api as FlaskRestfulApi
 from flask_jwt_extended import JWTManager
 from flask_login import LoginManager
@@ -12,7 +11,6 @@ from config import DefaultConfig, TestingConfig
 
 db = SQLAlchemy()
 migrate = Migrate()
-socketio = SocketIO(async_mode="threading")
 jwt = JWTManager()
 login_manager = LoginManager()
 scheduler = BackgroundScheduler()
@@ -49,7 +47,6 @@ def create_app(config_class=None):
 
     db.init_app(app)
     migrate.init_app(app, db)
-    socketio.init_app(app)
     fr_api = FlaskRestfulApi(app)
     jwt.init_app(app)
     login_manager.init_app(app)
@@ -62,9 +59,11 @@ def create_app(config_class=None):
 
     app.sse_listeners = {}
     app.user_notification_queues = {}
+    app.chat_room_listeners = {}
+    app.post_event_listeners = {}
 
     from .core import views as core_views
-    from .core import events as core_events
+    # from .core import events as core_events # This line was removed in a previous commit, ensuring it stays removed or is handled if logic changes
     from .api import routes as api_routes_module
     from .api.routes import (
         UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource,

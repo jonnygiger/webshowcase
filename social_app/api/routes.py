@@ -94,9 +94,22 @@ class CommentListResource(Resource):
             "content": new_comment.content,
             "timestamp": new_comment.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         }
-        current_app.extensions["socketio"].emit(
-            "new_comment_event", new_comment_data_for_post_room, room=f"post_{post_id}"
-        )
+        # current_app.extensions["socketio"].emit(
+        #     "new_comment_event", new_comment_data_for_post_room, room=f"post_{post_id}"
+        # )
+
+        # Dispatch to SSE listeners for this post
+        if post_id in current_app.post_event_listeners:
+            listeners = list(current_app.post_event_listeners[post_id])
+            current_app.logger.debug(f"Dispatching new_comment_event to {len(listeners)} listeners for post {post_id}")
+            for q_item in listeners:
+                try:
+                    sse_data = {"event": "new_comment_event", "data": new_comment_data_for_post_room}
+                    q_item.put_nowait(sse_data)
+                except Exception as e:
+                    current_app.logger.error(f"Error putting new_comment_event to SSE queue for post {post_id}: {e}")
+        else:
+            current_app.logger.debug(f"No active SSE listeners for post {post_id} to dispatch new_comment_event.")
 
         comment_details = {
             "id": new_comment.id,

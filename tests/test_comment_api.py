@@ -1,5 +1,7 @@
 import unittest
 import json
+from unittest.mock import MagicMock, patch
+from flask import current_app
 from social_app.models.db_models import (
     User,
     Post,
@@ -257,3 +259,66 @@ class TestCommentAPI(AppTestCase):
         self.assertEqual(
             data["message"], "You are blocked by the post author and cannot comment."
         )
+
+    def test_create_comment_sends_sse_notification(self):
+        with self.app.app_context(): # Ensure app context for current_app
+            # 1. Create user and post
+            post_obj = self._create_db_post(
+                user_id=self.user1_id, title="Post for SSE Comment Notification"
+            )
+            self.assertIsNotNone(post_obj.id)
+            post_id_for_listener = post_obj.id
+
+            # 2. Get JWT token
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+            comment_content = "This is a test comment for SSE."
+
+            # 3. Create MagicMock for SSE queue
+            mock_sse_queue = MagicMock()
+
+            # 4. Patch current_app.post_event_listeners
+            with patch.dict(current_app.post_event_listeners, {post_id_for_listener: [mock_sse_queue]}, clear=True):
+                # 5. Make POST request
+                response = self.client.post(
+                    f"/api/posts/{post_obj.id}/comments",
+                    headers=headers,
+                    json={"content": comment_content},
+                )
+
+                # 6. Assert API call success
+                self.assertEqual(
+                    response.status_code, 201, f"Response data: {response.data.decode()}"
+                )
+                data = json.loads(response.data)
+                self.assertEqual(data["message"], "Comment created successfully")
+                new_comment_id = data["comment"]["id"]
+
+                # 7. Assert mock_queue.put_nowait was called once
+                mock_sse_queue.put_nowait.assert_called_once()
+
+                # 8. Verify structure of data passed to put_nowait
+                # call_args = mock_sse_queue.put_nowait.call_args[0][0] # Gets the first positional argument
+                # For keyword arguments, use .call_args.kwargs or .call_args[1] if it's the second element of a tuple
+
+                # Correct way to get the first positional argument from call_args tuple
+                args, kwargs = mock_sse_queue.put_nowait.call_args
+                called_with_data = args[0]
+
+                self.assertIsInstance(called_with_data, dict)
+                self.assertIn("event", called_with_data)
+                self.assertEqual(called_with_data["event"], "new_comment_event")
+                self.assertIn("data", called_with_data)
+
+                sse_payload = called_with_data["data"]
+                self.assertIsInstance(sse_payload, dict)
+                self.assertEqual(sse_payload["id"], new_comment_id)
+                self.assertEqual(sse_payload["post_id"], post_obj.id)
+                self.assertEqual(sse_payload["author_username"], self.user1.username)
+                self.assertEqual(sse_payload["content"], comment_content)
+                self.assertIn("timestamp", sse_payload)
+                # Ensure timestamp is a string, as it's strftime formatted before sending
+                self.assertIsInstance(sse_payload["timestamp"], str)

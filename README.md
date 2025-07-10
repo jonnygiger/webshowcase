@@ -734,7 +734,7 @@ This feature enables multiple users to see live updates when a post is being edi
     *   **Lock Status Display**: The UI clearly indicates if a post is locked, who is currently editing it, and when their lock expires.
     *   **API for Locking**: Lock acquisition and release are handled via dedicated RESTful API endpoints, which also trigger SSE events for lock status changes.
 *   **Technologies Used**:
-    *   **Server-Sent Events (SSE)**: For broadcasting content changes and lock status updates from the server to clients.
+    *   **Server-Sent Events (SSE): For broadcasting content changes and lock status updates from the server to clients.**
     *   **HTTP Endpoints**: For users to submit their edits and for acquiring/releasing locks.
     *   **Flask-RESTful**: For creating the API endpoints (`/api/posts/<post_id>/lock`) that manage the lifecycle of post locks.
     *   **JavaScript (Client-Side)**: Handles acquiring/releasing locks, sending content changes (via HTTP), listening for SSE events, and updating the UI based on server events.
@@ -752,8 +752,7 @@ The application now features a real-time chat system, allowing users to communic
     *   A "Chat" link in the main navigation bar leads to the chat interface (`/chat`).
     *   The chat page displays a list of available chat rooms and the main chat area.
 *   **Technology**:
-    *   **Server-Sent Events (SSE)**: Powers the real-time reception of messages. Clients listen to an SSE stream for new messages in a specific room.
-    *   **HTTP Endpoints**: Used for sending messages (e.g., `POST /api/chat/rooms/<room_id>/messages`).
+    *   **Server-Sent Events (SSE) & HTTP Endpoints: SSE for receiving messages and inbox updates in real-time, and HTTP endpoints for sending messages.**
     *   **SQLAlchemy**: Manages `ChatRoom` and `ChatMessage` models for storing room information and message history.
     *   **RESTful API**: Endpoints under `/api/chat/` allow for listing rooms, creating rooms, and fetching/posting messages.
     *   **JavaScript**: Client-side logic handles connecting to SSE streams, sending messages via HTTP, and dynamically updating the chat UI.
@@ -1184,33 +1183,28 @@ Clients connect to `/user/notifications/stream` (after authentication) to receiv
     *   **Description:** Retrieves posts and events created by the authenticated user that occurred on the current month and day in previous years.
     *   **Authentication:** Required (JWT Token). The token should be passed in the `Authorization` header as a Bearer token (e.g., `Authorization: Bearer <YOUR_JWT_TOKEN>`).
     *   **Successful Response (200 OK):**
+        A JSON object containing two lists: `on_this_day_posts` and `on_this_day_events`.
         ```json
         {
           "on_this_day_posts": [
             {
-              "id": 1,
-              "title": "My Throwback Post",
-              "content": "Content of the post from a past year.",
-              "timestamp": "2022-10-26T10:00:00",
-              "last_edited": null,
-              "user_id": 123,
-              "author_username": "testuser",
-              "hashtags": "#throwback",
-              "is_featured": false,
-              "featured_at": null
+              "id": 101,
+              "title": "My Throwback Post Title",
+              "content": "Content of the post from a past year...",
+              "timestamp": "2022-10-26T10:30:00",
+              "author_username": "current_user",
+              // ... other post fields ...
             }
           ],
           "on_this_day_events": [
             {
-              "id": 1,
-              "title": "Past Event",
-              "description": "Details of an event from a past year.",
-              "date": "2022-10-26",
-              "time": "14:00",
-              "location": "Some Location",
-              "created_at": "2022-10-20T14:30:00",
-              "user_id": 123,
-              "organizer_username": "testuser"
+              "id": 55,
+              "title": "Annual Past Event",
+              "description": "Details of an event that happened on this day in a previous year...",
+              "date": "2021-10-26",
+              "time": "15:00",
+              "organizer_username": "current_user",
+              // ... other event fields ...
             }
           ]
         }
@@ -1220,7 +1214,7 @@ Clients connect to `/user/notifications/stream` (after authentication) to receiv
         *   `401 Unauthorized`: If the JWT token is missing or invalid.
             ```json
             {
-                "msg": "Missing Authorization Header"
+                "msg": "Missing Authorization Header" // Or other JWT error messages like "Token has expired"
             }
             ```
 

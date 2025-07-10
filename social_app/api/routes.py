@@ -94,9 +94,6 @@ class CommentListResource(Resource):
             "content": new_comment.content,
             "timestamp": new_comment.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         }
-        # current_app.extensions["socketio"].emit(
-        #     "new_comment_event", new_comment_data_for_post_room, room=f"post_{post_id}"
-        # )
 
         # Dispatch to SSE listeners for this post
         if post_id in current_app.post_event_listeners:

@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, ANY, MagicMock
 from datetime import datetime
 
-from social_app import db, create_app # socketio removed
+from social_app import db, create_app
 from social_app.models.db_models import User, Post, Notification
 from tests.test_base import AppTestCase
 

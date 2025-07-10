@@ -1095,17 +1095,6 @@ def create_post():
                                 notification_instance.id
                                 and notification_instance.timestamp
                             ):
-                                # socketio.emit( # Removed SocketIO emit
-                                # "new_friend_post",
-                                # {
-                                # "notification_id": notification_instance.id,
-                                # "post_id": new_post_db.id,
-                                # "post_title": new_post_db.title,
-                                # "poster_username": post_author.username,
-                                # "timestamp": notification_instance.timestamp.isoformat(),
-                                # },
-                                # room=f"user_{notification_instance.user_id}",
-                                # )
                                 app.logger.info(
                                     f"Sent new_friend_post notification to user_{notification_instance.user_id} for post {new_post_db.id}"
                                 )
@@ -1518,17 +1507,6 @@ def like_post(post_id):
                         db.session.add(new_notification)
                         db.session.commit()
 
-                        # socketio.emit( # Removed SocketIO emit
-                        # "new_like_notification",
-                        # {
-                        # "liker_username": liker.username,
-                        # "post_id": post.id,
-                        # "post_title": post.title,
-                        # "message": notification_message,
-                        # "notification_id": new_notification.id,
-                        # },
-                        # room=f"user_{post.author.id}",
-                        # )
                         app.logger.info(
                             f"Sent new_like_notification to user_{post.author.id} for post {post.id}"
                         )
@@ -1680,9 +1658,6 @@ def post_stream(post_id):
 def chat_page():
     return render_template("chat.html")
 
-
-# @socketio.on("join_chat_room") # Removed SocketIO event handler
-# Removed commented out SocketIO event handlers and their bodies containing emit and join_room calls
 
 @app.route("/post/<int:post_id>/react", methods=["POST"])
 @login_required
@@ -2030,9 +2005,6 @@ def view_notifications():
     return render_template("notifications.html", notifications=notifications_to_display)
 
 
-# @socketio.on("join_room") # Removed SocketIO event handler
-# Removed commented out SocketIO event handlers and their bodies containing emit and join_room calls
-
 @app.route("/api/login", methods=["POST"])
 def api_login():
     data = request.get_json()
@@ -2053,11 +2025,7 @@ def api_login():
         return {"message": "Invalid credentials"}, 401
 
 
-# Removed commented out SocketIO decorator
-
 import sys
-
-# Removed commented out SocketIO event handler and its body containing emit and join_room calls
 
 if __name__ == "__main__":
     if not app.config.get("TESTING", False):
@@ -4015,6 +3983,3 @@ def post_stream_api_global():
                 )
 
     return Response(event_stream(), mimetype="text/event-stream")
-
-
-# Removed commented out SocketIO decorator

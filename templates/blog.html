@@ -18,7 +18,7 @@
                         <h4 class="card-title"><a href="{{ custom_url_for_primary('view_post', post_id=post_item.id) }}" class="text-decoration-none">{{ post_item.title }}</a></h4>
                         <p class="card-subtitle mb-2 text-muted">
                             <small>
-                                By <a href="{{ custom_url_for_primary('user_profile', username=post_item.author.username) }}" class="text-decoration-none">{{ post_item.author.username }}</a>
+                                By <a href="{{ custom_url_for_primary('core.user_profile', username=post_item.author.username) }}" class="text-decoration-none">{{ post_item.author.username }}</a>
                                 on {{ post_item.timestamp.strftime('%Y-%m-%d %H:%M') }}
                                 {% if post_item.last_edited %}
                                     (Edited: {{ post_item.last_edited.strftime('%Y-%m-%d %H:%M') }})
@@ -89,7 +89,7 @@
                         <h5 class="card-title">Suggested Users</h5>
                         <div class="list-group list-group-flush">
                             {% for user_suggestion in suggested_users_snippet %}
-                            <a href="{{ custom_url_for_primary('user_profile', username=user_suggestion.username) }}" class="list-group-item list-group-item-action d-flex align-items-center">
+                            <a href="{{ custom_url_for_primary('core.user_profile', username=user_suggestion.username) }}" class="list-group-item list-group-item-action d-flex align-items-center">
                                 <img src="{{ user_suggestion.profile_picture or custom_url_for_assets('static', filename='profile_pics/default.png') }}" alt="{{ user_suggestion.username }}'s profile picture" class="rounded-circle me-2" style="width: 30px; height: 30px; object-fit: cover;">
                                 <span class="text-truncate">{{ user_suggestion.username }}</span>
                             </a>

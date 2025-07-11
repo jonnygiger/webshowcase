@@ -12,7 +12,7 @@
             <div class="card-body">
                 <h5 class="card-title"><a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a></h5>
                 <h6 class="card-subtitle mb-2 text-muted">
-                    By: <a href="{{ url_for('user_profile', username=post.author.username) }}">{{ post.author.username }}</a>
+                    By: <a href="{{ url_for('core.user_profile', username=post.author.username) }}">{{ post.author.username }}</a>
                     on {{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
                     {% if post.last_edited %}
                         (Edited: {{ post.last_edited.strftime('%Y-%m-%d %H:%M:%S') }})

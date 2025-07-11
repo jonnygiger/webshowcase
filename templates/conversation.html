@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}Conversation with <a href="{{ url_for('user_profile', username=conversation_partner.username) }}">{{ conversation_partner.username }}</a>{% endblock %}
+{% block title %}Conversation with <a href="{{ url_for('core.user_profile', username=conversation_partner.username) }}">{{ conversation_partner.username }}</a>{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Conversation with <a href="{{ url_for('user_profile', username=conversation_partner.username) }}">{{ conversation_partner.username }}</a></h2>
+    <h2>Conversation with <a href="{{ url_for('core.user_profile', username=conversation_partner.username) }}">{{ conversation_partner.username }}</a></h2>
     <hr>
 
     <div id="messages-container" class="messages-container mb-4" style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 5px;">
@@ -12,7 +12,7 @@
             {% for message in messages_list %}
                 {# Adjust class based on sender_id vs current_user.id for consistency with JS logic #}
                 <div class="message mb-2 p-2 rounded {% if message.sender_id == current_user.id %}bg-light text-end{% else %}bg-primary text-white{% endif %}">
-                    <p class="mb-0"><strong><a href="{{ url_for('user_profile', username=message.sender.username) }}" class="{% if message.sender_id == current_user.id %}text-dark{% else %}text-white{% endif %}">{{ message.sender.username }}</a></strong>: {{ message.content }}</p>
+                    <p class="mb-0"><strong><a href="{{ url_for('core.user_profile', username=message.sender.username) }}" class="{% if message.sender_id == current_user.id %}text-dark{% else %}text-white{% endif %}">{{ message.sender.username }}</a></strong>: {{ message.content }}</p>
                     <small class="text-muted-custom {% if message.sender_id == current_user.id %}text-dark-emphasis{% else %}text-white-50{% endif %}">{{ message.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} {% if message.sender_id == current_user.id and message.is_read %} (Read){% endif %}</small>
                 </div>
             {% endfor %}
@@ -21,7 +21,7 @@
         {% endif %}
     </div>
 
-    <h4>Reply to <a href="{{ url_for('user_profile', username=conversation_partner.username) }}">{{ conversation_partner.username }}</a></h4>
+    <h4>Reply to <a href="{{ url_for('core.user_profile', username=conversation_partner.username) }}">{{ conversation_partner.username }}</a></h4>
     <form method="POST" action="{{ url_for('send_message', receiver_username=conversation_partner.username) }}">
         <div class="mb-3">
             <label for="content" class="form-label">Your Message:</label>

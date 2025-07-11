@@ -20,7 +20,7 @@
                             <div class="card-body d-flex flex-column">
                                 <h5 class="card-title"><a href="{{ url_for('view_post', post_id=post.id) }}" class="text-decoration-none">{{ post.title }}</a></h5>
                                 <h6 class="card-subtitle mb-2 text-muted">
-                                    By: <a href="{{ url_for('user_profile', username=post.author.username) }}" class="text-decoration-none">{{ post.author.username }}</a>
+                                    By: <a href="{{ url_for('core.user_profile', username=post.author.username) }}" class="text-decoration-none">{{ post.author.username }}</a>
                                 </h6>
                                 <p class="card-text flex-grow-1">{{ post.content | truncate(150, True) }}</p>
                                 <p class="card-text mt-auto"><small class="text-body-secondary"><em>Recommended: {{ reason }}</em></small></p>

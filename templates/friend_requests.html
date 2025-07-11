@@ -14,7 +14,7 @@
                 <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center mb-2 shadow-sm p-3">
                     <div class="me-3 mb-2 mb-md-0">
                         <img src="{{ request_item.requester.profile_picture or url_for('static', filename='profile_pics/default.png') }}" alt="{{ request_item.requester.username }}" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;">
-                        <a href="{{ url_for('user_profile', username=request_item.requester.username) }}" class="text-decoration-none fw-bold">{{ request_item.requester.username }}</a>
+                        <a href="{{ url_for('core.user_profile', username=request_item.requester.username) }}" class="text-decoration-none fw-bold">{{ request_item.requester.username }}</a>
                         <br>
                         <small class="text-muted">Sent on {{ request_item.timestamp.strftime('%b %d, %Y at %I:%M %p') }}</small>
                     </div>

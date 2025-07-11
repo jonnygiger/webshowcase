@@ -13,7 +13,7 @@
                 <li id="inbox-item-{{ item.partner_id }}" class="list-group-item list-group-item-action {% if item.unread_count > 0 %}list-group-item-primary font-weight-bold{% endif %}">
                     <a href="{{ url_for('view_conversation', username=item.username) }}" class="text-decoration-none text-dark">
                         <div class="d-flex w-100 justify-content-between">
-                            <h5 class="mb-1">Conversation with: <a href="{{ url_for('user_profile', username=item.username) }}">{{ item.username }}</a></h5>
+                            <h5 class="mb-1">Conversation with: <a href="{{ url_for('core.user_profile', username=item.username) }}">{{ item.username }}</a></h5>
                             <small id="timestamp-{{ item.partner_id }}">{{ item.last_message_display_timestamp }}</small>
                         </div>
                         <p id="snippet-{{ item.partner_id }}" class="mb-1">{{ item.last_message_snippet }}</p>

@@ -32,7 +32,7 @@
                             <textarea class="form-control" id="bio" name="bio" rows="4" placeholder="Tell us a little about yourself...">{{ user.bio if user.bio else '' }}</textarea>
                         </div>
                         <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
-                            <a href="{{ url_for('user_profile', username=user.username) }}" class="btn btn-outline-secondary order-md-1">Cancel</a>
+                            <a href="{{ url_for('core.user_profile', username=user.username) }}" class="btn btn-outline-secondary order-md-1">Cancel</a>
                             <button type="submit" class="btn btn-primary btn-lg order-md-2">
                                 <i class="bi bi-save-fill"></i> Save Changes
                             </button>

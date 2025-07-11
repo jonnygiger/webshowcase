@@ -19,7 +19,7 @@
             {% if group.members.count() > 0 %}
                 <div class="list-group list-group-flush mb-3">
                     {% for member in group.members %}
-                        <a href="{{ url_for('user_profile', username=member.username) }}" class="list-group-item list-group-item-action d-flex align-items-center">
+                        <a href="{{ url_for('core.user_profile', username=member.username) }}" class="list-group-item list-group-item-action d-flex align-items-center">
                             <img src="{{ member.profile_picture or url_for('static', filename='profile_pics/default.png') }}" alt="{{ member.username }}" class="rounded-circle me-2" style="width: 30px; height: 30px; object-fit: cover;">
                             {{ member.username }}
                         </a>
@@ -61,7 +61,7 @@
                     {% for message in chat_messages %}
                         <div class="mb-2 chat-message-item">
                             <small class="text-muted">{{ message.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</small><br>
-                            <strong><a href="{{ url_for('user_profile', username=message.author.username) }}" class="text-decoration-none">{{ message.author.username }}</a></strong>: {{ message.content }}
+                            <strong><a href="{{ url_for('core.user_profile', username=message.author.username) }}" class="text-decoration-none">{{ message.author.username }}</a></strong>: {{ message.content }}
                         </div>
                     {% endfor %}
                 {% else %}

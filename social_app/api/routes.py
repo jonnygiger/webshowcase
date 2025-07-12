@@ -1049,18 +1049,19 @@ class ChatRoomMessagesResource(Resource):
 
         # Dispatch to SSE listeners for this room
         message_dict_for_sse = new_message.to_dict() # Assuming to_dict() gives a serializable dict
-        listeners = current_app.chat_room_listeners.get(room_id, [])
-        if listeners:
-            current_app.logger.debug(f"Dispatching message to {len(listeners)} listeners for room {room_id}")
-            for q_item in list(listeners): # Iterate over a copy
-                try:
-                    # Structure the data as expected by the SSE handler
-                    sse_data = {"type": "new_chat_message", "payload": message_dict_for_sse}
-                    q_item.put_nowait(sse_data)
-                except Exception as e: # queue.Full or other errors
-                    current_app.logger.error(f"Error putting message to SSE queue for room {room_id}: {e}")
-        else:
-            current_app.logger.debug(f"No active SSE listeners for room {room_id} to dispatch message.")
+        if room_id in current_app.chat_room_listeners:
+            listeners = current_app.chat_room_listeners.get(room_id, [])
+            if listeners:
+                current_app.logger.debug(f"Dispatching message to {len(listeners)} listeners for room {room_id}")
+                for q_item in list(listeners): # Iterate over a copy
+                    try:
+                        # Structure the data as expected by the SSE handler
+                        sse_data = {"type": "new_chat_message", "payload": message_dict_for_sse}
+                        q_item.put_nowait(sse_data)
+                    except Exception as e: # queue.Full or other errors
+                        current_app.logger.error(f"Error putting message to SSE queue for room {room_id}: {e}")
+            else:
+                current_app.logger.debug(f"No active SSE listeners for room {room_id} to dispatch message.")
 
         return {"message": "Message posted successfully", "chat_message": new_message.to_dict()}, 201
 

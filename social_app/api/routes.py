@@ -1042,7 +1042,7 @@ class ChatRoomMessagesResource(Resource):
         data = parser.parse_args()
 
         new_message = ChatMessage(
-            content=data["message"], user_id=user.id, room_id=chat_room.id
+            message=data["message"], user_id=user.id, room_id=chat_room.id
         )
         db.session.add(new_message)
         db.session.commit()

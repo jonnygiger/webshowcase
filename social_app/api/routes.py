@@ -1049,10 +1049,10 @@ class ChatRoomMessagesResource(Resource):
 
         # Dispatch to SSE listeners for this room
         message_dict_for_sse = new_message.to_dict() # Assuming to_dict() gives a serializable dict
-        if room_id in current_app.chat_room_listeners:
-            listeners = list(current_app.chat_room_listeners[room_id]) # Iterate over a copy
+        listeners = current_app.chat_room_listeners.get(room_id, [])
+        if listeners:
             current_app.logger.debug(f"Dispatching message to {len(listeners)} listeners for room {room_id}")
-            for q_item in listeners:
+            for q_item in list(listeners): # Iterate over a copy
                 try:
                     # Structure the data as expected by the SSE handler
                     sse_data = {"type": "new_chat_message", "payload": message_dict_for_sse}

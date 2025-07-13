@@ -23,13 +23,19 @@ class TestContentManagement(AppTestCase):
             post3 = self._create_db_post(user_id=author.id, title="Post Gamma")
 
             self.client.post(
-                url_for("core.add_post_to_series", series_id=series_obj.id, post_id=post1.id)
+                url_for(
+                    "core.add_post_to_series", series_id=series_obj.id, post_id=post1.id
+                )
             )
             self.client.post(
-                url_for("core.add_post_to_series", series_id=series_obj.id, post_id=post2.id)
+                url_for(
+                    "core.add_post_to_series", series_id=series_obj.id, post_id=post2.id
+                )
             )
             self.client.post(
-                url_for("core.add_post_to_series", series_id=series_obj.id, post_id=post3.id)
+                url_for(
+                    "core.add_post_to_series", series_id=series_obj.id, post_id=post3.id
+                )
             )
 
             series_reloaded = db.session.get(Series, series_obj.id)
@@ -40,7 +46,9 @@ class TestContentManagement(AppTestCase):
 
             self.client.post(
                 url_for(
-                    "core.remove_post_from_series", series_id=series_obj.id, post_id=post2.id
+                    "core.remove_post_from_series",
+                    series_id=series_obj.id,
+                    post_id=post2.id,
                 )
             )
 
@@ -152,7 +160,8 @@ class TestContentManagement(AppTestCase):
             self.assertEqual(SeriesPost.query.filter_by(series_id=series_id).count(), 2)
 
             response = self.client.post(
-                url_for("core.delete_series", series_id=series_id), follow_redirects=True
+                url_for("core.delete_series", series_id=series_id),
+                follow_redirects=True,
             )
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.request.path.endswith(f"/user/{author_username}"))

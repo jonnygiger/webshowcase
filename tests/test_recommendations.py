@@ -175,7 +175,9 @@ class TestSuggestTrendingPosts(AppTestCase):
         post_old_recent_like = self._create_post(
             self.user3, self.now - timedelta(days=10)
         )
-        self._create_like(self.user2, post_old_recent_like, self.now - timedelta(days=2))
+        self._create_like(
+            self.user2, post_old_recent_like, self.now - timedelta(days=2)
+        )
         post_old_old_like = self._create_post(self.user3, self.now - timedelta(days=15))
         self._create_like(self.user2, post_old_old_like, self.now - timedelta(days=10))
 
@@ -204,11 +206,15 @@ class TestSuggestTrendingPosts(AppTestCase):
         post_older_with_comment = self._create_post(
             self.user3, self.now - timedelta(days=2)
         )
-        self._create_comment(self.user2, post_older_with_comment, self.now - timedelta(hours=2))
+        self._create_comment(
+            self.user2, post_older_with_comment, self.now - timedelta(hours=2)
+        )
         post_older_with_like = self._create_post(
             self.user2, self.now - timedelta(days=3)
         )
-        self._create_like(self.user3, post_older_with_like, self.now - timedelta(hours=3))
+        self._create_like(
+            self.user3, post_older_with_like, self.now - timedelta(hours=3)
+        )
 
         trending_posts = suggest_trending_posts(
             user_id=self.user1.id, limit=3, since_days=7

@@ -30,9 +30,7 @@ from social_app.models import db_models
 
 effective_url = get_engine_url()
 config.set_main_option("sqlalchemy.url", effective_url)
-target_db = current_app.extensions[
-    "migrate"
-].db
+target_db = current_app.extensions["migrate"].db
 
 
 def get_metadata():

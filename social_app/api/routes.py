@@ -24,6 +24,7 @@ from ..models.db_models import (
     ChatMessage,
 )
 
+
 class UserListResource(Resource):
     def get(self):
         return {"message": "User list resource placeholder"}, 200
@@ -98,15 +99,24 @@ class CommentListResource(Resource):
         # Dispatch to SSE listeners for this post
         if post_id in current_app.post_event_listeners:
             listeners = list(current_app.post_event_listeners[post_id])
-            current_app.logger.debug(f"Dispatching new_comment_event to {len(listeners)} listeners for post {post_id}")
+            current_app.logger.debug(
+                f"Dispatching new_comment_event to {len(listeners)} listeners for post {post_id}"
+            )
             for q_item in listeners:
                 try:
-                    sse_data = {"event": "new_comment_event", "data": new_comment_data_for_post_room}
+                    sse_data = {
+                        "event": "new_comment_event",
+                        "data": new_comment_data_for_post_room,
+                    }
                     q_item.put_nowait(sse_data)
                 except Exception as e:
-                    current_app.logger.error(f"Error putting new_comment_event to SSE queue for post {post_id}: {e}")
+                    current_app.logger.error(
+                        f"Error putting new_comment_event to SSE queue for post {post_id}: {e}"
+                    )
         else:
-            current_app.logger.debug(f"No active SSE listeners for post {post_id} to dispatch new_comment_event.")
+            current_app.logger.debug(
+                f"No active SSE listeners for post {post_id} to dispatch new_comment_event."
+            )
 
         comment_details = {
             "id": new_comment.id,
@@ -158,12 +168,8 @@ class PollListResource(Resource):
         for option_text in data["options"]:
             if not option_text.strip():
                 return {"message": "Poll option text cannot be blank"}, 400
-            poll_option = PollOption(
-                text=option_text, poll=new_poll
-            )
-            db.session.add(
-                poll_option
-            )
+            poll_option = PollOption(text=option_text, poll=new_poll)
+            db.session.add(poll_option)
 
         db.session.commit()
         return {"message": "Poll created successfully", "poll": new_poll.to_dict()}, 201
@@ -194,13 +200,9 @@ class PollResource(Resource):
 
 class PollVoteResource(Resource):
     @jwt_required()
-    def post(
-        self, poll_id
-    ):
+    def post(self, poll_id):
         current_user_id = int(get_jwt_identity())
-        user = db.session.get(
-            User, current_user_id
-        )
+        user = db.session.get(User, current_user_id)
         if not user:
             return {"message": "User not found"}, 404
 
@@ -288,17 +290,24 @@ class PostLockResource(Resource):
             "status": "acquired",
             "user_id": new_lock.user_id,
             "username": user.username,
-            "expires_at": new_lock.expires_at.isoformat()
+            "expires_at": new_lock.expires_at.isoformat(),
         }
         if new_lock.post_id in current_app.post_event_listeners:
             listeners = list(current_app.post_event_listeners[new_lock.post_id])
-            current_app.logger.debug(f"Dispatching post_lock_changed (acquired) to {len(listeners)} listeners for post {new_lock.post_id}")
+            current_app.logger.debug(
+                f"Dispatching post_lock_changed (acquired) to {len(listeners)} listeners for post {new_lock.post_id}"
+            )
             for q_item in listeners:
                 try:
-                    sse_data = {"type": "post_lock_changed", "payload": lock_payload_for_sse}
+                    sse_data = {
+                        "type": "post_lock_changed",
+                        "payload": lock_payload_for_sse,
+                    }
                     q_item.put_nowait(sse_data)
                 except Exception as e:
-                    current_app.logger.error(f"Error putting post_lock_changed (acquired) to SSE queue for post {new_lock.post_id}: {e}")
+                    current_app.logger.error(
+                        f"Error putting post_lock_changed (acquired) to SSE queue for post {new_lock.post_id}: {e}"
+                    )
 
         return {
             "message": "Post locked successfully.",
@@ -354,17 +363,24 @@ class PostLockResource(Resource):
             "post_id": post_id,
             "status": "released",
             "user_id": current_user_id,
-            "username": user.username
+            "username": user.username,
         }
         if post_id in current_app.post_event_listeners:
             listeners = list(current_app.post_event_listeners[post_id])
-            current_app.logger.debug(f"Dispatching post_lock_changed (released) to {len(listeners)} listeners for post {post_id}")
+            current_app.logger.debug(
+                f"Dispatching post_lock_changed (released) to {len(listeners)} listeners for post {post_id}"
+            )
             for q_item in listeners:
                 try:
-                    sse_data = {"type": "post_lock_changed", "payload": release_payload_for_sse}
+                    sse_data = {
+                        "type": "post_lock_changed",
+                        "payload": release_payload_for_sse,
+                    }
                     q_item.put_nowait(sse_data)
                 except Exception as e:
-                    current_app.logger.error(f"Error putting post_lock_changed (released) to SSE queue for post {post_id}: {e}")
+                    current_app.logger.error(
+                        f"Error putting post_lock_changed (released) to SSE queue for post {post_id}: {e}"
+                    )
 
         return {"message": "Post unlocked successfully."}, 200
 
@@ -527,9 +543,7 @@ class RecommendationResource(Resource):
                 {
                     "id": option.id,
                     "text": option.text,
-                    "vote_count": len(
-                        option.votes
-                    ),
+                    "vote_count": len(option.votes),
                 }
                 for option in poll_obj.options
             ]
@@ -575,9 +589,7 @@ class UserFeedResource(Resource):
             if "timestamp" in post_dict and isinstance(
                 post_dict["timestamp"], datetime
             ):
-                post_dict["timestamp"] = (
-                    post_dict["timestamp"].isoformat() + "Z"
-                )
+                post_dict["timestamp"] = post_dict["timestamp"].isoformat() + "Z"
             if (
                 "last_edited" in post_dict
                 and post_dict["last_edited"]
@@ -698,9 +710,7 @@ class PersonalizedFeedResource(Resource):
                     "id": event.id,
                     "title": event.title,
                     "description": event.description,
-                    "date": (
-                        event.date.isoformat() if event.date else None
-                    ),
+                    "date": (event.date.isoformat() if event.date else None),
                     "timestamp": event.created_at,
                     "organizer_username": event.organizer.username,
                     "reason": f"Organized by your friend {event.organizer.username}",
@@ -728,9 +738,7 @@ class PersonalizedFeedResource(Resource):
                     "id": rsvp.event.id,
                     "title": rsvp.event.title,
                     "description": rsvp.event.description,
-                    "date": (
-                        rsvp.event.date.isoformat() if rsvp.event.date else None
-                    ),
+                    "date": (rsvp.event.date.isoformat() if rsvp.event.date else None),
                     "timestamp": rsvp.timestamp,
                     "organizer_username": rsvp.event.organizer.username,
                     "reason": f"{rsvp.attendee.username} is attending",
@@ -839,16 +847,12 @@ class OnThisDayResource(Resource):
         posts_data = []
         if content.get("posts"):
             for post_obj in content["posts"]:
-                posts_data.append(
-                    post_obj.to_dict()
-                )
+                posts_data.append(post_obj.to_dict())
 
         events_data = []
         if content.get("events"):
             for event_obj in content["events"]:
-                events_data.append(
-                    event_obj.to_dict()
-                )
+                events_data.append(event_obj.to_dict())
 
         return {
             "on_this_day_posts": posts_data,
@@ -924,9 +928,7 @@ class SharedFileResource(Resource):
             upload_folder = current_app.config.get(
                 "SHARED_FILES_UPLOAD_FOLDER", "shared_files_uploads"
             )
-            file_path = os.path.join(
-                upload_folder, shared_file.saved_filename
-            )
+            file_path = os.path.join(upload_folder, shared_file.saved_filename)
 
             if os.path.exists(file_path):
                 os.remove(file_path)
@@ -1002,16 +1004,22 @@ def dispatch_to_chat_room_listeners(room_id, message_payload):
     if room_id in current_app.chat_room_listeners:
         listeners = current_app.chat_room_listeners.get(room_id, [])
         if listeners:
-            current_app.logger.debug(f"Dispatching message to {len(listeners)} listeners for room {room_id}")
+            current_app.logger.debug(
+                f"Dispatching message to {len(listeners)} listeners for room {room_id}"
+            )
             for q_item in list(listeners):  # Iterate over a copy
                 try:
                     # Structure the data as expected by the SSE handler
                     sse_data = {"type": "new_chat_message", "payload": message_payload}
                     q_item.put_nowait(sse_data)
                 except Exception as e:  # queue.Full or other errors
-                    current_app.logger.error(f"Error putting message to SSE queue for room {room_id}: {e}")
+                    current_app.logger.error(
+                        f"Error putting message to SSE queue for room {room_id}: {e}"
+                    )
         else:
-            current_app.logger.debug(f"No active SSE listeners for room {room_id} to dispatch message.")
+            current_app.logger.debug(
+                f"No active SSE listeners for room {room_id} to dispatch message."
+            )
 
 
 class ChatRoomMessagesResource(Resource):
@@ -1022,9 +1030,7 @@ class ChatRoomMessagesResource(Resource):
             return {"message": "Chat room not found"}, 404
 
         page = request.args.get("page", 1, type=int)
-        per_page = request.args.get(
-            "per_page", 20, type=int
-        )
+        per_page = request.args.get("per_page", 20, type=int)
 
         messages_query = ChatMessage.query.filter_by(room_id=room_id).order_by(
             ChatMessage.timestamp.desc(), ChatMessage.id.desc()
@@ -1070,11 +1076,15 @@ class ChatRoomMessagesResource(Resource):
         message_dict_for_sse = new_message.to_dict()
         dispatch_to_chat_room_listeners(room_id, message_dict_for_sse)
 
-        return {"message": "Message posted successfully", "chat_message": new_message.to_dict()}, 201
+        return {
+            "message": "Message posted successfully",
+            "chat_message": new_message.to_dict(),
+        }, 201
 
 
 from flask_jwt_extended import create_access_token
 from werkzeug.security import check_password_hash
+
 
 class ApiLoginResource(Resource):
     def post(self):

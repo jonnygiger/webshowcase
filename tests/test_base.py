@@ -50,10 +50,11 @@ class AppTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.app = create_app('testing')
+        cls.app = create_app("testing")
         cls.db = app_db
 
         import logging
+
         cls.app.logger.setLevel(logging.DEBUG)
         handler = logging.StreamHandler(sys.stderr)
         handler.setLevel(logging.DEBUG)
@@ -105,7 +106,7 @@ class AppTestCase(unittest.TestCase):
 
         # Clean up database session
         with self.app.app_context():
-            self.db.session.rollback() # Rollback any uncommitted transactions
+            self.db.session.rollback()  # Rollback any uncommitted transactions
             self.db.session.remove()
 
         shared_files_folder = self.app.config.get("SHARED_FILES_UPLOAD_FOLDER")
@@ -116,7 +117,9 @@ class AppTestCase(unittest.TestCase):
                     if os.path.isfile(file_path) or os.path.islink(file_path):
                         os.unlink(file_path)
                 except Exception as e:
-                    self.app.logger.error(f"Failed to delete {file_path} in tearDown. Reason: {e}")
+                    self.app.logger.error(
+                        f"Failed to delete {file_path} in tearDown. Reason: {e}"
+                    )
 
     def _setup_base_users(self):
         self.user1 = User(
@@ -143,7 +146,9 @@ class AppTestCase(unittest.TestCase):
         self.user2_id = self.user2.id
         self.user3_id = self.user3.id
 
-    def login(self, username, password, client_instance=None): # client_instance is no longer used
+    def login(
+        self, username, password, client_instance=None
+    ):  # client_instance is no longer used
         """
         Handles the HTTP session login for a user.
         JWT token retrieval is kept as it might be used by other API endpoints.
@@ -163,19 +168,33 @@ class AppTestCase(unittest.TestCase):
             data=dict(username=username, password=password),
             follow_redirects=True,
         )
-        self.assertEqual(login_response.status_code, 200, f"HTTP login failed for '{username}': {login_response.data.decode()}")
-        with self.client.session_transaction() as http_session: # Verify Flask session
-            self.assertIn("_user_id", http_session, f"'_user_id' not found in session after HTTP login for '{username}'.")
-        self.app.logger.info(f"HTTP login successful for '{username}', Flask session created.")
+        self.assertEqual(
+            login_response.status_code,
+            200,
+            f"HTTP login failed for '{username}': {login_response.data.decode()}",
+        )
+        with self.client.session_transaction() as http_session:  # Verify Flask session
+            self.assertIn(
+                "_user_id",
+                http_session,
+                f"'_user_id' not found in session after HTTP login for '{username}'.",
+            )
+        self.app.logger.info(
+            f"HTTP login successful for '{username}', Flask session created."
+        )
 
         # Step 2: Obtain a JWT token. This is kept as JWTs might be used for non-SocketIO API auth.
-        self.app.logger.debug(f"Fetching JWT token for '{username}' (potentially for API use).")
+        self.app.logger.debug(
+            f"Fetching JWT token for '{username}' (potentially for API use)."
+        )
         jwt_token = self._get_jwt_token(username, password)
 
         self.app.logger.info(f"HTTP login for '{username}' completed.")
         return login_response
 
-    def logout(self, client_instance=None, username_for_log=None): # client_instance is no longer used
+    def logout(
+        self, client_instance=None, username_for_log=None
+    ):  # client_instance is no longer used
         """
         Logs out the user by clearing the HTTP session.
 
@@ -188,17 +207,29 @@ class AppTestCase(unittest.TestCase):
         """
         http_client = self.client
 
-        user_context_log = f"for '{username_for_log}'" if username_for_log else "for current user"
-        self.app.logger.info(f"Logout process: Performing HTTP session logout {user_context_log}.")
+        user_context_log = (
+            f"for '{username_for_log}'" if username_for_log else "for current user"
+        )
+        self.app.logger.info(
+            f"Logout process: Performing HTTP session logout {user_context_log}."
+        )
         response = http_client.get("/logout", follow_redirects=True)
-        self.assertEqual(response.status_code, 200, f"HTTP Logout failed {user_context_log}: {response.data.decode()}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"HTTP Logout failed {user_context_log}: {response.data.decode()}",
+        )
         self.app.logger.info(f"HTTP session logout successful {user_context_log}.")
 
         with http_client.session_transaction() as http_session:
             if "_user_id" in http_session:
-                self.app.logger.warning(f"Session check: '_user_id' still found in session after HTTP logout {user_context_log}. This might indicate an issue with server-side session clearing.")
+                self.app.logger.warning(
+                    f"Session check: '_user_id' still found in session after HTTP logout {user_context_log}. This might indicate an issue with server-side session clearing."
+                )
             else:
-                self.app.logger.debug(f"Session check: '_user_id' confirmed removed after HTTP logout {user_context_log}.")
+                self.app.logger.debug(
+                    f"Session check: '_user_id' confirmed removed after HTTP logout {user_context_log}."
+                )
 
         return response
 

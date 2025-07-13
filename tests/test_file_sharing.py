@@ -232,7 +232,9 @@ class TestFileSharing(AppTestCase):
         self.login(self.user2.username, "password")
         response = self.client.get("/files/inbox")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("You have not received any files yet.", response.get_data(as_text=True))
+        self.assertIn(
+            "You have not received any files yet.", response.get_data(as_text=True)
+        )
         self.logout()
 
     def test_files_inbox_with_files(self):
@@ -248,7 +250,9 @@ class TestFileSharing(AppTestCase):
             follow_redirects=True,
         )
         self.assertEqual(response_share.status_code, 200)
-        self.assertIn("File successfully shared!", response_share.get_data(as_text=True))
+        self.assertIn(
+            "File successfully shared!", response_share.get_data(as_text=True)
+        )
         self.logout()
 
         self.login(self.user2.username, "password")
@@ -292,7 +296,10 @@ class TestFileSharing(AppTestCase):
             self.assertEqual(response.status_code, 200)
 
             self.assertIn("attachment", response.headers["Content-Disposition"])
-            self.assertIn("filename=download_me.txt", response.headers["Content-Disposition"].replace('"', ""))
+            self.assertIn(
+                "filename=download_me.txt",
+                response.headers["Content-Disposition"].replace('"', ""),
+            )
             self.assertEqual(response.data, original_content)
 
             self.db.session.refresh(shared_file)
@@ -433,7 +440,9 @@ class TestFileSharing(AppTestCase):
             self.assertIsNotNone(shared_file_for_test)
             self.assertIsNotNone(shared_file_for_test.saved_filename)
             file_id_to_delete = shared_file_for_test.id
-            retrieved_saved_filename_before_api_call = shared_file_for_test.saved_filename
+            retrieved_saved_filename_before_api_call = (
+                shared_file_for_test.saved_filename
+            )
             file_path = os.path.join(
                 self.app.config["SHARED_FILES_UPLOAD_FOLDER"],
                 shared_file_for_test.saved_filename,
@@ -598,7 +607,9 @@ class TestFileSharing(AppTestCase):
                 follow_redirects=True,
             )
             self.assertEqual(response_upload.status_code, 200)
-            self.assertIn("File successfully shared!", response_upload.get_data(as_text=True))
+            self.assertIn(
+                "File successfully shared!", response_upload.get_data(as_text=True)
+            )
 
             path_to_clean = None
             file_id = None
@@ -610,7 +621,9 @@ class TestFileSharing(AppTestCase):
                     original_filename=original_filename,
                 ).first()
                 self.assertIsNotNone(shared_file_record)
-                self.assertEqual(shared_file_record.original_filename, original_filename)
+                self.assertEqual(
+                    shared_file_record.original_filename, original_filename
+                )
                 self.assertIsNotNone(shared_file_record.saved_filename)
                 self.assertNotEqual(shared_file_record.saved_filename, "")
 
@@ -638,7 +651,9 @@ class TestFileSharing(AppTestCase):
             response_download = self.client.get(f"/files/download/{file_id}")
             self.assertEqual(response_download.status_code, 200)
 
-            content_disposition = response_download.headers.get("Content-Disposition", "")
+            content_disposition = response_download.headers.get(
+                "Content-Disposition", ""
+            )
             expected_filename_simple_quoted = f'filename="{original_filename}"'
             expected_filename_simple_unquoted = f"filename={original_filename}"
             encoded_filename_for_star = urllib.parse.quote(original_filename, safe="")
@@ -687,7 +702,10 @@ class TestFileSharing(AppTestCase):
                 original_filename="self_share_test.txt",
             ).first()
             self.assertIsNotNone(shared_file_record)
-            self.assertEqual(shared_file_record.message, "This is a test message for sharing with myself.")
+            self.assertEqual(
+                shared_file_record.message,
+                "This is a test message for sharing with myself.",
+            )
             self.assertEqual(shared_file_record.sender_id, self.user1.id)
             self.assertEqual(shared_file_record.receiver_id, self.user1.id)
             shared_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]

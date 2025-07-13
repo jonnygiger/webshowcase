@@ -36,7 +36,7 @@ class TestEventRendering(AppTestCase):
             db.session.commit()
             event_id = event.id
 
-        response = self.client.get(url_for('core.view_event', event_id=event_id))
+        response = self.client.get(url_for("core.view_event", event_id=event_id))
 
         self.assertEqual(response.status_code, 200)
 

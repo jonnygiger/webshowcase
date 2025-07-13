@@ -17,7 +17,9 @@ class TestPollAPI(AppTestCase):
         }
         poll_data = {"question": question_text, "options": options_texts}
         with self.app.app_context():
-            response = self.client.post(url_for('polllistresource'), headers=headers, json=poll_data)
+            response = self.client.post(
+                url_for("polllistresource"), headers=headers, json=poll_data
+            )
         self.assertEqual(
             response.status_code,
             201,
@@ -36,7 +38,9 @@ class TestPollAPI(AppTestCase):
             "options": ["Red", "Green", "Blue"],
         }
         with self.app.app_context():
-            response = self.client.post(url_for('polllistresource'), headers=headers, json=poll_data)
+            response = self.client.post(
+                url_for("polllistresource"), headers=headers, json=poll_data
+            )
         if response.status_code == 201:
             data = response.get_json()
             self.assertEqual(data["message"], "Poll created successfully")
@@ -50,7 +54,9 @@ class TestPollAPI(AppTestCase):
         }
         with self.app.app_context():
             response = self.client.post(
-                url_for('polllistresource'), headers=headers, json={"options": ["Yes", "No"]}
+                url_for("polllistresource"),
+                headers=headers,
+                json={"options": ["Yes", "No"]},
             )
         self.assertEqual(response.status_code, 400)
 
@@ -62,21 +68,25 @@ class TestPollAPI(AppTestCase):
         }
         poll_data = {"question": "Need more options?", "options": ["Just one"]}
         with self.app.app_context():
-            response = self.client.post(url_for('polllistresource'), headers=headers, json=poll_data)
+            response = self.client.post(
+                url_for("polllistresource"), headers=headers, json=poll_data
+            )
         self.assertEqual(response.status_code, 400)
 
     def test_create_poll_unauthenticated(self):
         headers = {"Content-Type": "application/json"}
         poll_data = {"question": "Who can post this?", "options": ["Me", "You"]}
         with self.app.app_context():
-            response = self.client.post(url_for('polllistresource'), headers=headers, json=poll_data)
+            response = self.client.post(
+                url_for("polllistresource"), headers=headers, json=poll_data
+            )
         self.assertEqual(response.status_code, 401)
 
     def test_list_polls_empty(self):
         token = self._get_jwt_token(self.user1.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
         with self.app.app_context():
-            response = self.client.get(url_for('polllistresource'), headers=headers)
+            response = self.client.get(url_for("polllistresource"), headers=headers)
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertIn("polls", data)
@@ -89,7 +99,9 @@ class TestPollAPI(AppTestCase):
 
         headers = {"Authorization": f"Bearer {token}"}
         with self.app.app_context():
-            response_list = self.client.get(url_for('polllistresource'), headers=headers)
+            response_list = self.client.get(
+                url_for("polllistresource"), headers=headers
+            )
         self.assertEqual(response_list.status_code, 200)
         data = response_list.get_json()
         self.assertIn("polls", data)
@@ -108,7 +120,9 @@ class TestPollAPI(AppTestCase):
 
         headers = {"Authorization": f"Bearer {token}"}
         with self.app.app_context():
-            response = self.client.get(url_for('pollresource', poll_id=created_poll_id), headers=headers)
+            response = self.client.get(
+                url_for("pollresource", poll_id=created_poll_id), headers=headers
+            )
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
@@ -126,7 +140,9 @@ class TestPollAPI(AppTestCase):
         token = self._get_jwt_token(self.user1.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
         with self.app.app_context():
-            response = self.client.get(url_for('pollresource', poll_id=99999), headers=headers)
+            response = self.client.get(
+                url_for("pollresource", poll_id=99999), headers=headers
+            )
         self.assertEqual(response.status_code, 404)
 
     def test_delete_poll_success(self):
@@ -139,14 +155,18 @@ class TestPollAPI(AppTestCase):
 
         headers = {"Authorization": f"Bearer {token}"}
         with self.app.app_context():
-            response_delete = self.client.delete(url_for('pollresource', poll_id=created_poll_id), headers=headers)
+            response_delete = self.client.delete(
+                url_for("pollresource", poll_id=created_poll_id), headers=headers
+            )
 
         self.assertEqual(response_delete.status_code, 200)
         delete_data = response_delete.get_json()
         self.assertEqual(delete_data["message"], "Poll deleted")
 
         with self.app.app_context():
-            response_get = self.client.get(url_for('pollresource', poll_id=created_poll_id), headers=headers)
+            response_get = self.client.get(
+                url_for("pollresource", poll_id=created_poll_id), headers=headers
+            )
         self.assertEqual(response_get.status_code, 404)
 
     def test_delete_poll_unauthorized(self):
@@ -158,7 +178,9 @@ class TestPollAPI(AppTestCase):
         token_user2 = self._get_jwt_token(self.user2.username, "password")
         headers_user2 = {"Authorization": f"Bearer {token_user2}"}
         with self.app.app_context():
-            response = self.client.delete(url_for('pollresource', poll_id=poll_id_user1), headers=headers_user2)
+            response = self.client.delete(
+                url_for("pollresource", poll_id=poll_id_user1), headers=headers_user2
+            )
 
         self.assertEqual(response.status_code, 403)
 
@@ -166,14 +188,16 @@ class TestPollAPI(AppTestCase):
         token_user1 = self._get_jwt_token(self.user1.username, "password")
         poll_id = self._create_poll_via_api(token_user1, "Temporary Poll", ["T1", "T2"])
         with self.app.app_context():
-            response = self.client.delete(url_for('pollresource', poll_id=poll_id))
+            response = self.client.delete(url_for("pollresource", poll_id=poll_id))
         self.assertEqual(response.status_code, 401)
 
     def test_delete_poll_not_found(self):
         token = self._get_jwt_token(self.user1.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
         with self.app.app_context():
-            response = self.client.delete(url_for('pollresource', poll_id=99999), headers=headers)
+            response = self.client.delete(
+                url_for("pollresource", poll_id=99999), headers=headers
+            )
         self.assertEqual(response.status_code, 404)
 
     def test_vote_on_poll_success(self):
@@ -205,7 +229,9 @@ class TestPollAPI(AppTestCase):
         poll2_id = self._create_poll_via_api(token_user1, poll2_question, poll2_options)
 
         with self.app.app_context():
-            response_get_poll2 = self.client.get(url_for('pollresource', poll_id=poll2_id), headers=headers_user1)
+            response_get_poll2 = self.client.get(
+                url_for("pollresource", poll_id=poll2_id), headers=headers_user1
+            )
         self.assertEqual(response_get_poll2.status_code, 200)
         poll2_data = response_get_poll2.get_json()
 
@@ -218,7 +244,9 @@ class TestPollAPI(AppTestCase):
         vote_data = {"option_id": option_from_poll2_id}
         with self.app.app_context():
             response_vote = self.client.post(
-                url_for('pollvoteresource', poll_id=poll1_id), headers=headers_user1, json=vote_data
+                url_for("pollvoteresource", poll_id=poll1_id),
+                headers=headers_user1,
+                json=vote_data,
             )
 
         self.assertIn(response_vote.status_code, [400, 404])
@@ -253,7 +281,9 @@ class TestPollAPI(AppTestCase):
         vote_data = {"option_id": non_existent_option_id}
         with self.app.app_context():
             response_vote = self.client.post(
-                url_for('pollvoteresource', poll_id=poll_id), headers=headers_user1, json=vote_data
+                url_for("pollvoteresource", poll_id=poll_id),
+                headers=headers_user1,
+                json=vote_data,
             )
 
         self.assertEqual(response_vote.status_code, 404)
@@ -277,12 +307,16 @@ class TestPollAPI(AppTestCase):
 
         poll_question = "What's the best testing strategy?"
         poll_options_texts = ["Strategy A", "Strategy B", "Strategy C"]
-        poll_id = self._create_poll_via_api(token_user1, poll_question, poll_options_texts)
+        poll_id = self._create_poll_via_api(
+            token_user1, poll_question, poll_options_texts
+        )
         self.assertIsNotNone(poll_id)
 
         headers_user1 = {"Authorization": f"Bearer {token_user1}"}
         with self.app.app_context():
-            response_get_poll = self.client.get(url_for('pollresource', poll_id=poll_id), headers=headers_user1)
+            response_get_poll = self.client.get(
+                url_for("pollresource", poll_id=poll_id), headers=headers_user1
+            )
         self.assertEqual(response_get_poll.status_code, 200)
         poll_data = response_get_poll.get_json()["poll"]
 
@@ -297,29 +331,46 @@ class TestPollAPI(AppTestCase):
         option_id_A = options_map["Strategy A"]
         option_id_B = options_map["Strategy B"]
 
-        headers_vote_user1 = {"Authorization": f"Bearer {token_user1}", "Content-Type": "application/json"}
+        headers_vote_user1 = {
+            "Authorization": f"Bearer {token_user1}",
+            "Content-Type": "application/json",
+        }
         with self.app.app_context():
             response_vote1 = self.client.post(
-                url_for('pollvoteresource', poll_id=poll_id), headers=headers_vote_user1, json={"option_id": option_id_A}
+                url_for("pollvoteresource", poll_id=poll_id),
+                headers=headers_vote_user1,
+                json={"option_id": option_id_A},
             )
         self.assertEqual(response_vote1.status_code, 201)
 
-        headers_vote_user2 = {"Authorization": f"Bearer {token_user2}", "Content-Type": "application/json"}
+        headers_vote_user2 = {
+            "Authorization": f"Bearer {token_user2}",
+            "Content-Type": "application/json",
+        }
         with self.app.app_context():
             response_vote2 = self.client.post(
-                url_for('pollvoteresource', poll_id=poll_id), headers=headers_vote_user2, json={"option_id": option_id_B}
+                url_for("pollvoteresource", poll_id=poll_id),
+                headers=headers_vote_user2,
+                json={"option_id": option_id_B},
             )
         self.assertEqual(response_vote2.status_code, 201)
 
-        headers_vote_user3 = {"Authorization": f"Bearer {token_user3}", "Content-Type": "application/json"}
+        headers_vote_user3 = {
+            "Authorization": f"Bearer {token_user3}",
+            "Content-Type": "application/json",
+        }
         with self.app.app_context():
             response_vote3 = self.client.post(
-                url_for('pollvoteresource', poll_id=poll_id), headers=headers_vote_user3, json={"option_id": option_id_A}
+                url_for("pollvoteresource", poll_id=poll_id),
+                headers=headers_vote_user3,
+                json={"option_id": option_id_A},
             )
         self.assertEqual(response_vote3.status_code, 201)
 
         with self.app.app_context():
-            response_get_results = self.client.get(url_for('pollresource', poll_id=poll_id), headers=headers_user1)
+            response_get_results = self.client.get(
+                url_for("pollresource", poll_id=poll_id), headers=headers_user1
+            )
 
         self.assertEqual(response_get_results.status_code, 200)
         results_data = response_get_results.get_json()["poll"]
@@ -356,35 +407,52 @@ class TestPollAPI(AppTestCase):
 
         poll_question = "HTML Render Test Poll"
         poll_options_texts = ["RenderOpt1", "RenderOpt2"]
-        poll_id = self._create_poll_via_api(token_user1, poll_question, poll_options_texts)
+        poll_id = self._create_poll_via_api(
+            token_user1, poll_question, poll_options_texts
+        )
         self.assertIsNotNone(poll_id)
 
         headers_user1 = {"Authorization": f"Bearer {token_user1}"}
         with self.app.app_context():
-            response_get_poll = self.client.get(url_for('pollresource', poll_id=poll_id), headers=headers_user1)
+            response_get_poll = self.client.get(
+                url_for("pollresource", poll_id=poll_id), headers=headers_user1
+            )
         self.assertEqual(response_get_poll.status_code, 200)
         poll_data_api = response_get_poll.get_json()["poll"]
-        option_id_1 = next(opt["id"] for opt in poll_data_api["options"] if opt["text"] == "RenderOpt1")
-        option_id_2 = next(opt["id"] for opt in poll_data_api["options"] if opt["text"] == "RenderOpt2")
+        option_id_1 = next(
+            opt["id"] for opt in poll_data_api["options"] if opt["text"] == "RenderOpt1"
+        )
+        option_id_2 = next(
+            opt["id"] for opt in poll_data_api["options"] if opt["text"] == "RenderOpt2"
+        )
 
         self.login(self.user1.username, "password")
         with self.app.app_context():
-            self.client.post(url_for('core.vote_on_poll', poll_id=poll_id), data={"option_id": str(option_id_1)})
+            self.client.post(
+                url_for("core.vote_on_poll", poll_id=poll_id),
+                data={"option_id": str(option_id_1)},
+            )
         self.logout()
 
         self.login(self.user2.username, "password")
         with self.app.app_context():
-            self.client.post(url_for('core.vote_on_poll', poll_id=poll_id), data={"option_id": str(option_id_1)})
+            self.client.post(
+                url_for("core.vote_on_poll", poll_id=poll_id),
+                data={"option_id": str(option_id_1)},
+            )
         self.logout()
 
         self.login(self.user3.username, "password")
         with self.app.app_context():
-            self.client.post(url_for('core.vote_on_poll', poll_id=poll_id), data={"option_id": str(option_id_2)})
+            self.client.post(
+                url_for("core.vote_on_poll", poll_id=poll_id),
+                data={"option_id": str(option_id_2)},
+            )
         self.logout()
 
         self.login(self.user1.username, "password")
         with self.app.app_context():
-            response_html = self.client.get(url_for('core.view_poll', poll_id=poll_id))
+            response_html = self.client.get(url_for("core.view_poll", poll_id=poll_id))
         self.assertEqual(response_html.status_code, 200)
         html_content = response_html.data.decode()
 

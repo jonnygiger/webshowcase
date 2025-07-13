@@ -88,7 +88,8 @@ class TestSeriesFeature(AppTestCase):
             author_username = series_obj_reloaded.author.username
 
             response = self.client.post(
-                url_for("core.delete_series", series_id=series_id), follow_redirects=True
+                url_for("core.delete_series", series_id=series_id),
+                follow_redirects=True,
             )
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.request.path.endswith(f"/user/{author_username}"))
@@ -108,21 +109,25 @@ class TestSeriesFeature(AppTestCase):
 
     def test_create_series_page_load(self):
         self.login(self.user1.username, "password")
-        response = self.client.get(url_for('core.create_series'))
+        response = self.client.get(url_for("core.create_series"))
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Create New Series", response.data)
         self.logout()
 
     def test_create_series_unauthenticated(self):
-        response = self.client.get(url_for('core.create_series'), follow_redirects=False)
+        response = self.client.get(
+            url_for("core.create_series"), follow_redirects=False
+        )
         self.assertEqual(response.status_code, 302)
-        self.assertIn(url_for('core.login'), response.location)
+        self.assertIn(url_for("core.login"), response.location)
 
         response_post = self.client.post(
-            url_for('core.create_series'), data={"title": "Fail Series"}, follow_redirects=False
+            url_for("core.create_series"),
+            data={"title": "Fail Series"},
+            follow_redirects=False,
         )
         self.assertEqual(response_post.status_code, 302)
-        self.assertIn(url_for('core.login'), response_post.location)
+        self.assertIn(url_for("core.login"), response_post.location)
 
     @unittest.skip("Placeholder test")
     def test_create_series_post_success(self):
@@ -141,7 +146,7 @@ class TestSeriesFeature(AppTestCase):
         pass
 
     def test_view_series_not_found(self):
-        response = self.client.get(url_for('core.view_series', series_id=9999))
+        response = self.client.get(url_for("core.view_series", series_id=9999))
         self.assertEqual(response.status_code, 404)
 
     def test_view_existing_series_page(self):
@@ -156,7 +161,7 @@ class TestSeriesFeature(AppTestCase):
             series_id_val = series_in_session.id
             self.assertIsNotNone(series_id_val)
 
-        response = self.client.get(url_for('core.view_series', series_id=series_id_val))
+        response = self.client.get(url_for("core.view_series", series_id=series_id_val))
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"My Test Series", response.data)
         self.assertIn(b"This is a test series.", response.data)
@@ -215,7 +220,7 @@ class TestSeriesFeature(AppTestCase):
 
         new_order_ids = [post3.id, post1.id, post2.id]
         response = self.client.post(
-            url_for('core.reorder_series_posts', series_id=series.id),
+            url_for("core.reorder_series_posts", series_id=series.id),
             data=json.dumps({"post_ids": new_order_ids}),
             content_type="application/json",
         )

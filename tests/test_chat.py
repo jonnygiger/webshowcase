@@ -116,16 +116,16 @@ class ChatTestCase(AppTestCase):
             args, _ = mock_room_queue.put_nowait.call_args
             sse_event_data = args[0]
 
-            self.assertEqual(sse_event_data['type'], "new_chat_message")
-            payload = sse_event_data['payload']
-            self.assertEqual(payload['id'], sent_message_data['id'])
-            self.assertEqual(payload['message'], test_message)
-            self.assertEqual(payload['user_id'], self.user1_id)
-            self.assertEqual(payload['username'], self.user1.username)
-            self.assertEqual(payload['room_id'], room_id)
+            self.assertEqual(sse_event_data["type"], "new_chat_message")
+            payload = sse_event_data["payload"]
+            self.assertEqual(payload["id"], sent_message_data["id"])
+            self.assertEqual(payload["message"], test_message)
+            self.assertEqual(payload["user_id"], self.user1_id)
+            self.assertEqual(payload["username"], self.user1.username)
+            self.assertEqual(payload["room_id"], room_id)
 
             # 5. Verify message is in DB
-            message_in_db = db.session.get(ChatMessage, sent_message_data['id'])
+            message_in_db = db.session.get(ChatMessage, sent_message_data["id"])
             self.assertIsNotNone(message_in_db)
             self.assertEqual(message_in_db.message, test_message)
 
@@ -161,13 +161,13 @@ class ChatTestCase(AppTestCase):
 
             # The second argument should be the message payload
             message_payload = args[1]
-            self.assertEqual(message_payload['content'], test_message_by_user2)
-            self.assertEqual(message_payload['user_id'], self.user2_id)
-            self.assertEqual(message_payload['username'], self.user2.username)
-            self.assertEqual(message_payload['id'], sent_message_details['id'])
+            self.assertEqual(message_payload["content"], test_message_by_user2)
+            self.assertEqual(message_payload["user_id"], self.user2_id)
+            self.assertEqual(message_payload["username"], self.user2.username)
+            self.assertEqual(message_payload["id"], sent_message_details["id"])
 
             # 4. Verify the message is correctly stored in the database
-            message_in_db = db.session.get(ChatMessage, sent_message_details['id'])
+            message_in_db = db.session.get(ChatMessage, sent_message_details["id"])
             self.assertIsNotNone(message_in_db)
             self.assertEqual(message_in_db.message, test_message_by_user2)
             self.assertEqual(message_in_db.user_id, self.user2_id)

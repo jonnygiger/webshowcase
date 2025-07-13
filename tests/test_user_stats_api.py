@@ -19,7 +19,8 @@ class TestUserStatsAPI(AppTestCase):
 
         with self.app.app_context():
             response = self.client.get(
-                url_for('userstatsresource', user_id=self.user1_id), headers=headers_user1
+                url_for("userstatsresource", user_id=self.user1_id),
+                headers=headers_user1,
             )
         self.assertEqual(response.status_code, 200)
         stats_data = json.loads(response.data)
@@ -31,7 +32,9 @@ class TestUserStatsAPI(AppTestCase):
         self.assertIn("join_date", stats_data)
 
         with self.app.app_context():
-            response_no_token = self.client.get(url_for('userstatsresource', user_id=self.user1_id))
+            response_no_token = self.client.get(
+                url_for("userstatsresource", user_id=self.user1_id)
+            )
         self.assertEqual(response_no_token.status_code, 401)
         data_no_token = json.loads(response_no_token.data)
         self.assertEqual(data_no_token.get("msg"), "Missing Authorization Header")
@@ -40,8 +43,11 @@ class TestUserStatsAPI(AppTestCase):
         headers_user2 = {"Authorization": f"Bearer {token_user2}"}
         with self.app.app_context():
             response_forbidden = self.client.get(
-                url_for('userstatsresource', user_id=self.user1_id), headers=headers_user2
+                url_for("userstatsresource", user_id=self.user1_id),
+                headers=headers_user2,
             )
         self.assertEqual(response_forbidden.status_code, 403)
         data_forbidden = json.loads(response_forbidden.data)
-        self.assertEqual(data_forbidden.get("message"), "You are not authorized to view these stats.")
+        self.assertEqual(
+            data_forbidden.get("message"), "You are not authorized to view these stats."
+        )

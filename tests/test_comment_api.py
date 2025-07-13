@@ -261,7 +261,7 @@ class TestCommentAPI(AppTestCase):
         )
 
     def test_create_comment_sends_sse_notification(self):
-        with self.app.app_context(): # Ensure app context for current_app
+        with self.app.app_context():  # Ensure app context for current_app
             # 1. Create user and post
             post_obj = self._create_db_post(
                 user_id=self.user1_id, title="Post for SSE Comment Notification"
@@ -281,7 +281,11 @@ class TestCommentAPI(AppTestCase):
             mock_sse_queue = MagicMock()
 
             # 4. Patch current_app.post_event_listeners
-            with patch.dict(current_app.post_event_listeners, {post_id_for_listener: [mock_sse_queue]}, clear=True):
+            with patch.dict(
+                current_app.post_event_listeners,
+                {post_id_for_listener: [mock_sse_queue]},
+                clear=True,
+            ):
                 # 5. Make POST request
                 response = self.client.post(
                     f"/api/posts/{post_obj.id}/comments",
@@ -291,7 +295,9 @@ class TestCommentAPI(AppTestCase):
 
                 # 6. Assert API call success
                 self.assertEqual(
-                    response.status_code, 201, f"Response data: {response.data.decode()}"
+                    response.status_code,
+                    201,
+                    f"Response data: {response.data.decode()}",
                 )
                 data = json.loads(response.data)
                 self.assertEqual(data["message"], "Comment created successfully")

@@ -126,7 +126,9 @@ class TestDiscoverPageViews(AppTestCase):
             self.user1_id, limit=15
         )
 
-        self.assertIn("Test Post with &lt;Special&gt; &amp; &#34;Chars&#34;", response_data)
+        self.assertIn(
+            "Test Post with &lt;Special&gt; &amp; &#34;Chars&#34;", response_data
+        )
         self.assertIn(
             "This content has &#39;single&#39; &amp; &#34;double&#34; quotes, plus &lt;tags&gt;.",
             response_data,

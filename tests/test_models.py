@@ -358,7 +358,9 @@ class TestSeriesModel(AppTestCase):
             self.assertEqual(series_dict["author_username"], author.username)
             self.assertEqual(len(series_dict["posts"]), 2)
             self.assertEqual(series_dict["posts"][0]["title"], "Post One Dict")
-            self.assertEqual(series_dict["posts"][0]["author_username"], author.username)
+            self.assertEqual(
+                series_dict["posts"][0]["author_username"], author.username
+            )
             self.assertEqual(series_dict["posts"][1]["title"], "Post Two Dict")
 
     def test_add_post_to_series_property(self):

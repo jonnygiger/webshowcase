@@ -26,9 +26,7 @@ def get_user_stat(user, stat_type):
     elif stat_type == "num_events_created":
         return Event.query.filter_by(user_id=user.id).count()
     elif stat_type == "num_polls_created":
-        return Poll.query.filter_by(
-            user_id=user.id
-        ).count()
+        return Poll.query.filter_by(user_id=user.id).count()
     elif stat_type == "num_polls_voted":
         return (
             db.session.query(PollVote.poll_id)
@@ -45,9 +43,7 @@ def get_user_stat(user, stat_type):
     elif stat_type == "num_groups_joined":
         return user.joined_groups.count()
     elif stat_type == "num_bookmarks_created":
-        return Bookmark.query.filter_by(
-            user_id=user.id
-        ).count()
+        return Bookmark.query.filter_by(user_id=user.id).count()
     return 0
 
 

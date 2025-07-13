@@ -1,19 +1,36 @@
 import os
 
+
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'you-should-change-this'
+    SECRET_KEY = os.environ.get("SECRET_KEY") or "you-should-change-this"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or 'super-secret-jwt'
+    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or "super-secret-jwt"
     UPLOAD_FOLDER = "uploads"
     PROFILE_PICS_FOLDER = "static/profile_pics"
     ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif"}
     SHARED_FILES_UPLOAD_FOLDER = "shared_files_uploads"
-    SHARED_FILES_ALLOWED_EXTENSIONS = {"txt", "pdf", "png", "jpg", "jpeg", "gif", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx"}
+    SHARED_FILES_ALLOWED_EXTENSIONS = {
+        "txt",
+        "pdf",
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "zip",
+        "doc",
+        "docx",
+        "xls",
+        "xlsx",
+        "ppt",
+        "pptx",
+    }
     SHARED_FILES_MAX_SIZE = 16 * 1024 * 1024
+
 
 class DefaultConfig(Config):
     DEBUG = True
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///site.db'
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or "sqlite:///site.db"
+
 
 class TestingConfig(Config):
     TESTING = True

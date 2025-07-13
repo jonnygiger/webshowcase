@@ -15,34 +15,57 @@ jwt = JWTManager()
 login_manager = LoginManager()
 scheduler = BackgroundScheduler()
 
+
 def create_app(config_class=None):
     """Creates and configures the Flask application."""
-    app = Flask(__name__, template_folder='../templates', static_folder='../static')
+    app = Flask(__name__, template_folder="../templates", static_folder="../static")
 
     app.config.setdefault("SQLALCHEMY_DATABASE_URI", "sqlite:///site.db")
     app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
     app.config.setdefault("SECRET_KEY", "default-secret-key")
     app.config.setdefault("JWT_SECRET_KEY", "default-jwt-secret-key")
     app.config.setdefault("UPLOAD_FOLDER", os.path.join(app.root_path, "uploads"))
-    app.config.setdefault("PROFILE_PICS_FOLDER", os.path.join(app.root_path, "static", "profile_pics"))
+    app.config.setdefault(
+        "PROFILE_PICS_FOLDER", os.path.join(app.root_path, "static", "profile_pics")
+    )
     app.config.setdefault("ALLOWED_EXTENSIONS", {"png", "jpg", "jpeg", "gif"})
-    app.config.setdefault("SHARED_FILES_UPLOAD_FOLDER", os.path.join(app.root_path, "shared_files_uploads"))
-    app.config.setdefault("SHARED_FILES_ALLOWED_EXTENSIONS", {"txt", "pdf", "png", "jpg", "jpeg", "gif", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx"})
+    app.config.setdefault(
+        "SHARED_FILES_UPLOAD_FOLDER",
+        os.path.join(app.root_path, "shared_files_uploads"),
+    )
+    app.config.setdefault(
+        "SHARED_FILES_ALLOWED_EXTENSIONS",
+        {
+            "txt",
+            "pdf",
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "zip",
+            "doc",
+            "docx",
+            "xls",
+            "xlsx",
+            "ppt",
+            "pptx",
+        },
+    )
     app.config.setdefault("SHARED_FILES_MAX_SIZE", 16 * 1024 * 1024)
 
     if isinstance(config_class, str):
-        if config_class == 'default':
+        if config_class == "default":
             app.config.from_object(DefaultConfig)
-        elif config_class == 'testing':
+        elif config_class == "testing":
             app.config.from_object(TestingConfig)
         # If it's another string, it might be an error or a future config name
         # For now, we'll let it pass through and potentially be caught by from_object if it's not a valid path/module
         # or rely on setdefault if it's not handled.
         # A more robust way would be to raise an error for unknown string keys.
         # However, the prompt implies config_class could be an actual class object.
-    elif config_class is not None: # It's an actual class object
+    elif config_class is not None:  # It's an actual class object
         app.config.from_object(config_class)
-    else: # config_class is None, so load default
+    else:  # config_class is None, so load default
         app.config.from_object(DefaultConfig)
 
     db.init_app(app)
@@ -53,9 +76,10 @@ def create_app(config_class=None):
     login_manager.login_view = "core.login"
 
     from .core.utils import custom_url_for_assets, custom_url_for_primary
+
     # Register custom URL helpers as Jinja globals
-    app.add_template_global(custom_url_for_assets, name='custom_url_for_assets')
-    app.add_template_global(custom_url_for_primary, name='custom_url_for_primary')
+    app.add_template_global(custom_url_for_assets, name="custom_url_for_assets")
+    app.add_template_global(custom_url_for_primary, name="custom_url_for_primary")
 
     app.sse_listeners = {}
     app.user_notification_queues = {}
@@ -63,14 +87,33 @@ def create_app(config_class=None):
     app.post_event_listeners = {}
 
     from .core import views as core_views
+
     # from .core import events as core_events # This line was removed in a previous commit, ensuring it stays removed or is handled if logic changes
     from .api import routes as api_routes_module
     from .api.routes import (
-        UserListResource, UserResource, PostListResource, PostResource, EventListResource, EventResource,
-        RecommendationResource, PersonalizedFeedResource, TrendingHashtagsResource, OnThisDayResource,
-        UserStatsResource, SeriesListResource, SeriesResource, CommentListResource, PollListResource,
-        PollResource, PollVoteResource, PostLockResource, SharedFileResource, UserFeedResource,
-        ChatRoomListResource, ChatRoomMessagesResource, ApiLoginResource
+        UserListResource,
+        UserResource,
+        PostListResource,
+        PostResource,
+        EventListResource,
+        EventResource,
+        RecommendationResource,
+        PersonalizedFeedResource,
+        TrendingHashtagsResource,
+        OnThisDayResource,
+        UserStatsResource,
+        SeriesListResource,
+        SeriesResource,
+        CommentListResource,
+        PollListResource,
+        PollResource,
+        PollVoteResource,
+        PostLockResource,
+        SharedFileResource,
+        UserFeedResource,
+        ChatRoomListResource,
+        ChatRoomMessagesResource,
+        ApiLoginResource,
     )
 
     app.register_blueprint(core_views.core_bp)
@@ -96,15 +139,22 @@ def create_app(config_class=None):
     fr_api.add_resource(SharedFileResource, "/api/files/<int:file_id>")
     fr_api.add_resource(UserFeedResource, "/api/users/<int:user_id>/feed")
     fr_api.add_resource(ChatRoomListResource, "/api/chat/rooms")
-    fr_api.add_resource(ChatRoomMessagesResource, "/api/chat/rooms/<int:room_id>/messages")
+    fr_api.add_resource(
+        ChatRoomMessagesResource, "/api/chat/rooms/<int:room_id>/messages"
+    )
     fr_api.add_resource(ApiLoginResource, "/api/login")
 
     from .models.db_models import User
+
     @login_manager.user_loader
     def load_user(user_id):
         return db.session.get(User, int(user_id))
 
-    for folder_key in ['UPLOAD_FOLDER', 'PROFILE_PICS_FOLDER', 'SHARED_FILES_UPLOAD_FOLDER']:
+    for folder_key in [
+        "UPLOAD_FOLDER",
+        "PROFILE_PICS_FOLDER",
+        "SHARED_FILES_UPLOAD_FOLDER",
+    ]:
         folder_path = app.config.get(folder_key)
         if folder_path and not os.path.exists(folder_path):
             os.makedirs(folder_path)

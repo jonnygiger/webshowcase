@@ -8,39 +8,51 @@ from flask_login import current_user
 from .. import db
 from ..models.db_models import User, Post, Notification, Event, Poll
 
+
 def allowed_file(filename):
     return (
         "." in filename
         and filename.rsplit(".", 1)[0] != ""
-        and filename.rsplit(".", 1)[1].lower() in current_app.config["ALLOWED_EXTENSIONS"]
+        and filename.rsplit(".", 1)[1].lower()
+        in current_app.config["ALLOWED_EXTENSIONS"]
     )
+
 
 def allowed_shared_file(filename):
     return (
         "." in filename
         and filename.rsplit(".", 1)[0] != ""
-        and filename.rsplit(".", 1)[1].lower() in current_app.config["SHARED_FILES_ALLOWED_EXTENSIONS"]
+        and filename.rsplit(".", 1)[1].lower()
+        in current_app.config["SHARED_FILES_ALLOWED_EXTENSIONS"]
     )
+
 
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated:
             flash("You need to be logged in to access this page.", "danger")
-            session['next_url'] = request.url
+            session["next_url"] = request.url
             return redirect(url_for("core.login", next=request.url))
         return f(*args, **kwargs)
+
     return decorated_function
+
 
 def moderator_required(f):
     @wraps(f)
     @login_required
     def decorated_function(*args, **kwargs):
-        if not hasattr(current_user, 'role') or current_user.role != "moderator":
-            flash("You do not have permission to access this page. Moderator access required.", "danger")
+        if not hasattr(current_user, "role") or current_user.role != "moderator":
+            flash(
+                "You do not have permission to access this page. Moderator access required.",
+                "danger",
+            )
             return redirect(url_for("core.hello_world"))
         return f(*args, **kwargs)
+
     return decorated_function
+
 
 def get_featured_post():
     """
@@ -72,6 +84,7 @@ def get_featured_post():
             return None
         return random_post_selected
 
+
 def nl2br(value):
     """Converts newlines in a string to HTML <br> tags."""
     if not isinstance(value, str):
@@ -85,17 +98,22 @@ def generate_activity_summary():
     and creates notifications for them.
     This function MUST be run within an application context.
     """
-    if not hasattr(current_app, 'last_activity_check_time'):
-        current_app.logger.warning("generate_activity_summary: current_app.last_activity_check_time not set. Initializing to 5 minutes ago.")
-        current_app.last_activity_check_time = datetime.now(timezone.utc) - timezone.timedelta(minutes=5)
-
+    if not hasattr(current_app, "last_activity_check_time"):
+        current_app.logger.warning(
+            "generate_activity_summary: current_app.last_activity_check_time not set. Initializing to 5 minutes ago."
+        )
+        current_app.last_activity_check_time = datetime.now(
+            timezone.utc
+        ) - timezone.timedelta(minutes=5)
 
     last_check_time = current_app.last_activity_check_time
     current_check_time = datetime.now(timezone.utc)
     new_notifications_added = False
     notifications_created_count = 0
 
-    new_posts = Post.query.filter(Post.timestamp > last_check_time, Post.timestamp <= current_check_time).all()
+    new_posts = Post.query.filter(
+        Post.timestamp > last_check_time, Post.timestamp <= current_check_time
+    ).all()
     for post in new_posts:
         notification = Notification(
             message=f"New blog post: '{post.title}'",
@@ -107,7 +125,9 @@ def generate_activity_summary():
         new_notifications_added = True
         notifications_created_count += 1
 
-    new_events = Event.query.filter(Event.created_at > last_check_time, Event.created_at <= current_check_time).all()
+    new_events = Event.query.filter(
+        Event.created_at > last_check_time, Event.created_at <= current_check_time
+    ).all()
     for event in new_events:
         notification = Notification(
             message=f"New event: '{event.title}'",
@@ -119,7 +139,9 @@ def generate_activity_summary():
         new_notifications_added = True
         notifications_created_count += 1
 
-    new_polls = Poll.query.filter(Poll.created_at > last_check_time, Poll.created_at <= current_check_time).all()
+    new_polls = Poll.query.filter(
+        Poll.created_at > last_check_time, Poll.created_at <= current_check_time
+    ).all()
     for poll in new_polls:
         notification = Notification(
             message=f"New poll: '{poll.question}'",
@@ -139,7 +161,9 @@ def generate_activity_summary():
             )
         except Exception as e:
             db.session.rollback()
-            current_app.logger.error(f"Error committing new notifications during activity summary: {e}")
+            current_app.logger.error(
+                f"Error committing new notifications during activity summary: {e}"
+            )
     else:
         current_app.logger.info("Activity summary generated. No new notifications.")
 

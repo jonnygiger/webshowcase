@@ -54,6 +54,7 @@ class TestLiveActivityFeed(AppTestCase):
     ):
         with self.app.app_context():
             mock_friend_queue = MagicMock()
+
             # Simulate that user3 (a friend of user2, the one accepting the request) has an active queue
             def contains_side_effect(user_id_to_check):
                 return user_id_to_check == self.user3.id
@@ -63,7 +64,9 @@ class TestLiveActivityFeed(AppTestCase):
                     return [mock_friend_queue]
                 return default if default is not None else []
 
-            mock_user_notification_queues.__contains__.side_effect = contains_side_effect
+            mock_user_notification_queues.__contains__.side_effect = (
+                contains_side_effect
+            )
             mock_user_notification_queues.get.side_effect = get_side_effect
 
             existing_friendship = Friendship.query.filter(
@@ -87,10 +90,13 @@ class TestLiveActivityFeed(AppTestCase):
 
         self.login(self.user2.username, "password")
         response = self.client.post(
-            url_for('core.accept_friend_request', request_id=friend_request_id), follow_redirects=True
+            url_for("core.accept_friend_request", request_id=friend_request_id),
+            follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Friend request accepted successfully!", response.get_data(as_text=True))
+        self.assertIn(
+            "Friend request accepted successfully!", response.get_data(as_text=True)
+        )
 
         with self.app.app_context():
             activity = (
@@ -139,22 +145,33 @@ class TestLiveActivityFeed(AppTestCase):
             args, _ = mock_friend_queue.put_nowait.call_args
             sse_event_data = args[0]
 
-            self.assertEqual(sse_event_data['type'], "new_activity") # This should match emit_new_activity_event in views
+            self.assertEqual(
+                sse_event_data["type"], "new_activity"
+            )  # This should match emit_new_activity_event in views
 
             # Compare payload contents, allowing for ANY for timestamp and profile_picture if dynamic
-            payload_sent = sse_event_data['payload']
-            self.assertEqual(payload_sent['activity_id'], expected_payload['activity_id'])
-            self.assertEqual(payload_sent['user_id'], expected_payload['user_id'])
-            self.assertEqual(payload_sent['username'], expected_payload['username'])
+            payload_sent = sse_event_data["payload"]
+            self.assertEqual(
+                payload_sent["activity_id"], expected_payload["activity_id"]
+            )
+            self.assertEqual(payload_sent["user_id"], expected_payload["user_id"])
+            self.assertEqual(payload_sent["username"], expected_payload["username"])
             # self.assertEqual(payload_sent['profile_picture'], expected_payload['profile_picture']) # Can be ANY
-            self.assertEqual(payload_sent['activity_type'], expected_payload['activity_type'])
-            self.assertEqual(payload_sent['related_id'], expected_payload['related_id'])
-            self.assertEqual(payload_sent['content_preview'], expected_payload['content_preview'])
-            self.assertEqual(payload_sent['link'], expected_payload['link'])
-            self.assertEqual(payload_sent['target_user_id'], expected_payload['target_user_id'])
-            self.assertEqual(payload_sent['target_username'], expected_payload['target_username'])
-            self.assertIn('timestamp', payload_sent)
-
+            self.assertEqual(
+                payload_sent["activity_type"], expected_payload["activity_type"]
+            )
+            self.assertEqual(payload_sent["related_id"], expected_payload["related_id"])
+            self.assertEqual(
+                payload_sent["content_preview"], expected_payload["content_preview"]
+            )
+            self.assertEqual(payload_sent["link"], expected_payload["link"])
+            self.assertEqual(
+                payload_sent["target_user_id"], expected_payload["target_user_id"]
+            )
+            self.assertEqual(
+                payload_sent["target_username"], expected_payload["target_username"]
+            )
+            self.assertIn("timestamp", payload_sent)
 
             self.assertTrue(mock_check_achievements.called)
             mock_check_achievements.assert_any_call(self.user2.id)
@@ -163,9 +180,9 @@ class TestLiveActivityFeed(AppTestCase):
         self.logout()
 
     def test_live_feed_unauthorized_access(self):
-        response = self.client.get(url_for('core.live_feed'), follow_redirects=False)
+        response = self.client.get(url_for("core.live_feed"), follow_redirects=False)
         self.assertEqual(response.status_code, 302)
-        self.assertIn(url_for('core.login'), response.location)
+        self.assertIn(url_for("core.login"), response.location)
 
     def test_live_feed_authorized_access_and_data(self):
         with self.app.app_context():
@@ -219,7 +236,7 @@ class TestLiveActivityFeed(AppTestCase):
             )
 
         self.login(self.user1.username, "password")
-        response = self.client.get(url_for('core.live_feed'))
+        response = self.client.get(url_for("core.live_feed"))
         self.assertEqual(response.status_code, 200)
 
         response_data = response.get_data(as_text=True)
@@ -247,8 +264,10 @@ class TestLiveActivityFeed(AppTestCase):
                 content_preview=self_activity_post,
             )
 
-        response_after_self_activity = self.client.get(url_for('core.live_feed'))
-        response_data_after_self_activity = response_after_self_activity.get_data(as_text=True)
+        response_after_self_activity = self.client.get(url_for("core.live_feed"))
+        response_data_after_self_activity = response_after_self_activity.get_data(
+            as_text=True
+        )
         self.assertNotIn(self_activity_post, response_data_after_self_activity)
 
         self.logout()
@@ -264,7 +283,7 @@ class TestLiveActivityFeed(AppTestCase):
         post_hashtags = "test,activity"
 
         response = self.client.post(
-            url_for('core.create_post'),
+            url_for("core.create_post"),
             data={
                 "title": post_title,
                 "content": post_content,
@@ -273,7 +292,9 @@ class TestLiveActivityFeed(AppTestCase):
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Blog post created successfully!", response.get_data(as_text=True))
+        self.assertIn(
+            "Blog post created successfully!", response.get_data(as_text=True)
+        )
 
         with self.app.app_context():
             activity = (
@@ -311,7 +332,7 @@ class TestLiveActivityFeed(AppTestCase):
         self.login(self.user2.username, "password")
         comment_content = "This is a test comment on user1's post."
         response = self.client.post(
-            url_for('core.add_comment', post_id=post_by_user1_obj.id),
+            url_for("core.add_comment", post_id=post_by_user1_obj.id),
             data={"comment_content": comment_content},
             follow_redirects=True,
         )
@@ -350,7 +371,8 @@ class TestLiveActivityFeed(AppTestCase):
 
         self.login(self.user2.username, "password")
         response = self.client.post(
-            url_for('core.like_post', post_id=post_by_user1_obj.id), follow_redirects=True
+            url_for("core.like_post", post_id=post_by_user1_obj.id),
+            follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("Post liked!", response.get_data(as_text=True))
@@ -435,7 +457,9 @@ class TestLiveActivityFeed(AppTestCase):
             self.assertEqual(activity.user_id, self.user2.id)
             self.assertEqual(activity.related_id, self.original_post_id)
             self.assertEqual(activity.content_preview, self.sharing_comment_text[:100])
-            expected_link = url_for("core.view_post", post_id=self.original_post_id, _external=True)
+            expected_link = url_for(
+                "core.view_post", post_id=self.original_post_id, _external=True
+            )
             self.assertEqual(activity.link, expected_link)
             self.activity_id = activity.id
 
@@ -455,19 +479,25 @@ class TestLiveActivityFeed(AppTestCase):
         image_file = BytesIO(image_content)
         data = {"profile_pic": (image_file, "test_profile.png")}
         response = self.client.post(
-            url_for('core.upload_profile_picture'),
+            url_for("core.upload_profile_picture"),
             data=data,
             content_type="multipart/form-data",
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Profile picture uploaded successfully!", response.get_data(as_text=True))
+        self.assertIn(
+            "Profile picture uploaded successfully!", response.get_data(as_text=True)
+        )
 
         with self.app.app_context():
             user1_after_update = self.db.session.get(User, self.user1.id)
             self.assertIsNotNone(user1_after_update.profile_picture)
-            self.assertNotEqual(original_profile_pic, user1_after_update.profile_picture)
-            self.assertTrue(user1_after_update.profile_picture.startswith("/static/profile_pics/"))
+            self.assertNotEqual(
+                original_profile_pic, user1_after_update.profile_picture
+            )
+            self.assertTrue(
+                user1_after_update.profile_picture.startswith("/static/profile_pics/")
+            )
             self.assertTrue("test_profile.png" in user1_after_update.profile_picture)
 
         with self.app.app_context():
@@ -483,7 +513,9 @@ class TestLiveActivityFeed(AppTestCase):
             self.assertEqual(activity.user_id, self.user1.id)
             self.assertIsNone(activity.related_id)
             self.assertEqual(activity.content_preview, "Updated their profile picture.")
-            expected_link = url_for("core.user_profile", username=self.user1.username, _external=True)
+            expected_link = url_for(
+                "core.user_profile", username=self.user1.username, _external=True
+            )
             self.assertEqual(activity.link, expected_link)
 
             mock_emit_new_activity_event.assert_called_once_with(activity)

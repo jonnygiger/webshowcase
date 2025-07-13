@@ -10,6 +10,7 @@ group_members = db.Table(
     db.Column("group_id", db.Integer, db.ForeignKey("group.id"), primary_key=True),
 )
 
+
 class SeriesPost(db.Model):
     __tablename__ = "series_posts"
     series_id = db.Column(db.Integer, db.ForeignKey("series.id"), primary_key=True)
@@ -21,6 +22,7 @@ class SeriesPost(db.Model):
 
     def __repr__(self):
         return f"<SeriesPost series_id={self.series_id} post_id={self.post_id} order={self.order}>"
+
 
 class Group(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -55,19 +57,14 @@ class Group(db.Model):
             "creator_username": self.creator.username if self.creator else None,
         }
 
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=True)
-    password_hash = db.Column(
-        db.String(255), nullable=False
-    )
-    profile_picture = db.Column(
-        db.String(255), nullable=True
-    )
-    uploaded_images = db.Column(
-        db.Text, nullable=True
-    )
+    password_hash = db.Column(db.String(255), nullable=False)
+    profile_picture = db.Column(db.String(255), nullable=True)
+    uploaded_images = db.Column(db.Text, nullable=True)
     bio = db.Column(db.Text, nullable=True)
 
     posts = db.relationship("Post", backref="author", lazy=True)
@@ -236,34 +233,28 @@ class User(UserMixin, db.Model):
         """Returns the user's most recent status, or None if none exist."""
         return self.statuses.first()
 
+
 class UserActivity(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    activity_type = db.Column(
-        db.String(50), nullable=False
-    )
-    related_id = db.Column(
-        db.Integer, nullable=True
-    )
+    activity_type = db.Column(db.String(50), nullable=False)
+    related_id = db.Column(db.Integer, nullable=True)
     target_user_id = db.Column(
         db.Integer,
         db.ForeignKey("user.id", name="fk_user_activity_target_user_id_user"),
         nullable=True,
     )
-    content_preview = db.Column(
-        db.Text, nullable=True
-    )
+    content_preview = db.Column(db.Text, nullable=True)
     link = db.Column(db.String(255), nullable=True)
     timestamp = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
-    target_user = db.relationship(
-        "User", foreign_keys=[target_user_id]
-    )
+    target_user = db.relationship("User", foreign_keys=[target_user_id])
 
     def __repr__(self):
         return f"<UserActivity {self.id} - User {self.user_id}, Type: {self.activity_type}>"
+
 
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -329,9 +320,7 @@ class Post(db.Model):
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "last_edited": self.last_edited.isoformat() if self.last_edited else None,
             "user_id": self.user_id,
-            "author_username": (
-                self.author.username if self.author else None
-            ),
+            "author_username": (self.author.username if self.author else None),
             "hashtags": self.hashtags,
             "is_featured": self.is_featured,
             "featured_at": self.featured_at.isoformat() if self.featured_at else None,
@@ -354,6 +343,7 @@ class Post(db.Model):
                 return True
         return False
 
+
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
@@ -365,6 +355,7 @@ class Comment(db.Model):
 
     def __repr__(self):
         return f"<Comment {self.id} by User {self.user_id} on Post {self.post_id}>"
+
 
 class Like(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -379,6 +370,7 @@ class Like(db.Model):
     def __repr__(self):
         return f"<Like User {self.user_id} Post {self.post_id}>"
 
+
 class Review(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     rating = db.Column(db.Integer, nullable=False)
@@ -391,6 +383,7 @@ class Review(db.Model):
 
     def __repr__(self):
         return f"<Review {self.id} by User {self.user_id} for Post {self.post_id}>"
+
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -405,15 +398,14 @@ class Message(db.Model):
     def __repr__(self):
         return f"<Message {self.id} from {self.sender_id} to {self.receiver_id}>"
 
+
 class Poll(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     question = db.Column(db.String(255), nullable=False)
     created_at = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
-    user_id = db.Column(
-        db.Integer, db.ForeignKey("user.id"), nullable=False
-    )
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
 
     options = db.relationship(
         "PollOption", backref="poll", lazy=True, cascade="all, delete-orphan"
@@ -432,6 +424,7 @@ class Poll(db.Model):
             "options": [option.to_dict() for option in self.options],
         }
 
+
 class PollOption(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     text = db.Column(db.String(255), nullable=False)
@@ -446,6 +439,7 @@ class PollOption(db.Model):
 
     def to_dict(self):
         return {"id": self.id, "text": self.text, "vote_count": len(self.votes)}
+
 
 class PollVote(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -463,6 +457,7 @@ class PollVote(db.Model):
     def __repr__(self):
         return f"<PollVote by User {self.user_id} for Option {self.poll_option_id} in Poll {self.poll_id}>"
 
+
 class Event(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
@@ -472,9 +467,7 @@ class Event(db.Model):
     created_at = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
-    user_id = db.Column(
-        db.Integer, db.ForeignKey("user.id"), nullable=False
-    )
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
 
     rsvps = db.relationship(
         "EventRSVP", backref="event", lazy=True, cascade="all, delete-orphan"
@@ -488,20 +481,17 @@ class Event(db.Model):
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "date": (
-                self.date.isoformat() if self.date else None
-            ),
+            "date": (self.date.isoformat() if self.date else None),
             "location": self.location,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "user_id": self.user_id,
             "organizer_username": self.organizer.username if self.organizer else None,
         }
 
+
 class EventRSVP(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    status = db.Column(
-        db.String(50), nullable=False
-    )
+    status = db.Column(db.String(50), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False)
     timestamp = db.Column(
@@ -515,6 +505,7 @@ class EventRSVP(db.Model):
     def __repr__(self):
         return f"<EventRSVP User {self.user_id} for Event {self.event_id} status {self.status}>"
 
+
 class Reaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     emoji = db.Column(db.String(10), nullable=False)
@@ -527,6 +518,7 @@ class Reaction(db.Model):
     def __repr__(self):
         return f"<Reaction {self.emoji} by User {self.user_id} on Post {self.post_id}>"
 
+
 class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     message = db.Column(db.String(255), nullable=False)
@@ -536,12 +528,11 @@ class Notification(db.Model):
     type = db.Column(db.String(50), nullable=False)
     related_id = db.Column(db.Integer, nullable=True)
     is_read = db.Column(db.Boolean, default=False, nullable=False)
-    user_id = db.Column(
-        db.Integer, db.ForeignKey("user.id"), nullable=True
-    )
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
 
     def __repr__(self):
         return f"<Notification {self.id} type {self.type}>"
+
 
 class TodoItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -561,6 +552,7 @@ class TodoItem(db.Model):
 
     def __repr__(self):
         return f"<TodoItem {self.id}: {self.task[:30]}>"
+
 
 class Series(db.Model):
     __tablename__ = "series"
@@ -608,6 +600,7 @@ class Series(db.Model):
             ],
         }
 
+
 class Bookmark(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -622,6 +615,7 @@ class Bookmark(db.Model):
 
     def __repr__(self):
         return f"<Bookmark User {self.user_id} Post {self.post_id}>"
+
 
 class SharedPost(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -642,14 +636,13 @@ class SharedPost(db.Model):
     def __repr__(self):
         return f"<SharedPost id={self.id} original_post_id={self.original_post_id} shared_by_user_id={self.shared_by_user_id}>"
 
+
 class Friendship(db.Model):
     __tablename__ = "friendship"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     friend_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    status = db.Column(
-        db.String(20), nullable=False, default="pending"
-    )
+    status = db.Column(db.String(20), nullable=False, default="pending")
     timestamp = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -662,26 +655,19 @@ class Friendship(db.Model):
     def __repr__(self):
         return f"<Friendship {self.user_id} to {self.friend_id} - {self.status}>"
 
+
 class FlaggedContent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content_type = db.Column(db.String(50), nullable=False)
-    content_id = db.Column(
-        db.Integer, nullable=False
-    )
+    content_id = db.Column(db.Integer, nullable=False)
     flagged_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     reason = db.Column(db.Text, nullable=True)
-    status = db.Column(
-        db.String(50), nullable=False, default="pending"
-    )
+    status = db.Column(db.String(50), nullable=False, default="pending")
     timestamp = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
-    moderator_id = db.Column(
-        db.Integer, db.ForeignKey("user.id"), nullable=True
-    )
-    moderator_comment = db.Column(
-        db.Text, nullable=True
-    )
+    moderator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    moderator_comment = db.Column(db.Text, nullable=True)
     resolved_at = db.Column(db.DateTime, nullable=True)
 
     flagged_by_user = db.relationship(
@@ -694,17 +680,12 @@ class FlaggedContent(db.Model):
     def __repr__(self):
         return f"<FlaggedContent {self.id} ({self.content_type} {self.content_id}) by User {self.flagged_by_user_id} - Status: {self.status}>"
 
+
 class FriendPostNotification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(
-        db.Integer, db.ForeignKey("user.id"), nullable=False
-    )
-    post_id = db.Column(
-        db.Integer, db.ForeignKey("post.id"), nullable=False
-    )
-    poster_id = db.Column(
-        db.Integer, db.ForeignKey("user.id"), nullable=False
-    )
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
+    poster_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     timestamp = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -728,6 +709,7 @@ class FriendPostNotification(db.Model):
 
     def __repr__(self):
         return f"<FriendPostNotification id={self.id} user_id={self.user_id} post_id={self.post_id} poster_id={self.poster_id} is_read={self.is_read}>"
+
 
 class TrendingHashtag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -754,6 +736,7 @@ class TrendingHashtag(db.Model):
             ),
         }
 
+
 class SharedFile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sender_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -776,6 +759,7 @@ class SharedFile(db.Model):
     def __repr__(self):
         return f"<SharedFile {self.id} from {self.sender_id} to {self.receiver_id} - {self.original_filename}>"
 
+
 class UserStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -788,16 +772,13 @@ class UserStatus(db.Model):
     def __repr__(self):
         return f"<UserStatus {self.id} by User {self.user_id}>"
 
+
 class Achievement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
     description = db.Column(db.Text, nullable=False)
-    icon_url = db.Column(
-        db.String(255), nullable=True
-    )
-    criteria_type = db.Column(
-        db.String(50), nullable=False
-    )
+    icon_url = db.Column(db.String(255), nullable=True)
+    criteria_type = db.Column(db.String(50), nullable=False)
     criteria_value = db.Column(db.Integer, nullable=False)
 
     earned_by_users = db.relationship(
@@ -816,6 +797,7 @@ class Achievement(db.Model):
             "criteria_type": self.criteria_type,
             "criteria_value": self.criteria_value,
         }
+
 
 class UserAchievement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -851,36 +833,30 @@ class UserAchievement(db.Model):
             "awarded_at": self.awarded_at.isoformat(),
         }
 
+
 class PostLock(db.Model):
     __tablename__ = "post_lock"
     id = db.Column(db.Integer, primary_key=True)
     post_id = db.Column(
         db.Integer, db.ForeignKey("post.id"), nullable=False, unique=True
     )
-    user_id = db.Column(
-        db.Integer, db.ForeignKey("user.id"), nullable=False
-    )
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     locked_at = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
-    expires_at = db.Column(
-        db.DateTime, nullable=False
-    )
+    expires_at = db.Column(db.DateTime, nullable=False)
 
     user = db.relationship("User", backref=db.backref("post_locks", lazy="dynamic"))
 
     def __repr__(self):
         return f"<PostLock id={self.id} post_id={self.post_id} user_id={self.user_id} expires_at={self.expires_at}>"
 
+
 class UserBlock(db.Model):
     __tablename__ = "user_block"
     id = db.Column(db.Integer, primary_key=True)
-    blocker_id = db.Column(
-        db.Integer, db.ForeignKey("user.id"), nullable=False
-    )
-    blocked_id = db.Column(
-        db.Integer, db.ForeignKey("user.id"), nullable=False
-    )
+    blocker_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    blocked_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     timestamp = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -902,14 +878,13 @@ class UserBlock(db.Model):
     def __repr__(self):
         return f"<UserBlock blocker_id={self.blocker_id} blocked_id={self.blocked_id}>"
 
+
 class ChatRoom(db.Model):
     __tablename__ = "chat_room"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False, unique=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    creator_id = db.Column(
-        db.Integer, db.ForeignKey("user.id"), nullable=True
-    )
+    creator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
 
     messages = db.relationship(
         "ChatMessage", backref="room", lazy="dynamic", cascade="all, delete-orphan"
@@ -929,6 +904,7 @@ class ChatRoom(db.Model):
             "creator_id": self.creator_id,
             "creator_username": self.creator.username if self.creator else "System",
         }
+
 
 class ChatMessage(db.Model):
     __tablename__ = "chat_message"

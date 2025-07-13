@@ -40,9 +40,11 @@ class TestOnThisDayPage(AppTestCase):
         )
 
     def test_on_this_day_page_unauthorized(self):
-        response = self.client.get(url_for('core.on_this_day_page'), follow_redirects=False)
+        response = self.client.get(
+            url_for("core.on_this_day_page"), follow_redirects=False
+        )
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(response.location.endswith(url_for('core.login')))
+        self.assertTrue(response.location.endswith(url_for("core.login")))
 
     @patch("social_app.core.views.datetime")
     @patch("social_app.services.recommendations_service.datetime")
@@ -53,13 +55,15 @@ class TestOnThisDayPage(AppTestCase):
         mock_reco_datetime.strptime = datetime.strptime
 
         self.login(self.test_user.username, "password")
-        response = self.client.get(url_for('core.on_this_day_page'))
+        response = self.client.get(url_for("core.on_this_day_page"))
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
         self.assertIn("No posts from this day in previous years.", response_data)
         self.assertIn("No events from this day in previous years.", response_data)
-        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
+        self.assertNotIn(
+            "Nothing to show for 'On This Day' from previous years.", response_data
+        )
         self.logout()
 
     @patch("social_app.core.views.datetime")
@@ -72,14 +76,18 @@ class TestOnThisDayPage(AppTestCase):
         mock_reco_datetime.strptime = datetime.strptime
 
         self.login(self.test_user.username, "password")
-        response = self.client.get(url_for('core.on_this_day_page'))
+        response = self.client.get(url_for("core.on_this_day_page"))
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
         self.assertIn(self.post_target_correct.title, response_data)
         self.assertIn(self.event_target_correct.title, response_data)
-        self.assertRegex(response_data, f'href="[^"]*/blog/post/{self.post_target_correct.id}[^"]*"')
-        self.assertRegex(response_data, f'href="[^"]*/event/{self.event_target_correct.id}[^"]*"')
+        self.assertRegex(
+            response_data, f'href="[^"]*/blog/post/{self.post_target_correct.id}[^"]*"'
+        )
+        self.assertRegex(
+            response_data, f'href="[^"]*/event/{self.event_target_correct.id}[^"]*"'
+        )
 
         self.assertNotIn(self.post_current_year_web.title, response_data)
         self.assertNotIn(self.event_different_day_web.title, response_data)
@@ -110,19 +118,23 @@ class TestOnThisDayPage(AppTestCase):
         )
 
         self.login(test_user_for_only_posts.username, "password")
-        response = self.client.get(url_for('core.on_this_day_page'))
+        response = self.client.get(url_for("core.on_this_day_page"))
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
         self.assertIn(post_only.title, response_data)
         self.assertIn("No events from this day in previous years.", response_data)
         self.assertNotIn("No posts from this day in previous years.", response_data)
-        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
+        self.assertNotIn(
+            "Nothing to show for 'On This Day' from previous years.", response_data
+        )
         self.logout()
 
     @patch("social_app.core.views.datetime")
     @patch("social_app.services.recommendations_service.datetime")
-    def test_on_this_day_page_only_events(self, mock_reco_datetime, mock_views_datetime):
+    def test_on_this_day_page_only_events(
+        self, mock_reco_datetime, mock_views_datetime
+    ):
         mock_views_datetime.now.return_value = self.fixed_today
         mock_reco_datetime.now.return_value = self.fixed_today
         mock_reco_datetime.strptime = datetime.strptime
@@ -145,14 +157,16 @@ class TestOnThisDayPage(AppTestCase):
         )
 
         self.login(test_user_for_only_events.username, "password")
-        response = self.client.get(url_for('core.on_this_day_page'))
+        response = self.client.get(url_for("core.on_this_day_page"))
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
         self.assertIn(event_only.title, response_data)
         self.assertIn("No posts from this day in previous years.", response_data)
         self.assertNotIn("No events from this day in previous years.", response_data)
-        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
+        self.assertNotIn(
+            "Nothing to show for 'On This Day' from previous years.", response_data
+        )
         self.logout()
 
     @patch("social_app.core.views.datetime")
@@ -202,7 +216,7 @@ class TestOnThisDayPage(AppTestCase):
         )
 
         self.login(self.no_otd_content_user.username, "password")
-        response = self.client.get(url_for('core.on_this_day_page'))
+        response = self.client.get(url_for("core.on_this_day_page"))
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
@@ -212,7 +226,9 @@ class TestOnThisDayPage(AppTestCase):
         self.assertNotIn(event_prev_year_diff_day.title, response_data)
         self.assertIn("No posts from this day in previous years.", response_data)
         self.assertIn("No events from this day in previous years.", response_data)
-        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
+        self.assertNotIn(
+            "Nothing to show for 'On This Day' from previous years.", response_data
+        )
         self.logout()
 
     @patch("social_app.core.views.datetime")
@@ -251,7 +267,7 @@ class TestOnThisDayPage(AppTestCase):
         )
 
         self.login(self.wrong_day_user.username, "password")
-        response = self.client.get(url_for('core.on_this_day_page'))
+        response = self.client.get(url_for("core.on_this_day_page"))
         self.assertEqual(response.status_code, 200)
         response_data = response.get_data(as_text=True)
 
@@ -259,7 +275,9 @@ class TestOnThisDayPage(AppTestCase):
         self.assertNotIn(event_wrong_day.title, response_data)
         self.assertIn("No posts from this day in previous years.", response_data)
         self.assertIn("No events from this day in previous years.", response_data)
-        self.assertNotIn("Nothing to show for 'On This Day' from previous years.", response_data)
+        self.assertNotIn(
+            "Nothing to show for 'On This Day' from previous years.", response_data
+        )
         self.logout()
 
 
@@ -343,7 +361,7 @@ class TestOnThisDayAPI(AppTestCase):
         token = self._get_jwt_token(self.test_user.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = self.client.get(url_for('onthisdayresource'), headers=headers)
+        response = self.client.get(url_for("onthisdayresource"), headers=headers)
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
 
@@ -351,12 +369,20 @@ class TestOnThisDayAPI(AppTestCase):
         self.assertIn("on_this_day_events", data)
 
         self.assertEqual(len(data["on_this_day_posts"]), 1)
-        self.assertEqual(data["on_this_day_posts"][0]["id"], self.post_target_correct.id)
-        self.assertEqual(data["on_this_day_posts"][0]["title"], self.post_target_correct.title)
+        self.assertEqual(
+            data["on_this_day_posts"][0]["id"], self.post_target_correct.id
+        )
+        self.assertEqual(
+            data["on_this_day_posts"][0]["title"], self.post_target_correct.title
+        )
 
         self.assertEqual(len(data["on_this_day_events"]), 1)
-        self.assertEqual(data["on_this_day_events"][0]["id"], self.event_target_correct.id)
-        self.assertEqual(data["on_this_day_events"][0]["title"], self.event_target_correct.title)
+        self.assertEqual(
+            data["on_this_day_events"][0]["id"], self.event_target_correct.id
+        )
+        self.assertEqual(
+            data["on_this_day_events"][0]["title"], self.event_target_correct.title
+        )
 
         post_ids_in_response = {p["id"] for p in data["on_this_day_posts"]}
         self.assertNotIn(self.post_current_year.id, post_ids_in_response)
@@ -367,7 +393,9 @@ class TestOnThisDayAPI(AppTestCase):
 
     @patch("social_app.services.recommendations_service.datetime")
     @patch("social_app.api.routes.datetime")
-    def test_on_this_day_no_content_api(self, mock_api_routes_datetime, mock_reco_datetime):
+    def test_on_this_day_no_content_api(
+        self, mock_api_routes_datetime, mock_reco_datetime
+    ):
         no_content_date = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         mock_reco_datetime.now.return_value = no_content_date
         mock_reco_datetime.strptime = datetime.strptime
@@ -376,7 +404,7 @@ class TestOnThisDayAPI(AppTestCase):
         token = self._get_jwt_token(self.test_user.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = self.client.get(url_for('onthisdayresource'), headers=headers)
+        response = self.client.get(url_for("onthisdayresource"), headers=headers)
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
 
@@ -384,7 +412,7 @@ class TestOnThisDayAPI(AppTestCase):
         self.assertEqual(len(data["on_this_day_events"]), 0)
 
     def test_on_this_day_unauthenticated(self):
-        response = self.client.get(url_for('onthisdayresource'))
+        response = self.client.get(url_for("onthisdayresource"))
         self.assertEqual(response.status_code, 401)
         data = json.loads(response.data)
         self.assertEqual(data["msg"], "Missing Authorization Header")

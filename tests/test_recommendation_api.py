@@ -34,7 +34,9 @@ class TestRecommendationAPI(AppTestCase):
         self.event_by_user2 = self._create_db_event(
             user_id=self.user2_id,
             title="User2's Event",
-            date_str=(datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d"),
+            date_str=(datetime.now(timezone.utc) + timedelta(days=30)).strftime(
+                "%Y-%m-%d"
+            ),
         )
         self.poll_by_user2 = self._create_db_poll(
             user_id=self.user2_id, question="User2's Poll?"
@@ -206,7 +208,6 @@ class TestRecommendationAPI(AppTestCase):
         self.assertTrue(len(suggested_groups) > 0)
 
         found_group_in_recommendations = any(
-            rec_group.get("id") == group_by_user3.id
-            for rec_group in suggested_groups
+            rec_group.get("id") == group_by_user3.id for rec_group in suggested_groups
         )
         self.assertTrue(found_group_in_recommendations)

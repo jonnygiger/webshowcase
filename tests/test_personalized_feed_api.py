@@ -4,7 +4,17 @@ from unittest.mock import patch, ANY
 from datetime import datetime, timedelta, timezone
 
 from social_app.models.db_models import Friendship
-from social_app.models.db_models import User, Post, Event, Poll, PollOption, Like, Comment, EventRSVP, PollVote
+from social_app.models.db_models import (
+    User,
+    Post,
+    Event,
+    Poll,
+    PollOption,
+    Like,
+    Comment,
+    EventRSVP,
+    PollVote,
+)
 from tests.test_base import AppTestCase
 from flask import url_for
 
@@ -15,7 +25,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         super().setUp()
 
     def test_personalized_feed_unauthorized(self):
-        response = self.client.get(url_for('personalizedfeedresource'))
+        response = self.client.get(url_for("personalizedfeedresource"))
         self.assertEqual(response.status_code, 401)
         data = json.loads(response.data)
         self.assertIn("msg", data)
@@ -50,7 +60,9 @@ class TestPersonalizedFeedAPI(AppTestCase):
         event1_by_user3 = self._create_db_event(
             user_id=self.user3_id,
             title="Event by User3, User2 Attending",
-            date_str=(datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d"),
+            date_str=(datetime.now(timezone.utc) + timedelta(days=1)).strftime(
+                "%Y-%m-%d"
+            ),
         )
         self._create_db_event_rsvp(
             user_id=self.user2_id, event_id=event1_by_user3.id, status="Attending"
@@ -74,14 +86,16 @@ class TestPersonalizedFeedAPI(AppTestCase):
         token = self._get_jwt_token(self.user1.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = self.client.get(url_for('personalizedfeedresource'), headers=headers)
+        response = self.client.get(url_for("personalizedfeedresource"), headers=headers)
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertIn("feed_items", data)
         feed_items = data["feed_items"]
         self.assertIsInstance(feed_items, list)
 
-        self.assertEqual(len(feed_items), 4, f"Expected 4 items, got {len(feed_items)}: {feed_items}")
+        self.assertEqual(
+            len(feed_items), 4, f"Expected 4 items, got {len(feed_items)}: {feed_items}"
+        )
 
         found_post = False
         found_event = False
@@ -139,7 +153,7 @@ class TestPersonalizedFeedAPI(AppTestCase):
         token = self._get_jwt_token(self.user3.username, "password")
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = self.client.get(url_for('personalizedfeedresource'), headers=headers)
+        response = self.client.get(url_for("personalizedfeedresource"), headers=headers)
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertIn("feed_items", data)
@@ -164,11 +178,15 @@ class TestPersonalizedFeedAPI(AppTestCase):
             user_id=self.user1_id,
             title="User1 Own Event",
             description="Event by User1",
-            date_str=(datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d"),
+            date_str=(datetime.now(timezone.utc) + timedelta(days=1)).strftime(
+                "%Y-%m-%d"
+            ),
         )
         with self.app.app_context():
             event_by_user1_merged = self.db.session.merge(event_by_user1)
-            event_by_user1_merged.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+            event_by_user1_merged.created_at = datetime.now(timezone.utc) - timedelta(
+                hours=3
+            )
             self.db.session.commit()
             event_by_user1 = event_by_user1_merged
 
@@ -187,7 +205,9 @@ class TestPersonalizedFeedAPI(AppTestCase):
         )
         with self.app.app_context():
             poll_by_user1_merged = self.db.session.merge(poll_by_user1)
-            poll_by_user1_merged.created_at = datetime.now(timezone.utc) - timedelta(hours=1)
+            poll_by_user1_merged.created_at = datetime.now(timezone.utc) - timedelta(
+                hours=1
+            )
             self.db.session.commit()
             poll_by_user1 = poll_by_user1_merged
 
@@ -210,7 +230,9 @@ class TestPersonalizedFeedAPI(AppTestCase):
             content="Content by User3",
             timestamp=datetime.now(timezone.utc) - timedelta(minutes=30),
         )
-        self.like_on_user3_post_timestamp = datetime.now(timezone.utc) - timedelta(minutes=15)
+        self.like_on_user3_post_timestamp = datetime.now(timezone.utc) - timedelta(
+            minutes=15
+        )
         self._create_db_like(
             user_id=self.user2_id,
             post_id=post_by_user3.id,
@@ -231,7 +253,11 @@ class TestPersonalizedFeedAPI(AppTestCase):
         data = json.loads(response.data)
         self.assertIn("feed_items", data)
         feed_items = data["feed_items"]
-        self.assertEqual(len(feed_items), 1, f"Expected 1 item in feed, but got {len(feed_items)}: {feed_items}")
+        self.assertEqual(
+            len(feed_items),
+            1,
+            f"Expected 1 item in feed, but got {len(feed_items)}: {feed_items}",
+        )
 
         if len(feed_items) == 1:
             control_item = feed_items[0]
@@ -262,7 +288,9 @@ class TestPersonalizedFeedAPI(AppTestCase):
         token_user1 = self._get_jwt_token(self.user1.username, "password")
         headers_user1 = {"Authorization": f"Bearer {token_user1}"}
 
-        response = self.client.get(url_for('personalizedfeedresource'), headers=headers_user1)
+        response = self.client.get(
+            url_for("personalizedfeedresource"), headers=headers_user1
+        )
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         feed_items = data.get("feed_items", [])
@@ -270,7 +298,10 @@ class TestPersonalizedFeedAPI(AppTestCase):
         for item in feed_items:
             if item.get("type") == "post" and item.get("id") == self.target_post_id:
                 found_post_in_feed = True
-                self.assertIn(f"Liked by your friend {self.user2.username}", item.get("reason", ""))
+                self.assertIn(
+                    f"Liked by your friend {self.user2.username}",
+                    item.get("reason", ""),
+                )
                 break
         self.assertTrue(found_post_in_feed)
 
@@ -291,7 +322,9 @@ class TestPersonalizedFeedAPI(AppTestCase):
                 self.db.session.delete(friendship_record)
                 self.db.session.commit()
 
-        response_after_unfriend = self.client.get(url_for('personalizedfeedresource'), headers=headers_user1)
+        response_after_unfriend = self.client.get(
+            url_for("personalizedfeedresource"), headers=headers_user1
+        )
         self.assertEqual(response_after_unfriend.status_code, 200)
         data_after_unfriend = json.loads(response_after_unfriend.data)
         feed_items_after_unfriend = data_after_unfriend.get("feed_items", [])
@@ -312,7 +345,9 @@ class TestPersonalizedFeedAPI(AppTestCase):
         )
         token_user1 = self._get_jwt_token(self.user1.username, "password")
         headers_user1 = {"Authorization": f"Bearer {token_user1}"}
-        response = self.client.get(url_for('personalizedfeedresource'), headers=headers_user1)
+        response = self.client.get(
+            url_for("personalizedfeedresource"), headers=headers_user1
+        )
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         feed_items = data.get("feed_items", [])
@@ -342,7 +377,9 @@ class TestPersonalizedFeedAPI(AppTestCase):
                 self.db.session.delete(friendship_record)
                 self.db.session.commit()
 
-        response_after_unfriend = self.client.get(url_for('personalizedfeedresource'), headers=headers_user1)
+        response_after_unfriend = self.client.get(
+            url_for("personalizedfeedresource"), headers=headers_user1
+        )
         self.assertEqual(response_after_unfriend.status_code, 200)
         data_after_unfriend = json.loads(response_after_unfriend.data)
         feed_items_after_unfriend = data_after_unfriend.get("feed_items", [])

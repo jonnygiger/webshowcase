@@ -16,9 +16,7 @@ class TestChatAPI(AppTestCase):
             self.api_user = self._create_db_user(
                 username="chat_api_user", password="password"
             )
-            self.access_token = create_access_token(
-                identity=str(self.api_user.id)
-            )
+            self.access_token = create_access_token(identity=str(self.api_user.id))
             self.auth_headers = {"Authorization": f"Bearer {self.access_token}"}
 
             test_room_obj = self._create_db_chat_room(

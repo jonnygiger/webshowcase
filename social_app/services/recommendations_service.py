@@ -151,9 +151,7 @@ def suggest_posts_to_read(user_id, limit=5):
                 continue
             if post.id in user_liked_post_ids:
                 continue
-            if (
-                post.id in user_commented_post_ids
-            ):
+            if post.id in user_commented_post_ids:
                 continue
             valid_post_ids.append(post_id)
 
@@ -167,9 +165,7 @@ def suggest_posts_to_read(user_id, limit=5):
     SCORE_TOTAL_LIKES_FACTOR = 0.1
     SCORE_TOTAL_COMMENTS_FACTOR = 0.2
 
-    user_bookmarked_post_ids = {
-        bookmark.post_id for bookmark in current_user.bookmarks
-    }
+    user_bookmarked_post_ids = {bookmark.post_id for bookmark in current_user.bookmarks}
 
     all_posts = Post.query.all()
 
@@ -263,16 +259,12 @@ def suggest_posts_to_read(user_id, limit=5):
         if reason_parts:
             reason_string = ". ".join(reason_parts) + "."
         else:
-            if recency_score > (
-                SCORE_FRIEND_LIKE + SCORE_FRIEND_COMMENT
-            ):
+            if recency_score > (SCORE_FRIEND_LIKE + SCORE_FRIEND_COMMENT):
                 reason_string = "Trending post."
             elif (
                 SCORE_TOTAL_LIKES_FACTOR * total_likes
                 + SCORE_TOTAL_COMMENTS_FACTOR * total_comments
-            ) > (
-                SCORE_FRIEND_LIKE + SCORE_FRIEND_COMMENT
-            ):
+            ) > (SCORE_FRIEND_LIKE + SCORE_FRIEND_COMMENT):
                 reason_string = "Popular post."
             else:
                 reason_string = "Suggested for you."
@@ -675,15 +667,11 @@ def suggest_trending_posts(user_id, limit=5, since_days=7):
         score += comments_map.get(post.id, 0) * WEIGHT_RECENT_COMMENT
         score += shares_map.get(post.id, 0) * WEIGHT_RECENT_SHARE
 
-        post_age_days = (
-            datetime.utcnow() - post.timestamp
-        ).days
+        post_age_days = (datetime.utcnow() - post.timestamp).days
         if post_age_days < 0:
             post_age_days = 0
 
-        if (
-            post_age_days <= since_days
-        ):
+        if post_age_days <= since_days:
             age_factor_bonus = (
                 ((since_days - post_age_days) / float(since_days))
                 * TRENDING_POST_AGE_FACTOR_SCALE
@@ -889,9 +877,7 @@ def get_personalized_feed_posts(user_id, limit=20):
                 "reason": reason,
             }
 
-    trending = suggest_trending_posts(
-        user_id, limit=limit * 2, since_days=14
-    )
+    trending = suggest_trending_posts(user_id, limit=limit * 2, since_days=14)
     for post in trending:
         if post.id in excluded_post_ids:
             continue

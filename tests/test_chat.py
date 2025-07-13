@@ -78,56 +78,57 @@ class ChatTestCase(AppTestCase):
             self.assertEqual(data["messages"][0]["content"], "Hello from user1")
             self.assertEqual(data["messages"][0]["user_id"], self.user1_id)
 
-    @patch("social_app.api.routes.current_app.chat_room_listeners")
-    def test_sse_send_and_receive_message(self, mock_chat_room_listeners):
+    def test_sse_send_and_receive_message(self):
         with self.app.app_context():
-            # 1. Create a room via API
-            room_response = self.client.post(
-                "/api/chat/rooms",
-                json={"name": "SSE Test Room"},
-                headers={"Authorization": f"Bearer {self.user1_token}"},
-            )
-            self.assertEqual(room_response.status_code, 201)
-            room_data = room_response.get_json()["chat_room"]
-            room_id = room_data["id"]
+            # Mock chat_room_listeners within the app context
+            with patch.object(current_app, 'chat_room_listeners', MagicMock()) as mock_chat_room_listeners:
+                # 1. Create a room via API
+                room_response = self.client.post(
+                    "/api/chat/rooms",
+                    json={"name": "SSE Test Room"},
+                    headers={"Authorization": f"Bearer {self.user1_token}"},
+                )
+                self.assertEqual(room_response.status_code, 201)
+                room_data = room_response.get_json()["chat_room"]
+                room_id = room_data["id"]
 
-            # 2. Setup mock SSE listener for this room
-            mock_room_queue = MagicMock()
-            # Simulate that when the room_id is looked up, our mock_queue is returned
-            mock_chat_room_listeners.get.return_value = [mock_room_queue]
-            # Simulate that the room_id is in the listeners
-            mock_chat_room_listeners.__contains__.return_value = True
+                # 2. Setup mock SSE listener for this room
+                mock_room_queue = MagicMock()
+                # Simulate that when the room_id is looked up, our mock_queue is returned
+                mock_chat_room_listeners.get.return_value = [mock_room_queue]
+                # Simulate that the room_id is in the listeners
+                mock_chat_room_listeners.__contains__.return_value = True
 
-            # 3. User1 sends a message to this room via API
-            test_message = "Hello from SSE test!"
-            send_message_response = self.client.post(
-                f"/api/chat/rooms/{room_id}/messages",
-                json={"message": test_message},
-                headers={"Authorization": f"Bearer {self.user1_token}"},
-            )
-            self.assertEqual(send_message_response.status_code, 201)
-            sent_message_data = send_message_response.get_json()["chat_message"]
+                # 3. User1 sends a message to this room via API
+                test_message = "Hello from SSE test!"
+                send_message_response = self.client.post(
+                    f"/api/chat/rooms/{room_id}/messages",
+                    json={"message": test_message},
+                    headers={"Authorization": f"Bearer {self.user1_token}"},
+                )
+                self.assertEqual(send_message_response.status_code, 201)
+                sent_message_data = send_message_response.get_json()["chat_message"]
 
-            # 4. Verify the message was put into the mock queue for SSE dispatch
-            mock_chat_room_listeners.__contains__.assert_called_with(room_id)
-            mock_chat_room_listeners.get.assert_called_with(room_id)
-            mock_room_queue.put_nowait.assert_called_once()
+                # 4. Verify the message was put into the mock queue for SSE dispatch
+                mock_chat_room_listeners.__contains__.assert_called_with(room_id)
+                mock_chat_room_listeners.get.assert_called_with(room_id)
+                mock_room_queue.put_nowait.assert_called_once()
 
-            args, _ = mock_room_queue.put_nowait.call_args
-            sse_event_data = args[0]
+                args, _ = mock_room_queue.put_nowait.call_args
+                sse_event_data = args[0]
 
-            self.assertEqual(sse_event_data["type"], "new_chat_message")
-            payload = sse_event_data["payload"]
-            self.assertEqual(payload["id"], sent_message_data["id"])
-            self.assertEqual(payload["message"], test_message)
-            self.assertEqual(payload["user_id"], self.user1_id)
-            self.assertEqual(payload["username"], self.user1.username)
-            self.assertEqual(payload["room_id"], room_id)
+                self.assertEqual(sse_event_data["type"], "new_chat_message")
+                payload = sse_event_data["payload"]
+                self.assertEqual(payload["id"], sent_message_data["id"])
+                self.assertEqual(payload["message"], test_message)
+                self.assertEqual(payload["user_id"], self.user1_id)
+                self.assertEqual(payload["username"], self.user1.username)
+                self.assertEqual(payload["room_id"], room_id)
 
-            # 5. Verify message is in DB
-            message_in_db = db.session.get(ChatMessage, sent_message_data["id"])
-            self.assertIsNotNone(message_in_db)
-            self.assertEqual(message_in_db.message, test_message)
+                # 5. Verify message is in DB
+                message_in_db = db.session.get(ChatMessage, sent_message_data["id"])
+                self.assertIsNotNone(message_in_db)
+                self.assertEqual(message_in_db.message, test_message)
 
     @patch("social_app.api.routes.dispatch_to_chat_room_listeners")
     def test_message_delivery_to_sse_listeners(self, mock_dispatch):

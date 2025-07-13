@@ -336,6 +336,7 @@ class Post(db.Model):
             "is_featured": self.is_featured,
             "featured_at": self.featured_at.isoformat() if self.featured_at else None,
             "image_url": self.image_url,
+            "group_id": self.group_id,
         }
 
     def to_dict_simple(self):

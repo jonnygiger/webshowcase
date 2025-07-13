@@ -75,7 +75,7 @@ class ChatTestCase(AppTestCase):
             data = response.get_json()
             self.assertIn("messages", data)
             self.assertEqual(len(data["messages"]), 1)
-            self.assertEqual(data["messages"][0]["message"], "Hello from user1")
+            self.assertEqual(data["messages"][0]["content"], "Hello from user1")
             self.assertEqual(data["messages"][0]["user_id"], self.user1_id)
 
     @patch("social_app.api.routes.current_app.chat_room_listeners")

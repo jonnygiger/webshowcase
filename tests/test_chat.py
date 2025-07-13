@@ -1,6 +1,7 @@
 from social_app import db
 from social_app.models.db_models import ChatRoom, ChatMessage
 from tests.test_base import AppTestCase
+from flask import current_app
 from flask_jwt_extended import create_access_token
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock

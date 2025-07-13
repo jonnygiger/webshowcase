@@ -156,7 +156,7 @@ class ChatTestCase(AppTestCase):
                 # The API route iterates over current_app.chat_room_listeners[room_id] which is a list of queues.
 
                 listening_queues_for_room = [mock_user1_queue, mock_user3_queue]
-                mock_chat_room_listeners.get.return_value = listening_queues_for_room
+                mock_chat_room_listeners.__getitem__.return_value = listening_queues_for_room
                 mock_chat_room_listeners.__contains__.return_value = True # room_id is in listeners
 
                 # 3. User2 sends a message to this room via API
@@ -171,7 +171,7 @@ class ChatTestCase(AppTestCase):
 
                 # 4. Verify the message was put into User1's mock queue
                 mock_chat_room_listeners.__contains__.assert_called_with(room_id)
-                mock_chat_room_listeners.get.assert_called_with(room_id)
+                mock_chat_room_listeners.__getitem__.assert_called_with(room_id)
 
                 mock_user1_queue.put_nowait.assert_called_once()
                 args_user1, _ = mock_user1_queue.put_nowait.call_args

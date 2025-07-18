@@ -444,26 +444,6 @@ class AppTestCase(unittest.TestCase):
         self.db.session.refresh(user)
         return user
 
-    def _create_db_series(
-        self,
-        user_id,
-        title="Test Series",
-        description="A series for testing.",
-        created_at=None,
-        updated_at=None,
-    ):
-        with self.app.app_context():
-            series = Series(
-                user_id=user_id,
-                title=title,
-                description=description,
-                created_at=created_at or datetime.now(timezone.utc),
-                updated_at=updated_at or datetime.now(timezone.utc),
-            )
-            self.db.session.add(series)
-            self.db.session.commit()
-            return self.db.session.get(Series, series.id)
-
     def _create_db_bookmark(self, user_id, post_id, timestamp=None):
         with self.app.app_context():
             bookmark = Bookmark(

@@ -178,3 +178,15 @@ def custom_url_for_assets(endpoint, **values):
 def custom_url_for_primary(endpoint, **values):
     """Custom URL helper for primary application links. Currently a passthrough to flask.url_for."""
     return url_for(endpoint, **values)
+
+
+def is_armstrong_number(n):
+    """
+    Checks if a number is an Armstrong number.
+    An Armstrong number is a number that is the sum of its own digits each raised to the power of the number of digits.
+    """
+    if not isinstance(n, int) or n < 0:
+        return False
+    s = str(n)
+    num_digits = len(s)
+    return n == sum(int(digit) ** num_digits for digit in s)

@@ -1,6 +1,7 @@
-import os
-import sys
+import unittest
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+print("Executing tests/__init__.py")
+
+class TestInit(unittest.TestCase):
+    def test_init(self):
+        self.assertTrue(True)

@@ -59,7 +59,7 @@ class TestPollAPI(AppTestCase):
 
 class TestEventAPI(AppTestCase):
 
-    def test_get_event_list_api_placeholder(self):
+    def test_get_event_list_api(self):
         with self.app.app_context():
             token = self._get_jwt_token(self.user1.username, "password")
             headers = {"Authorization": f"Bearer {token}"}
@@ -70,7 +70,8 @@ class TestEventAPI(AppTestCase):
             response = self.client.get("/api/events", headers=headers)
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
-            self.assertIn("message", data)
+            self.assertIn("events", data)
+            self.assertEqual(len(data["events"]), 2)
 
 
 class TestTrendingHashtagsAPI(AppTestCase):
@@ -88,7 +89,8 @@ class TestTrendingHashtagsAPI(AppTestCase):
             response = self.client.get("/api/trending_hashtags", headers=headers)
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
-            self.assertIn("message", data)
+            self.assertIn("trending_hashtags", data)
+            self.assertEqual(len(data["trending_hashtags"]), 2)
 
 
 class TestPostLockAPI(AppTestCase):
@@ -374,12 +376,14 @@ class TestApiEndpoints(AppTestCase):
 
     def test_get_events(self):
         with self.app.app_context():
+            self._create_db_event(self.user1_id, title="Event Alpha")
             token = self._get_jwt_token(self.user1.username, "password")
             headers = {"Authorization": f"Bearer {token}"}
             response = self.client.get("/api/events", headers=headers)
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
-            self.assertIn("message", data)
+            self.assertIn("events", data)
+            self.assertEqual(len(data["events"]), 1)
 
     def test_get_event(self):
         with self.app.app_context():
@@ -401,14 +405,19 @@ class TestApiEndpoints(AppTestCase):
             data = response.get_json()
             self.assertEqual(data["message"], "RSVP status updated successfully.")
 
-    def test_get_trending_hashtags(self):
+    @patch("social_app.services.recommendations_service.get_trending_hashtags")
+    def test_get_trending_hashtags(self, mock_get_trending_hashtags):
         with self.app.app_context():
+            mock_get_trending_hashtags.return_value = [
+                TrendingHashtag(hashtag="#test1", score=10.0, rank=1),
+            ]
             token = self._get_jwt_token(self.user1.username, "password")
             headers = {"Authorization": f"Bearer {token}"}
             response = self.client.get("/api/trending_hashtags", headers=headers)
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
-            self.assertIn("message", data)
+            self.assertIn("trending_hashtags", data)
+            self.assertEqual(len(data["trending_hashtags"]), 1)
 
     def test_get_files(self):
         with self.app.app_context():

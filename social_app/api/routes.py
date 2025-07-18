@@ -464,7 +464,10 @@ class EventListResource(Resource):
 
 class EventResource(Resource):
     def get(self, event_id):
-        return {"message": f"Event resource placeholder for event_id {event_id}"}, 200
+        event = db.session.get(Event, event_id)
+        if not event:
+            return {"message": "Event not found"}, 404
+        return {"event": event.to_dict()}, 200
 
 
 class RecommendationResource(Resource):

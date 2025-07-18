@@ -459,7 +459,8 @@ class PostResource(Resource):
 
 class EventListResource(Resource):
     def get(self):
-        return {"message": "Event list resource placeholder"}, 200
+        events = Event.query.all()
+        return {"events": [event.to_dict() for event in events]}, 200
 
 
 class EventResource(Resource):
@@ -821,9 +822,12 @@ class PersonalizedFeedResource(Resource):
         return {"feed_items": feed_items_list}, 200
 
 
+from ..services.recommendations_service import get_trending_hashtags
+
 class TrendingHashtagsResource(Resource):
     def get(self):
-        return {"message": "Trending hashtags resource placeholder"}, 200
+        trending_hashtags = get_trending_hashtags()
+        return {"trending_hashtags": [hashtag.to_dict() for hashtag in trending_hashtags]}, 200
 
 
 from ..services.recommendations_service import get_on_this_day_content

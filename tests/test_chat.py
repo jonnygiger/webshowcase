@@ -112,7 +112,7 @@ class ChatTestCase(AppTestCase):
 
                 # 4. Verify the message was put into the mock queue for SSE dispatch
                 mock_chat_room_listeners.__contains__.assert_called_with(room_id)
-                mock_chat_room_listeners.get.assert_called_with(room_id)
+                mock_chat_room_listeners.get.assert_called_with(room_id, [])
                 mock_room_queue.put_nowait.assert_called_once()
 
                 args, _ = mock_room_queue.put_nowait.call_args

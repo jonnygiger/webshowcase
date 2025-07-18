@@ -281,5 +281,154 @@ class TestSharedFileAPI(AppTestCase):
             self.assertIn("File not found", data["message"])
 
 
+class TestApiEndpoints(AppTestCase):
+    def test_get_users(self):
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get("/api/users", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIsInstance(data, list)
+
+    def test_get_user(self):
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get(f"/api/users/{self.user1.id}", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data["username"], self.user1.username)
+
+    def test_get_posts(self):
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get("/api/posts", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIsInstance(data, list)
+
+    def test_get_post(self):
+        with self.app.app_context():
+            post = self._create_db_post(self.user1.id, "Test Post", "Test Content")
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get(f"/api/posts/{post.id}", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data["title"], "Test Post")
+
+    def test_get_post_comments(self):
+        with self.app.app_context():
+            post = self._create_db_post(self.user1.id, "Test Post", "Test Content")
+            self._create_db_comment(self.user2.id, post.id, "Test Comment")
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get(f"/api/posts/{post.id}/comments", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIsInstance(data, list)
+            self.assertEqual(len(data), 1)
+            self.assertEqual(data[0]["content"], "Test Comment")
+
+    def test_like_post(self):
+        with self.app.app_context():
+            post = self._create_db_post(self.user1.id, "Test Post", "Test Content")
+            token = self._get_jwt_token(self.user2.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.post(f"/api/posts/{post.id}/like", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data["message"], "Post liked successfully.")
+
+    def test_get_polls(self):
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get("/api/polls", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIsInstance(data, list)
+
+    def test_get_poll(self):
+        with self.app.app_context():
+            poll = self._create_db_poll(self.user1.id, "Test Poll?")
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get(f"/api/polls/{poll.id}", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data["question"], "Test Poll?")
+
+    def test_vote_poll(self):
+        with self.app.app_context():
+            poll = self._create_db_poll(self.user1.id, "Test Poll?")
+            option_id = poll.options[0].id
+            token = self._get_jwt_token(self.user2.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.post(f"/api/polls/{poll.id}/vote", headers=headers, json={"option_id": option_id})
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data["message"], "Vote cast successfully.")
+
+    def test_get_events(self):
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get("/api/events", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIn("message", data)
+
+    def test_get_event(self):
+        with self.app.app_context():
+            event = self._create_db_event(self.user1.id, "Test Event")
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get(f"/api/events/{event.id}", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data["title"], "Test Event")
+
+    def test_rsvp_event(self):
+        with self.app.app_context():
+            event = self._create_db_event(self.user1.id, "Test Event")
+            token = self._get_jwt_token(self.user2.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.post(f"/api/events/{event.id}/rsvp", headers=headers, json={"status": "Attending"})
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data["message"], "RSVP status updated successfully.")
+
+    def test_get_trending_hashtags(self):
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get("/api/trending_hashtags", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIn("message", data)
+
+    def test_get_files(self):
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get("/api/files", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIsInstance(data, list)
+
+    def test_get_file(self):
+        with self.app.app_context():
+            shared_file = self._create_db_shared_file_for_api_test(self.user1, self.user2)
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get(f"/api/files/{shared_file.id}", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data["original_filename"], "test_file.txt")
+
+
 if __name__ == "__main__":
     unittest.main()

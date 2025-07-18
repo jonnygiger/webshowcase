@@ -273,5 +273,72 @@ class TestViewRoutes(AppTestCase):
             self.logout()
 
 
+class TestViewRoutesSimple(AppTestCase):
+    def test_root_url(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+
+    def test_login_page(self):
+        response = self.client.get("/login")
+        self.assertEqual(response.status_code, 200)
+
+    def test_register_page(self):
+        response = self.client.get("/register")
+        self.assertEqual(response.status_code, 200)
+
+    def test_user_profile_page(self):
+        with self.app.app_context():
+            user = self._create_db_user("testuser", "password", "test@example.com")
+            self.login(user.username, "password")
+            response = self.client.get(f"/user/{user.username}")
+            self.assertEqual(response.status_code, 200)
+
+    def test_edit_profile_page(self):
+        with self.app.app_context():
+            user = self._create_db_user("testuser", "password", "test@example.com")
+            self.login(user.username, "password")
+            response = self.client.get("/edit_profile")
+            self.assertEqual(response.status_code, 200)
+
+    def test_blog_page(self):
+        response = self.client.get("/blog")
+        self.assertEqual(response.status_code, 200)
+
+    def test_create_post_page(self):
+        with self.app.app_context():
+            user = self._create_db_user("testuser", "password", "test@example.com")
+            self.login(user.username, "password")
+            response = self.client.get("/create_post")
+            self.assertEqual(response.status_code, 200)
+
+    def test_view_post_page(self):
+        with self.app.app_context():
+            user = self._create_db_user("testuser", "password", "test@example.com")
+            post = self._create_db_post(user.id, "Test Post", "Test Content")
+            response = self.client.get(f"/post/{post.id}")
+            self.assertEqual(response.status_code, 200)
+
+    def test_edit_post_page(self):
+        with self.app.app_context():
+            user = self._create_db_user("testuser", "password", "test@example.com")
+            post = self._create_db_post(user.id, "Test Post", "Test Content")
+            self.login(user.username, "password")
+            response = self.client.get(f"/edit_post/{post.id}")
+            self.assertEqual(response.status_code, 200)
+
+    def test_friends_list_page(self):
+        with self.app.app_context():
+            user = self._create_db_user("testuser", "password", "test@example.com")
+            self.login(user.username, "password")
+            response = self.client.get("/friends")
+            self.assertEqual(response.status_code, 200)
+
+    def test_friend_requests_page(self):
+        with self.app.app_context():
+            user = self._create_db_user("testuser", "password", "test@example.com")
+            self.login(user.username, "password")
+            response = self.client.get("/friend_requests")
+            self.assertEqual(response.status_code, 200)
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,18 +1,21 @@
-import os
 import unittest
-import json
-import io
-from unittest.mock import patch, call, ANY
-
-from datetime import (
-    datetime,
-    timedelta,
-)
-from werkzeug.security import generate_password_hash
-
+from flask import Flask
+from app import create_app, db
 from tests.test_base import AppTestCase
 
+class TestApp(AppTestCase):
+    def test_app_creation(self):
+        """Test if the Flask app is created and is an instance of Flask."""
+        self.assertIsInstance(self.app, Flask)
 
-class TestMinimalSanityCheck(unittest.TestCase):
-    def test_absolutely_nothing(self):
-        self.assertTrue(True)
+    def test_app_config(self):
+        """Test if the app is in 'testing' mode."""
+        self.assertTrue(self.app.config['TESTING'])
+
+    def test_database_initialization(self):
+        """Test if the database is initialized and tables are created."""
+        with self.app.app_context():
+            # The tables should be created as part of the app setup in AppTestCase
+            # We can check if a known table exists
+            from app.models import User  # Import a model to check its table
+            self.assertTrue(db.engine.has_table(User.__tablename__))

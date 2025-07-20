@@ -293,7 +293,7 @@ class TestCollaborativeEditing(AppTestCase):
 
     def test_sse_edit_post_by_lock_owner(self):  # Renamed test
         with self.app.app_context():
-            with patch("social_app.core.views.current_app.post_event_listeners") as mock_post_event_listeners:
+            with patch("social_app.core.views.dispatch_sse_event") as mock_dispatch_sse_event:
                 token = self._get_jwt_token(self.collaborator.username, "password")
                 headers = {"Authorization": f"Bearer {token}"}
 
@@ -302,11 +302,6 @@ class TestCollaborativeEditing(AppTestCase):
                     f"/api/posts/{self.test_post.id}/lock", headers=headers
                 )
                 self.assertEqual(response_lock.status_code, 200)
-
-                # Setup a mock queue for SSE
-                mock_queue = MagicMock()
-                mock_post_event_listeners.get.return_value = [mock_queue]
-                mock_post_event_listeners.__contains__.return_value = True
 
                 # Perform edit via HTTP POST (simulating form submission)
                 edit_payload = {
@@ -318,28 +313,24 @@ class TestCollaborativeEditing(AppTestCase):
                 response_edit = self.client.post(
                     url_for("core.edit_post", post_id=self.test_post.id),
                     data=edit_payload,
+                    follow_redirects=True,
                 )
                 self.assertEqual(
                     response_edit.status_code, 200
-                )  # Redirect after successful post
+                )
 
                 updated_post = self.db.session.get(Post, self.test_post.id)
                 self.assertIsNotNone(updated_post)
                 self.assertEqual(updated_post.content, edit_payload["content"])
 
                 # Check if SSE was dispatched
-                # This part needs careful implementation based on how SSE is dispatched in views.py
-                # Assuming views.py uses something like:
-                # current_app.post_event_listeners[post_id].put_nowait(sse_data)
+                mock_dispatch_sse_event.assert_called_once()
+                args, _ = mock_dispatch_sse_event.call_args
 
-                self.assertTrue(mock_post_event_listeners.__contains__.called)
-                mock_queue.put_nowait.assert_called_once()
+                self.assertEqual(args[0], self.test_post.id)
+                self.assertEqual(args[1], "post_content_updated")
 
-                args, _ = mock_queue.put_nowait.call_args
-                sse_event_data = args[0]
-
-                self.assertEqual(sse_event_data["type"], "post_content_updated")
-                payload = sse_event_data["payload"]
+                payload = args[2]
                 self.assertEqual(payload["post_id"], self.test_post.id)
                 self.assertEqual(payload["new_content"], edit_payload["content"])
                 self.assertEqual(payload["edited_by_user_id"], self.collaborator.id)
@@ -401,11 +392,7 @@ class TestCollaborativeEditing(AppTestCase):
 
     def test_sse_lock_acquired_broadcast_from_api(self):
         with self.app.app_context():
-            with patch("social_app.core.views.current_app.post_event_listeners") as mock_post_event_listeners:
-                mock_queue = MagicMock()
-                mock_post_event_listeners.get.return_value = [mock_queue]
-                mock_post_event_listeners.__contains__.return_value = True
-
+            with patch("social_app.api.routes.dispatch_sse_event") as mock_dispatch_sse_event:
                 token = self._get_jwt_token(self.collaborator.username, "password")
                 headers = {"Authorization": f"Bearer {token}"}
 
@@ -414,14 +401,14 @@ class TestCollaborativeEditing(AppTestCase):
                 )
 
                 self.assertEqual(response.status_code, 200)
-                time.sleep(0.1)  # Allow time for SSE dispatch if async
 
-                mock_queue.put_nowait.assert_called_once()
-                args, _ = mock_queue.put_nowait.call_args
-                sse_event_data = args[0]
+                mock_dispatch_sse_event.assert_called_once()
 
-                self.assertEqual(sse_event_data["type"], "post_lock_changed")
-                payload = sse_event_data["payload"]
+                args, _ = mock_dispatch_sse_event.call_args
+                self.assertEqual(args[0], self.test_post.id)
+                self.assertEqual(args[1], "post_lock_changed")
+
+                payload = args[2]
                 self.assertEqual(payload["post_id"], self.test_post.id)
                 self.assertEqual(payload["user_id"], self.collaborator.id)
                 self.assertEqual(payload["username"], self.collaborator.username)
@@ -429,11 +416,7 @@ class TestCollaborativeEditing(AppTestCase):
 
     def test_sse_lock_released_broadcast_from_api(self):
         with self.app.app_context():
-            with patch("social_app.core.views.current_app.post_event_listeners") as mock_post_event_listeners_release:
-                mock_queue_release = MagicMock()
-                mock_post_event_listeners_release.get.return_value = [mock_queue_release]
-                mock_post_event_listeners_release.__contains__.return_value = True
-
+            with patch("social_app.api.routes.dispatch_sse_event") as mock_dispatch_sse_event:
                 token_collaborator = self._get_jwt_token(self.collaborator.username, "password")
                 headers_collaborator = {"Authorization": f"Bearer {token_collaborator}"}
                 response_acquire = self.client.post(
@@ -441,21 +424,20 @@ class TestCollaborativeEditing(AppTestCase):
                 )
                 self.assertEqual(response_acquire.status_code, 200)
 
-                # Reset mock for the release part if the same mock is used or ensure fresh mock
-                mock_queue_release.reset_mock()  # Reset the specific queue mock
+                mock_dispatch_sse_event.reset_mock()
 
                 response_release = self.client.delete(
                     f"/api/posts/{self.test_post.id}/lock", headers=headers_collaborator
                 )
                 self.assertEqual(response_release.status_code, 200)
-                time.sleep(0.1)  # Allow time for SSE dispatch
 
-                mock_queue_release.put_nowait.assert_called_once()
-                args_release, _ = mock_queue_release.put_nowait.call_args
-                sse_event_data_release = args_release[0]
+                mock_dispatch_sse_event.assert_called_once()
 
-                self.assertEqual(sse_event_data_release["type"], "post_lock_changed")
-                payload_release = sse_event_data_release["payload"]
-                self.assertEqual(payload_release["post_id"], self.test_post.id)
-                self.assertEqual(payload_release["user_id"], self.collaborator.id)
-                self.assertEqual(payload_release["username"], self.collaborator.username)
+                args, _ = mock_dispatch_sse_event.call_args
+                self.assertEqual(args[0], self.test_post.id)
+                self.assertEqual(args[1], "post_lock_changed")
+
+                payload = args[2]
+                self.assertEqual(payload["post_id"], self.test_post.id)
+                self.assertEqual(payload["user_id"], self.collaborator.id)
+                self.assertEqual(payload["username"], self.collaborator.username)

@@ -15,7 +15,7 @@ from tests.test_base import AppTestCase
 from werkzeug.security import generate_password_hash
 
 
-class TestViewRoutes(AppTestCase):
+class TestViews(AppTestCase):
 
     def test_user_profile_friendship_status_display(self):
         with self.app.app_context():
@@ -272,7 +272,6 @@ class TestViewRoutes(AppTestCase):
             self.logout()
 
 
-class TestViewRoutesSimple(AppTestCase):
     def test_root_url(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)

@@ -319,8 +319,8 @@ class PostLockResource(Resource):
             for q_item in listeners:
                 try:
                     sse_data = {
-                        "type": "post_lock_changed",
-                        "payload": lock_payload_for_sse,
+                        "event": "post_lock_changed",
+                        "data": lock_payload_for_sse,
                     }
                     q_item.put_nowait(sse_data)
                 except Exception as e:
@@ -392,8 +392,8 @@ class PostLockResource(Resource):
             for q_item in listeners:
                 try:
                     sse_data = {
-                        "type": "post_lock_changed",
-                        "payload": release_payload_for_sse,
+                        "event": "post_lock_changed",
+                        "data": release_payload_for_sse,
                     }
                     q_item.put_nowait(sse_data)
                 except Exception as e:

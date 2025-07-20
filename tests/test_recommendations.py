@@ -13,7 +13,7 @@ from social_app.models.db_models import User, Post, Like, Comment, SharedPost, B
 from social_app.services.recommendations_service import suggest_trending_posts
 
 
-class TestSuggestTrendingPosts(AppTestCase):
+class TestRecommendations(AppTestCase):
     def setUp(self):
         super().setUp()
 

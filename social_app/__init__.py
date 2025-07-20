@@ -82,7 +82,6 @@ def create_app(config_class=None):
     login_manager.init_app(app)
     login_manager.login_view = "core.login"
 
-    app.sse_listeners = {}
     app.user_notification_queues = {}
     app.chat_room_listeners = {}
     app.post_event_listeners = {}

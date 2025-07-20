@@ -9,7 +9,7 @@ from werkzeug.security import generate_password_hash
 from flask import url_for
 
 
-class TestOnThisDayPage(AppTestCase):
+class TestOnThisDay(AppTestCase):
 
     def setUp(self):
         super().setUp()
@@ -37,6 +37,24 @@ class TestOnThisDayPage(AppTestCase):
             user_id=self.test_user.id,
             title="Different Day Web Event",
             date_str="2022-10-27",
+        )
+        self.post_current_year = self._create_db_post(
+            user_id=self.test_user.id,
+            title="Current Year Post",
+            content="Content from Oct 26, 2023",
+            timestamp=datetime(2023, 10, 26, 11, 0, 0),
+        )
+        self.post_different_day = self._create_db_post(
+            user_id=self.test_user.id,
+            title="Different Day Post",
+            content="Content from Oct 27, 2022",
+            timestamp=datetime(2022, 10, 27, 12, 0, 0),
+        )
+        self.event_current_year = self._create_db_event(
+            user_id=self.test_user.id,
+            title="Current Year Event",
+            date_str="2023-10-26",
+            description="Event on Oct 26, 2023",
         )
 
     def test_on_this_day_page_unauthorized(self):
@@ -286,75 +304,6 @@ class TestOnThisDayPage(AppTestCase):
                     "Nothing to show for 'On This Day' from previous years.", response_data
                 )
                 self.logout()
-
-
-class TestOnThisDayAPI(AppTestCase):
-
-    def setUp(self):
-        super().setUp()
-        self.test_user = self.user1
-        self.fixed_today = datetime(2023, 10, 26, 12, 0, 0)
-
-        self.post_target_correct = self._create_db_post(
-            user_id=self.test_user.id,
-            title="Correct Post",
-            content="Content from Oct 26, 2022",
-            timestamp=datetime(2022, 10, 26, 10, 0, 0),
-        )
-        self.post_current_year = self._create_db_post(
-            user_id=self.test_user.id,
-            title="Current Year Post",
-            content="Content from Oct 26, 2023",
-            timestamp=datetime(2023, 10, 26, 11, 0, 0),
-        )
-        self.post_different_day = self._create_db_post(
-            user_id=self.test_user.id,
-            title="Different Day Post",
-            content="Content from Oct 27, 2022",
-            timestamp=datetime(2022, 10, 27, 12, 0, 0),
-        )
-        self.post_different_month = self._create_db_post(
-            user_id=self.test_user.id,
-            title="Different Month Post",
-            content="Content from Nov 26, 2022",
-            timestamp=datetime(2022, 11, 26, 12, 0, 0),
-        )
-        self.post_by_other_user_correct_date = self._create_db_post(
-            user_id=self.user2_id,
-            title="Other User Correct Date Post",
-            content="Content from Oct 26, 2022 by other user",
-            timestamp=datetime(2022, 10, 26, 10, 0, 0),
-        )
-        self.event_target_correct = self._create_db_event(
-            user_id=self.test_user.id,
-            title="Correct Event",
-            date_str="2022-10-26",
-            description="Event on Oct 26, 2022",
-        )
-        self.event_current_year = self._create_db_event(
-            user_id=self.test_user.id,
-            title="Current Year Event",
-            date_str="2023-10-26",
-            description="Event on Oct 26, 2023",
-        )
-        self.event_different_day = self._create_db_event(
-            user_id=self.test_user.id,
-            title="Different Day Event",
-            date_str="2022-10-27",
-            description="Event on Oct 27, 2022",
-        )
-        self.event_different_month = self._create_db_event(
-            user_id=self.test_user.id,
-            title="Different Month Event",
-            date_str="2022-11-26",
-            description="Event on Nov 26, 2022",
-        )
-        self.event_by_other_user_correct_date = self._create_db_event(
-            user_id=self.user2_id,
-            title="Other User Correct Date Event",
-            date_str="2022-10-26",
-            description="Event on Oct 26, 2022 by other user",
-        )
 
     def test_on_this_day_with_content_and_filtering(self):
         with self.app.app_context():

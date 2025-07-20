@@ -16,8 +16,8 @@ class TestApp(AppTestCase):
 
     def test_database_initialization(self):
         """Test if the database is initialized and tables are created."""
-        with self.app.app_context():
-            # The tables should be created as part of the app setup in AppTestCase
-            # We can check if a known table exists
-            from social_app.models.db_models import User  # Import a model to check its table
-            self.assertTrue(db.engine.has_table(User.__tablename__))
+        from sqlalchemy import inspect
+        from social_app.models.db_models import User, Post
+        inspector = inspect(db.engine)
+        self.assertTrue(inspector.has_table(User.__tablename__))
+        self.assertTrue(inspector.has_table(Post.__tablename__))

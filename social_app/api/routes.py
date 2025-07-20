@@ -900,6 +900,13 @@ class SeriesResource(Resource):
 
 class SharedFileResource(Resource):
     @jwt_required()
+    def get(self, file_id):
+        shared_file = db.session.get(SharedFile, file_id)
+        if not shared_file:
+            return {"message": "File not found"}, 404
+        return shared_file.to_dict(), 200
+
+    @jwt_required()
     def delete(self, file_id):
         current_user_id_str = get_jwt_identity()
         try:

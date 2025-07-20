@@ -496,3 +496,25 @@ class AppTestCase(unittest.TestCase):
             if friendship:
                 self.db.session.delete(friendship)
                 self.db.session.commit()
+
+    def _create_db_shared_file(
+        self,
+        sender,
+        receiver,
+        original_filename="test_file.txt",
+        saved_filename="saved_test_file.txt",
+    ):
+        upload_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
+        dummy_file_path = os.path.join(upload_folder, saved_filename)
+        with open(dummy_file_path, "w") as f:
+            f.write("dummy content")
+
+        shared_file = SharedFile(
+            sender_id=sender.id,
+            receiver_id=receiver.id,
+            original_filename=original_filename,
+            saved_filename=saved_filename,
+        )
+        self.db.session.add(shared_file)
+        self.db.session.commit()
+        return shared_file

@@ -46,7 +46,7 @@ class TestApiEdgeCases(AppTestCase):
             invalid_option_id = 99999
 
             response = self.client.post(
-                url_for("pollvoteresource", poll_id=poll_obj.id),
+                f"/api/polls/{poll_obj.id}/vote",
                 headers=headers_voter,
                 json={"option_id": invalid_option_id},
             )

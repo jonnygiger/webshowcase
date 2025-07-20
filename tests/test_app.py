@@ -1,7 +1,9 @@
 import unittest
 from flask import Flask
-from app import create_app, db
+from social_app import create_app, db
 from tests.test_base import AppTestCase
+
+print("Executing tests/test_app.py")
 
 class TestApp(AppTestCase):
     def test_app_creation(self):
@@ -17,5 +19,5 @@ class TestApp(AppTestCase):
         with self.app.app_context():
             # The tables should be created as part of the app setup in AppTestCase
             # We can check if a known table exists
-            from app.models import User  # Import a model to check its table
+            from social_app.models.db_models import User  # Import a model to check its table
             self.assertTrue(db.engine.has_table(User.__tablename__))

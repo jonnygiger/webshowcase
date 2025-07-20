@@ -87,12 +87,13 @@ class TestViewRoutes(AppTestCase):
 
     def test_moderation_dashboard_access(self):
         with self.app.app_context():
+            # Test that a non-moderator user is redirected
             self.login(self.user1.username, "password")
             response = self.client.get(
                 url_for("core.moderation_dashboard"), follow_redirects=False
             )
             self.assertEqual(response.status_code, 302)
-            self.assertIn(url_for("core.login"), response.location)
+            self.assertIn(url_for("core.hello_world"), response.location) # Redirects to home
             self.logout()
 
             moderator = self._create_db_user(
@@ -172,6 +173,8 @@ class TestViewRoutes(AppTestCase):
             response_receiver = self.client.get(
                 url_for("core.download_shared_file", shared_file_id=shared_file.id)
             )
+            self.assertEqual(response_receiver.status_code, 302)
+            response_receiver = self.client.get(response_receiver.location, follow_redirects=True)
             self.assertEqual(response_receiver.status_code, 200)
             self.assertIn(
                 "attachment; filename=test_auth_file.txt",
@@ -197,7 +200,7 @@ class TestViewRoutes(AppTestCase):
             )
             self.assertEqual(response_other.status_code, 302)
 
-            response_other_redirected = self.client.get(response_other.location)
+            response_other_redirected = self.client.get(response_other.location, follow_redirects=True)
             self.assertEqual(response_other_redirected.status_code, 200)
             self.assertIn(
                 "You are not authorized to download this file.",

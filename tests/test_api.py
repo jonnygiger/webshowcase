@@ -217,35 +217,13 @@ class TestSharedFileAPI(AppTestCase):
                     print(f"Failed to delete {file_path} during teardown. Reason: {e}")
         super().tearDown()
 
-    def _create_db_shared_file_for_api_test(
-        self,
-        sender,
-        receiver,
-        original_filename="test_file.txt",
-        saved_filename="saved_test_file.txt",
-    ):
-        upload_folder = self.app.config["SHARED_FILES_UPLOAD_FOLDER"]
-        dummy_file_path = os.path.join(upload_folder, saved_filename)
-        with open(dummy_file_path, "w") as f:
-            f.write("dummy content")
-
-        shared_file = SharedFile(
-            sender_id=sender.id,
-            receiver_id=receiver.id,
-            original_filename=original_filename,
-            saved_filename=saved_filename,
-        )
-        db.session.add(shared_file)
-        db.session.commit()
-        return shared_file
-
     def test_delete_shared_file_unauthorized_user(self):
         with self.app.app_context():
             sender = self.user1
             receiver = self.user2
             unauthorized_user = self.user3
 
-            shared_file = self._create_db_shared_file_for_api_test(
+            shared_file = self._create_db_shared_file(
                 sender=sender, receiver=receiver
             )
 
@@ -281,6 +259,16 @@ class TestSharedFileAPI(AppTestCase):
             self.assertEqual(response.status_code, 404)
             data = response.get_json()
             self.assertIn("File not found", data["message"])
+
+    def test_get_file(self):
+        with self.app.app_context():
+            shared_file = self._create_db_shared_file(self.user1, self.user2)
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get(f"/api/files/{shared_file.id}", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertEqual(data["original_filename"], "test_file.txt")
 
 
 class TestApiEndpoints(AppTestCase):
@@ -428,15 +416,6 @@ class TestApiEndpoints(AppTestCase):
             data = response.get_json()
             self.assertIsInstance(data, list)
 
-    def test_get_file(self):
-        with self.app.app_context():
-            shared_file = self._create_db_shared_file_for_api_test(self.user1, self.user2)
-            token = self._get_jwt_token(self.user1.username, "password")
-            headers = {"Authorization": f"Bearer {token}"}
-            response = self.client.get(f"/api/files/{shared_file.id}", headers=headers)
-            self.assertEqual(response.status_code, 200)
-            data = response.get_json()
-            self.assertEqual(data["original_filename"], "test_file.txt")
 
 
 if __name__ == "__main__":

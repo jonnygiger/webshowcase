@@ -33,8 +33,12 @@ class UserListResource(Resource):
 
 
 class UserResource(Resource):
+    @jwt_required()
     def get(self, user_id):
-        return {"message": f"User resource placeholder for user_id {user_id}"}, 200
+        user = db.session.get(User, user_id)
+        if not user:
+            return {"message": "User not found"}, 404
+        return user.to_dict(), 200
 
 
 class PostListResource(Resource):
@@ -152,7 +156,7 @@ class PollListResource(Resource):
     @jwt_required()
     def get(self):
         polls = Poll.query.all()
-        return [poll.to_dict() for poll in polls], 200
+        return {"polls": [poll.to_dict() for poll in polls]}, 200
 
     @jwt_required()
     def post(self):
@@ -401,8 +405,12 @@ class PostLockResource(Resource):
 
 
 class PostResource(Resource):
+    @jwt_required()
     def get(self, post_id):
-        return {"message": f"Post resource placeholder for post_id {post_id}"}, 200
+        post = db.session.get(Post, post_id)
+        if not post:
+            return {"message": "Post not found"}, 404
+        return post.to_dict(), 200
 
     # It is recommended to add a PUT/PATCH method here for updating post content
     # and include the SSE dispatch logic for "post_content_updated" within it.
@@ -541,6 +549,8 @@ class RecommendationResource(Resource):
         raw_groups = suggest_groups_to_join(user_id, limit=limit)
         raw_events = suggest_events_to_attend(user_id, limit=limit)
         raw_users = suggest_users_to_follow(user_id, limit=limit)
+        from ..services.recommendations_service import suggest_polls_to_vote
+
         raw_polls = suggest_polls_to_vote(user_id, limit=limit)
 
         suggested_posts_data = []

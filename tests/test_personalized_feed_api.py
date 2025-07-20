@@ -25,11 +25,12 @@ class TestPersonalizedFeedAPI(AppTestCase):
         super().setUp()
 
     def test_personalized_feed_unauthorized(self):
-        response = self.client.get(url_for("personalizedfeedresource"))
-        self.assertEqual(response.status_code, 401)
-        data = json.loads(response.data)
-        self.assertIn("msg", data)
-        self.assertEqual(data["msg"], "Missing Authorization Header")
+        with self.app.app_context():
+            response = self.client.get(url_for("personalizedfeedresource"))
+            self.assertEqual(response.status_code, 401)
+            data = json.loads(response.data)
+            self.assertIn("msg", data)
+            self.assertEqual(data["msg"], "Missing Authorization Header")
 
     def test_personalized_feed_success_and_structure(self):
         self._create_db_friendship(self.user1, self.user2, status="accepted")
@@ -83,12 +84,15 @@ class TestPersonalizedFeedAPI(AppTestCase):
             )
             poll1_by_user2 = poll_for_options
 
-        token = self._get_jwt_token(self.user1.username, "password")
-        headers = {"Authorization": f"Bearer {token}"}
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user1.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
 
-        response = self.client.get(url_for("personalizedfeedresource"), headers=headers)
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
+            response = self.client.get(
+                url_for("personalizedfeedresource"), headers=headers
+            )
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
         self.assertIn("feed_items", data)
         feed_items = data["feed_items"]
         self.assertIsInstance(feed_items, list)
@@ -150,14 +154,17 @@ class TestPersonalizedFeedAPI(AppTestCase):
                 self.assertGreaterEqual(timestamps[i], timestamps[i + 1])
 
     def test_personalized_feed_empty(self):
-        token = self._get_jwt_token(self.user3.username, "password")
-        headers = {"Authorization": f"Bearer {token}"}
+        with self.app.app_context():
+            token = self._get_jwt_token(self.user3.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
 
-        response = self.client.get(url_for("personalizedfeedresource"), headers=headers)
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        self.assertIn("feed_items", data)
-        self.assertEqual(data["feed_items"], [])
+            response = self.client.get(
+                url_for("personalizedfeedresource"), headers=headers
+            )
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
+            self.assertIn("feed_items", data)
+            self.assertEqual(data["feed_items"], [])
 
     def test_personalized_feed_excludes_own_content_interacted_by_friends(self):
         self._create_db_friendship(self.user1, self.user2, status="accepted")
@@ -277,115 +284,119 @@ class TestPersonalizedFeedAPI(AppTestCase):
                 self.assertNotEqual(item["id"], self.excluded_poll_id)
 
     def test_feed_excludes_content_interacted_by_removed_friend(self):
-        self._create_db_friendship(self.user1, self.user2, status="accepted")
-
-        post_by_user3 = self._create_db_post(
-            user_id=self.user3_id, title="Post by User3, to be liked by User2"
-        )
-        self.target_post_id = post_by_user3.id
-        self._create_db_like(user_id=self.user2_id, post_id=self.target_post_id)
-
-        token_user1 = self._get_jwt_token(self.user1.username, "password")
-        headers_user1 = {"Authorization": f"Bearer {token_user1}"}
-
-        response = self.client.get(
-            url_for("personalizedfeedresource"), headers=headers_user1
-        )
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        feed_items = data.get("feed_items", [])
-        found_post_in_feed = False
-        for item in feed_items:
-            if item.get("type") == "post" and item.get("id") == self.target_post_id:
-                found_post_in_feed = True
-                self.assertIn(
-                    f"Liked by your friend {self.user2.username}",
-                    item.get("reason", ""),
-                )
-                break
-        self.assertTrue(found_post_in_feed)
-
         with self.app.app_context():
-            friendship_record = Friendship.query.filter(
-                (
-                    (Friendship.user_id == self.user1_id)
-                    & (Friendship.friend_id == self.user2_id)
-                )
-                | (
-                    (Friendship.user_id == self.user2_id)
-                    & (Friendship.friend_id == self.user1_id)
-                ),
-                Friendship.status == "accepted",
-            ).first()
-            self.assertIsNotNone(friendship_record)
-            if friendship_record:
-                self.db.session.delete(friendship_record)
-                self.db.session.commit()
+            self._create_db_friendship(self.user1, self.user2, status="accepted")
 
-        response_after_unfriend = self.client.get(
-            url_for("personalizedfeedresource"), headers=headers_user1
-        )
-        self.assertEqual(response_after_unfriend.status_code, 200)
-        data_after_unfriend = json.loads(response_after_unfriend.data)
-        feed_items_after_unfriend = data_after_unfriend.get("feed_items", [])
-        found_post_after_unfriend = False
-        for item in feed_items_after_unfriend:
-            if item.get("type") == "post" and item.get("id") == self.target_post_id:
-                found_post_after_unfriend = True
-                break
-        self.assertFalse(found_post_after_unfriend)
+            post_by_user3 = self._create_db_post(
+                user_id=self.user3_id, title="Post by User3, to be liked by User2"
+            )
+            self.target_post_id = post_by_user3.id
+            self._create_db_like(user_id=self.user2_id, post_id=self.target_post_id)
+
+            token_user1 = self._get_jwt_token(self.user1.username, "password")
+            headers_user1 = {"Authorization": f"Bearer {token_user1}"}
+
+            with self.app.app_context():
+                response = self.client.get(
+                    url_for("personalizedfeedresource"), headers=headers_user1
+                )
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
+            feed_items = data.get("feed_items", [])
+            found_post_in_feed = False
+            for item in feed_items:
+                if item.get("type") == "post" and item.get("id") == self.target_post_id:
+                    found_post_in_feed = True
+                    self.assertIn(
+                        f"Liked by your friend {self.user2.username}",
+                        item.get("reason", ""),
+                    )
+                    break
+            self.assertTrue(found_post_in_feed)
+
+            with self.app.app_context():
+                friendship_record = Friendship.query.filter(
+                    (
+                        (Friendship.user_id == self.user1_id)
+                        & (Friendship.friend_id == self.user2_id)
+                    )
+                    | (
+                        (Friendship.user_id == self.user2_id)
+                        & (Friendship.friend_id == self.user1_id)
+                    ),
+                    Friendship.status == "accepted",
+                ).first()
+                self.assertIsNotNone(friendship_record)
+                if friendship_record:
+                    self.db.session.delete(friendship_record)
+                    self.db.session.commit()
+
+            response_after_unfriend = self.client.get(
+                url_for("personalizedfeedresource"), headers=headers_user1
+            )
+            self.assertEqual(response_after_unfriend.status_code, 200)
+            data_after_unfriend = json.loads(response_after_unfriend.data)
+            feed_items_after_unfriend = data_after_unfriend.get("feed_items", [])
+            found_post_after_unfriend = False
+            for item in feed_items_after_unfriend:
+                if item.get("type") == "post" and item.get("id") == self.target_post_id:
+                    found_post_after_unfriend = True
+                    break
+            self.assertFalse(found_post_after_unfriend)
 
     def test_feed_excludes_posts_from_removed_friend(self):
-        self._create_db_friendship(self.user1, self.user2, status="accepted")
-        post_by_user2 = self._create_db_post(
-            user_id=self.user2_id,
-            title="Post by User2",
-            content="Content by User2, friend of User1",
-            timestamp=datetime.now(timezone.utc) - timedelta(hours=1),
-        )
-        token_user1 = self._get_jwt_token(self.user1.username, "password")
-        headers_user1 = {"Authorization": f"Bearer {token_user1}"}
-        response = self.client.get(
-            url_for("personalizedfeedresource"), headers=headers_user1
-        )
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        feed_items = data.get("feed_items", [])
-        found_post_while_friend = False
-        for item in feed_items:
-            if item.get("type") == "post" and item.get("id") == post_by_user2.id:
-                found_post_while_friend = True
-                self.assertIn(self.user2.username, item.get("reason", ""))
-                break
-        self.assertTrue(found_post_while_friend)
-
         with self.app.app_context():
-            friendship_record = Friendship.query.filter(
-                (
-                    (Friendship.user_id == self.user1_id)
-                    & (Friendship.friend_id == self.user2_id)
-                    & (Friendship.status == "accepted")
+            self._create_db_friendship(self.user1, self.user2, status="accepted")
+            post_by_user2 = self._create_db_post(
+                user_id=self.user2_id,
+                title="Post by User2",
+                content="Content by User2, friend of User1",
+                timestamp=datetime.now(timezone.utc) - timedelta(hours=1),
+            )
+            token_user1 = self._get_jwt_token(self.user1.username, "password")
+            headers_user1 = {"Authorization": f"Bearer {token_user1}"}
+            with self.app.app_context():
+                response = self.client.get(
+                    url_for("personalizedfeedresource"), headers=headers_user1
                 )
-                | (
-                    (Friendship.user_id == self.user2_id)
-                    & (Friendship.friend_id == self.user1_id)
-                    & (Friendship.status == "accepted")
-                )
-            ).first()
-            self.assertIsNotNone(friendship_record)
-            if friendship_record:
-                self.db.session.delete(friendship_record)
-                self.db.session.commit()
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
+            feed_items = data.get("feed_items", [])
+            found_post_while_friend = False
+            for item in feed_items:
+                if item.get("type") == "post" and item.get("id") == post_by_user2.id:
+                    found_post_while_friend = True
+                    self.assertIn(self.user2.username, item.get("reason", ""))
+                    break
+            self.assertTrue(found_post_while_friend)
 
-        response_after_unfriend = self.client.get(
-            url_for("personalizedfeedresource"), headers=headers_user1
-        )
-        self.assertEqual(response_after_unfriend.status_code, 200)
-        data_after_unfriend = json.loads(response_after_unfriend.data)
-        feed_items_after_unfriend = data_after_unfriend.get("feed_items", [])
-        found_post_after_unfriend = False
-        for item in feed_items_after_unfriend:
-            if item.get("type") == "post" and item.get("id") == post_by_user2.id:
-                found_post_after_unfriend = True
-                break
-        self.assertFalse(found_post_after_unfriend)
+            with self.app.app_context():
+                friendship_record = Friendship.query.filter(
+                    (
+                        (Friendship.user_id == self.user1_id)
+                        & (Friendship.friend_id == self.user2_id)
+                        & (Friendship.status == "accepted")
+                    )
+                    | (
+                        (Friendship.user_id == self.user2_id)
+                        & (Friendship.friend_id == self.user1_id)
+                        & (Friendship.status == "accepted")
+                    )
+                ).first()
+                self.assertIsNotNone(friendship_record)
+                if friendship_record:
+                    self.db.session.delete(friendship_record)
+                    self.db.session.commit()
+
+            response_after_unfriend = self.client.get(
+                url_for("personalizedfeedresource"), headers=headers_user1
+            )
+            self.assertEqual(response_after_unfriend.status_code, 200)
+            data_after_unfriend = json.loads(response_after_unfriend.data)
+            feed_items_after_unfriend = data_after_unfriend.get("feed_items", [])
+            found_post_after_unfriend = False
+            for item in feed_items_after_unfriend:
+                if item.get("type") == "post" and item.get("id") == post_by_user2.id:
+                    found_post_after_unfriend = True
+                    break
+            self.assertFalse(found_post_after_unfriend)

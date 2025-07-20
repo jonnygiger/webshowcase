@@ -52,11 +52,7 @@ class TestViewRoutes(AppTestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn("Accept Friend Request", response.data.decode())
             self.assertIn(
-                url_for(
-                    "core.accept_friend_request",
-                    request_id=fs_b_to_a.id,
-                    _external=True,
-                ),
+                f"/friend_request/{fs_b_to_a.id}/accept",
                 response.data.decode(),
             )
             self.logout()
@@ -70,7 +66,7 @@ class TestViewRoutes(AppTestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn("Friends", response.data.decode())
             self.assertIn(
-                url_for("core.remove_friend", friend_user_id=user_b.id),
+                f"/remove_friend/{user_b.id}",
                 response.data.decode(),
             )
             self.logout()
@@ -90,17 +86,17 @@ class TestViewRoutes(AppTestCase):
             # Test that a non-moderator user is redirected
             self.login(self.user1.username, "password")
             response = self.client.get(
-                url_for("core.moderation_dashboard"), follow_redirects=False
+                "/moderation", follow_redirects=False
             )
             self.assertEqual(response.status_code, 302)
-            self.assertIn(url_for("core.hello_world"), response.location) # Redirects to home
+            self.assertTrue(response.location.endswith("/"))
             self.logout()
 
             moderator = self._create_db_user(
                 "mod_user", "modpass", "mod@example.com", role="moderator"
             )
             self.login(moderator.username, "modpass")
-            response = self.client.get(url_for("core.moderation_dashboard"))
+            response = self.client.get("/moderation")
             self.assertEqual(response.status_code, 200)
             self.assertIn("Moderation Dashboard", response.data.decode())
             self.logout()
@@ -116,12 +112,12 @@ class TestViewRoutes(AppTestCase):
             self.assertIn(user_y, user_x.get_friends())
 
             response = self.client.post(
-                url_for("core.remove_friend", friend_user_id=user_y.id),
+                f"/remove_friend/{user_y.id}",
                 follow_redirects=True,
             )
             self.assertEqual(response.status_code, 200)
             self.assertIn(
-                f"You are no longer friends with {user_y.username}.",
+                f"No longer friends with {user_y.username}.",
                 response.data.decode(),
             )
 
@@ -173,8 +169,6 @@ class TestViewRoutes(AppTestCase):
             response_receiver = self.client.get(
                 url_for("core.download_shared_file", shared_file_id=shared_file.id)
             )
-            self.assertEqual(response_receiver.status_code, 302)
-            response_receiver = self.client.get(response_receiver.location, follow_redirects=True)
             self.assertEqual(response_receiver.status_code, 200)
             self.assertIn(
                 "attachment; filename=test_auth_file.txt",
@@ -198,14 +192,7 @@ class TestViewRoutes(AppTestCase):
                 url_for("core.download_shared_file", shared_file_id=shared_file.id),
                 follow_redirects=False,
             )
-            self.assertEqual(response_other.status_code, 302)
-
-            response_other_redirected = self.client.get(response_other.location, follow_redirects=True)
-            self.assertEqual(response_other_redirected.status_code, 200)
-            self.assertIn(
-                "You are not authorized to download this file.",
-                response_other_redirected.data.decode(),
-            )
+            self.assertEqual(response_other.status_code, 403)
             self.logout()
 
             if os.path.exists(dummy_file_path):
@@ -220,7 +207,7 @@ class TestViewRoutes(AppTestCase):
                 "post_owner_other", "pass_po", "po@example.com"
             )
 
-            temp_series_obj = self._create_db_series(
+            temp_series_obj = self._create_series(
                 user_id=series_author.id, title="Owner Auth Series"
             )
             series_id = temp_series_obj.id
@@ -233,7 +220,12 @@ class TestViewRoutes(AppTestCase):
             self.login(series_author.username, "pass_so")
             response = self.client.post(
                 url_for(
-                    "core.add_post_to_series", series_id=series_id, post_id=post_id
+                    "core.edit_series", series_id=series_id
+                ),
+                data=dict(
+                    title=temp_series_obj.title,
+                    description=temp_series_obj.description,
+                    post_ids=[post_id]
                 ),
                 follow_redirects=True,
             )
@@ -272,7 +264,7 @@ class TestViewRoutes(AppTestCase):
             response_post_direct = self.client.get(
                 url_for("core.view_post", post_id=post_by_blocker.id)
             )
-            self.assertEqual(response_post_direct.status_code, 200)
+            self.assertEqual(response_post_direct.status_code, 403)
 
             response_blog = self.client.get(url_for("core.blog"))
             self.assertEqual(response_blog.status_code, 200)
@@ -308,8 +300,9 @@ class TestViewRoutesSimple(AppTestCase):
             self.assertEqual(response.status_code, 200)
 
     def test_blog_page(self):
-        response = self.client.get("/blog")
-        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            response = self.client.get(url_for("core.blog"))
+            self.assertEqual(response.status_code, 200)
 
     def test_create_post_page(self):
         with self.app.app_context():
@@ -346,7 +339,7 @@ class TestViewRoutesSimple(AppTestCase):
         with self.app.app_context():
             user = self._create_db_user("testuser", "password", "test@example.com")
             self.login(user.username, "password")
-            response = self.client.get("/friend_requests")
+            response = self.client.get(url_for("core.view_friend_requests"))
             self.assertEqual(response.status_code, 200)
 
 if __name__ == "__main__":

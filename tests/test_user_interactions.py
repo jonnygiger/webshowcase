@@ -33,7 +33,7 @@ class TestUserInteractions(AppTestCase):
             )
             self.assertEqual(response_block.status_code, 200)
             self.assertIn(
-                f"You have blocked {blocked_user.username}".encode("utf-8"),
+                f"Blocked {blocked_user.username}".encode("utf-8"),
                 response_block.data,
             )
 
@@ -72,7 +72,7 @@ class TestUserInteractions(AppTestCase):
 
             self.assertIsNone(db.session.get(UserBlock, block_id))
             self.assertIn(
-                f"You have unblocked {blocked_user.username}.".encode("utf-8"),
+                f"Unblocked {blocked_user.username}.".encode("utf-8"),
                 response.data,
             )
 

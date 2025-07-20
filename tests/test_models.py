@@ -315,7 +315,7 @@ class TestSeriesModel(AppTestCase):
     def test_series_posts_property_order(self):
         with self.app.app_context():
             author = self._create_db_user(username="series_post_order_author")
-            series = self._create_db_series(user_id=author.id, title="Ordered Series")
+            series = self._create_series(user_id=author.id, title="Ordered Series")
 
             post1 = self._create_db_post(user_id=author.id, title="Post Alpha")
             post2 = self._create_db_post(user_id=author.id, title="Post Beta")
@@ -339,7 +339,7 @@ class TestSeriesModel(AppTestCase):
     def test_series_to_dict_with_posts(self):
         with self.app.app_context():
             author = self._create_db_user(username="series_dict_author")
-            series = self._create_db_series(
+            series = self._create_series(
                 user_id=author.id, title="Series For Dict Test"
             )
 
@@ -366,7 +366,7 @@ class TestSeriesModel(AppTestCase):
     def test_add_post_to_series_property(self):
         with self.app.app_context():
             author = self._create_db_user(username="series_add_post_author")
-            series = self._create_db_series(
+            series = self._create_series(
                 user_id=author.id, title="Series Adding Posts"
             )
             post_to_add = self._create_db_post(

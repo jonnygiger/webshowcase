@@ -28,7 +28,7 @@ class TestEventRendering(AppTestCase):
             event = Event(
                 title="Test Event NL2BR",
                 description=event_description_with_newlines,
-                date=datetime.now(datetime.UTC),
+                date=datetime.now(timezone.utc),
                 location="Test Location",
                 user_id=organizer.id,
             )

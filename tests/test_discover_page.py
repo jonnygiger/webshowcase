@@ -42,7 +42,7 @@ class TestDiscoverPageViews(AppTestCase):
         self.assertIn(mock_post.content[:50], response_data)
 
         mock_get_personalized_feed_posts.assert_called_once_with(
-            self.user1_id, limit=15
+            user_id=self.user1.id, limit=15
         )
 
         self.logout()
@@ -85,7 +85,7 @@ class TestDiscoverPageViews(AppTestCase):
         self.assertIn(f"Recommended: {mock_reason}", response_data)
 
         mock_get_personalized_feed_posts.assert_called_once_with(
-            self.user1_id, limit=15
+            user_id=self.user1.id, limit=15
         )
 
         self.logout()
@@ -123,7 +123,7 @@ class TestDiscoverPageViews(AppTestCase):
         response_data = response.get_data(as_text=True)
 
         mock_get_personalized_feed_posts.assert_called_once_with(
-            self.user1_id, limit=15
+            user_id=self.user1.id, limit=15
         )
 
         self.assertIn(
@@ -158,6 +158,7 @@ class TestDiscoverPageViews(AppTestCase):
             mock_post.hashtags = None
             mock_post.user_id = self.user1_id
             mock_post.reviews = []
+            mock_post.image_url = None
 
         mock_reason = "A reason for this post."
         mock_get_personalized_feed_posts.return_value = [(mock_post, mock_reason)]
@@ -172,7 +173,7 @@ class TestDiscoverPageViews(AppTestCase):
         self.assertIn(mock_post.content[:50], response_data)
 
         mock_get_personalized_feed_posts.assert_called_once_with(
-            self.user1_id, limit=15
+            user_id=self.user1.id, limit=15
         )
 
         self.assertNotIn("Comments: 0", response_data)
@@ -198,7 +199,7 @@ class TestDiscoverPageViews(AppTestCase):
         self.assertNotIn("Mocked Post Title", response_data)
 
         mock_get_personalized_feed_posts.assert_called_once_with(
-            self.user1_id, limit=15
+            user_id=self.user1.id, limit=15
         )
 
         self.logout()

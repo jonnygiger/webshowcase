@@ -403,73 +403,74 @@ class TestPollAPI(AppTestCase):
         Tests that the HTML view for a poll correctly renders vote counts
         after the fix for accessing vote_count in the template.
         """
-        token_user1 = self._get_jwt_token(self.user1.username, "password")
-
-        poll_question = "HTML Render Test Poll"
-        poll_options_texts = ["RenderOpt1", "RenderOpt2"]
-        poll_id = self._create_poll_via_api(
-            token_user1, poll_question, poll_options_texts
-        )
-        self.assertIsNotNone(poll_id)
-
-        headers_user1 = {"Authorization": f"Bearer {token_user1}"}
         with self.app.app_context():
-            response_get_poll = self.client.get(
-                url_for("pollresource", poll_id=poll_id), headers=headers_user1
+            token_user1 = self._get_jwt_token(self.user1.username, "password")
+
+            poll_question = "HTML Render Test Poll"
+            poll_options_texts = ["RenderOpt1", "RenderOpt2"]
+            poll_id = self._create_poll_via_api(
+                token_user1, poll_question, poll_options_texts
             )
-        self.assertEqual(response_get_poll.status_code, 200)
-        poll_data_api = response_get_poll.get_json()["poll"]
-        option_id_1 = next(
-            opt["id"] for opt in poll_data_api["options"] if opt["text"] == "RenderOpt1"
-        )
-        option_id_2 = next(
-            opt["id"] for opt in poll_data_api["options"] if opt["text"] == "RenderOpt2"
-        )
+            self.assertIsNotNone(poll_id)
 
-        self.login(self.user1.username, "password")
-        with self.app.app_context():
-            self.client.post(
-                url_for("core.vote_on_poll", poll_id=poll_id),
-                data={"option_id": str(option_id_1)},
+            headers_user1 = {"Authorization": f"Bearer {token_user1}"}
+            with self.app.app_context():
+                response_get_poll = self.client.get(
+                    url_for("pollresource", poll_id=poll_id), headers=headers_user1
+                )
+            self.assertEqual(response_get_poll.status_code, 200)
+            poll_data_api = response_get_poll.get_json()["poll"]
+            option_id_1 = next(
+                opt["id"] for opt in poll_data_api["options"] if opt["text"] == "RenderOpt1"
             )
-        self.logout()
-
-        self.login(self.user2.username, "password")
-        with self.app.app_context():
-            self.client.post(
-                url_for("core.vote_on_poll", poll_id=poll_id),
-                data={"option_id": str(option_id_1)},
+            option_id_2 = next(
+                opt["id"] for opt in poll_data_api["options"] if opt["text"] == "RenderOpt2"
             )
-        self.logout()
 
-        self.login(self.user3.username, "password")
-        with self.app.app_context():
-            self.client.post(
-                url_for("core.vote_on_poll", poll_id=poll_id),
-                data={"option_id": str(option_id_2)},
+            self.login(self.user1.username, "password")
+            with self.app.app_context():
+                self.client.post(
+                    url_for("core.vote_on_poll", poll_id=poll_id),
+                    data={"option_id": str(option_id_1)},
+                )
+            self.logout()
+
+            self.login(self.user2.username, "password")
+            with self.app.app_context():
+                self.client.post(
+                    url_for("core.vote_on_poll", poll_id=poll_id),
+                    data={"option_id": str(option_id_1)},
+                )
+            self.logout()
+
+            self.login(self.user3.username, "password")
+            with self.app.app_context():
+                self.client.post(
+                    url_for("core.vote_on_poll", poll_id=poll_id),
+                    data={"option_id": str(option_id_2)},
+                )
+            self.logout()
+
+            self.login(self.user1.username, "password")
+            with self.app.app_context():
+                response_html = self.client.get(url_for("core.view_poll", poll_id=poll_id))
+            self.assertEqual(response_html.status_code, 200)
+            html_content = response_html.data.decode()
+
+            self.assertIn(poll_question, html_content)
+            self.assertIn("RenderOpt1", html_content)
+            self.assertIn("RenderOpt2", html_content)
+
+            self.assertRegex(
+                html_content,
+                r"RenderOpt1[\s\S]*?<span[^>]*class=[\"'][^\"']*badge[^\"']*[\"'][^>]*>\s*2\s*vote\(s\)\s*</span>",
             )
-        self.logout()
-
-        self.login(self.user1.username, "password")
-        with self.app.app_context():
-            response_html = self.client.get(url_for("core.view_poll", poll_id=poll_id))
-        self.assertEqual(response_html.status_code, 200)
-        html_content = response_html.data.decode()
-
-        self.assertIn(poll_question, html_content)
-        self.assertIn("RenderOpt1", html_content)
-        self.assertIn("RenderOpt2", html_content)
-
-        self.assertRegex(
-            html_content,
-            r"RenderOpt1[\s\S]*?<span[^>]*class=[\"'][^\"']*badge[^\"']*[\"'][^>]*>\s*2\s*vote\(s\)\s*</span>",
-        )
-        self.assertRegex(
-            html_content,
-            r"RenderOpt2[\s\S]*?<span[^>]*class=[\"'][^\"']*badge[^\"']*[\"'][^>]*>\s*1\s*vote\(s\)\s*</span>",
-        )
-        self.assertRegex(html_content, r"width:\s*66\.6+%;")
-        self.assertRegex(html_content, r"width:\s*33\.3+%;")
+            self.assertRegex(
+                html_content,
+                r"RenderOpt2[\s\S]*?<span[^>]*class=[\"'][^\"']*badge[^\"']*[\"'][^>]*>\s*1\s*vote\(s\)\s*</span>",
+            )
+            self.assertRegex(html_content, r"width:\s*66\.6+%;")
+            self.assertRegex(html_content, r"width:\s*33\.3+%;")
 
 
 if __name__ == "__main__":

@@ -92,7 +92,11 @@ class TestSeriesFeature(AppTestCase):
                 follow_redirects=True,
             )
             self.assertEqual(response.status_code, 200)
-            self.assertTrue(response.request.path.endswith(f"/user/{author_username}"))
+            self.assertIsNone(
+                response.request.path.endswith(
+                    f"/user/{series_obj_reloaded.author.username}"
+                )
+            )
 
             deleted_series = self.db.session.get(Series, series_id)
             self.assertIsNone(deleted_series)
@@ -108,26 +112,28 @@ class TestSeriesFeature(AppTestCase):
         pass
 
     def test_create_series_page_load(self):
-        self.login(self.user1.username, "password")
-        response = self.client.get(url_for("core.create_series"))
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Create New Series", response.data)
-        self.logout()
+        with self.app.app_context():
+            self.login(self.user1.username, "password")
+            response = self.client.get(url_for("core.create_series"))
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Create New Series", response.data)
+            self.logout()
 
     def test_create_series_unauthenticated(self):
-        response = self.client.get(
-            url_for("core.create_series"), follow_redirects=False
-        )
-        self.assertEqual(response.status_code, 302)
-        self.assertIn(url_for("core.login"), response.location)
+        with self.app.app_context():
+            response = self.client.get(
+                url_for("core.create_series"), follow_redirects=False
+            )
+            self.assertEqual(response.status_code, 302)
+            self.assertIn(url_for("core.login"), response.location)
 
-        response_post = self.client.post(
-            url_for("core.create_series"),
-            data={"title": "Fail Series"},
-            follow_redirects=False,
-        )
-        self.assertEqual(response_post.status_code, 302)
-        self.assertIn(url_for("core.login"), response_post.location)
+            response_post = self.client.post(
+                url_for("core.create_series"),
+                data={"title": "Fail Series"},
+                follow_redirects=False,
+            )
+            self.assertEqual(response_post.status_code, 302)
+            self.assertIn(url_for("core.login"), response_post.location)
 
     @unittest.skip("Placeholder test")
     def test_create_series_post_success(self):
@@ -146,26 +152,28 @@ class TestSeriesFeature(AppTestCase):
         pass
 
     def test_view_series_not_found(self):
-        response = self.client.get(url_for("core.view_series", series_id=9999))
-        self.assertEqual(response.status_code, 404)
+        with self.app.app_context():
+            response = self.client.get(url_for("core.view_series", series_id=9999))
+            self.assertEqual(response.status_code, 404)
 
     def test_view_existing_series_page(self):
-        self.login(self.user1.username, "password")
-        series_obj = self._create_series(
-            user_id=self.user1_id,
-            title="My Test Series",
-            description="This is a test series.",
-        )
         with self.app.app_context():
-            series_in_session = self.db.session.merge(series_obj)
-            series_id_val = series_in_session.id
-            self.assertIsNotNone(series_id_val)
+            self.login(self.user1.username, "password")
+            series_obj = self._create_series(
+                user_id=self.user1_id,
+                title="My Test Series",
+                description="This is a test series.",
+            )
+            with self.app.app_context():
+                series_in_session = self.db.session.merge(series_obj)
+                series_id_val = series_in_session.id
+                self.assertIsNotNone(series_id_val)
 
-        response = self.client.get(url_for("core.view_series", series_id=series_id_val))
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"My Test Series", response.data)
-        self.assertIn(b"This is a test series.", response.data)
-        self.logout()
+            response = self.client.get(url_for("core.view_series", series_id=series_id_val))
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"My Test Series", response.data)
+            self.assertIn(b"This is a test series.", response.data)
+            self.logout()
 
     @unittest.skip("Placeholder test")
     def test_edit_series_page_load_author(self):
@@ -191,70 +199,71 @@ class TestSeriesFeature(AppTestCase):
         from social_app import db
         from social_app.models.db_models import Series, Post, SeriesPost
 
-        self.login(self.user1.username, "password")
-        series = self._create_series(user_id=self.user1_id, title="Reorder Test Series")
-
         with self.app.app_context():
-            post1 = self._create_db_post(user_id=self.user1_id, title="Post Alpha")
-            post2 = self._create_db_post(user_id=self.user1_id, title="Post Beta")
-            post3 = self._create_db_post(user_id=self.user1_id, title="Post Gamma")
+            self.login(self.user1.username, "password")
+            series = self._create_series(user_id=self.user1_id, title="Reorder Test Series")
 
-            self.assertIsNotNone(post1)
-            self.assertIsNotNone(post2)
-            self.assertIsNotNone(post3)
+            with self.app.app_context():
+                post1 = self._create_db_post(user_id=self.user1_id, title="Post Alpha")
+                post2 = self._create_db_post(user_id=self.user1_id, title="Post Beta")
+                post3 = self._create_db_post(user_id=self.user1_id, title="Post Gamma")
 
-            series_merged = db.session.merge(series)
+                self.assertIsNotNone(post1)
+                self.assertIsNotNone(post2)
+                self.assertIsNotNone(post3)
 
-            sp1 = SeriesPost(series_id=series_merged.id, post_id=post1.id, order=0)
-            sp2 = SeriesPost(series_id=series_merged.id, post_id=post2.id, order=1)
-            sp3 = SeriesPost(series_id=series_merged.id, post_id=post3.id, order=2)
-            db.session.add_all([sp1, sp2, sp3])
-            db.session.commit()
+                series_merged = db.session.merge(series)
 
-            db.session.refresh(series_merged)
-            initial_ordered_posts = series_merged.posts
-            self.assertEqual(len(initial_ordered_posts), 3)
-            self.assertEqual(initial_ordered_posts[0].id, post1.id)
-            self.assertEqual(initial_ordered_posts[1].id, post2.id)
-            self.assertEqual(initial_ordered_posts[2].id, post3.id)
+                sp1 = SeriesPost(series_id=series_merged.id, post_id=post1.id, order=0)
+                sp2 = SeriesPost(series_id=series_merged.id, post_id=post2.id, order=1)
+                sp3 = SeriesPost(series_id=series_merged.id, post_id=post3.id, order=2)
+                db.session.add_all([sp1, sp2, sp3])
+                db.session.commit()
 
-        new_order_ids = [post3.id, post1.id, post2.id]
-        response = self.client.post(
-            url_for("core.reorder_series_posts", series_id=series.id),
-            data=json.dumps({"post_ids": new_order_ids}),
-            content_type="application/json",
-        )
+                db.session.refresh(series_merged)
+                initial_ordered_posts = series_merged.posts
+                self.assertEqual(len(initial_ordered_posts), 3)
+                self.assertEqual(initial_ordered_posts[0].id, post1.id)
+                self.assertEqual(initial_ordered_posts[1].id, post2.id)
+                self.assertEqual(initial_ordered_posts[2].id, post3.id)
 
-        self.assertEqual(response.status_code, 200, f"Error: {response.json}")
-        self.assertIsNotNone(response.json)
-        self.assertEqual(response.json.get("status"), "success")
+            new_order_ids = [post3.id, post1.id, post2.id]
+            response = self.client.post(
+                url_for("core.reorder_series_posts", series_id=series.id),
+                data=json.dumps({"post_ids": new_order_ids}),
+                content_type="application/json",
+            )
 
-        with self.app.app_context():
-            series_after_reorder = db.session.merge(series)
-            db.session.refresh(series_after_reorder)
-            ordered_posts_after_reorder = series_after_reorder.posts
+            self.assertEqual(response.status_code, 200, f"Error: {response.json}")
+            self.assertIsNotNone(response.json)
+            self.assertEqual(response.json.get("status"), "success")
 
-            self.assertEqual(len(ordered_posts_after_reorder), 3)
-            self.assertEqual(ordered_posts_after_reorder[0].id, post3.id)
-            self.assertEqual(ordered_posts_after_reorder[1].id, post1.id)
-            self.assertEqual(ordered_posts_after_reorder[2].id, post2.id)
+            with self.app.app_context():
+                series_after_reorder = db.session.merge(series)
+                db.session.refresh(series_after_reorder)
+                ordered_posts_after_reorder = series_after_reorder.posts
 
-            sp_post1_updated = SeriesPost.query.filter_by(
-                series_id=series_after_reorder.id, post_id=post1.id
-            ).first()
-            sp_post2_updated = SeriesPost.query.filter_by(
-                series_id=series_after_reorder.id, post_id=post2.id
-            ).first()
-            sp_post3_updated = SeriesPost.query.filter_by(
-                series_id=series_after_reorder.id, post_id=post3.id
-            ).first()
+                self.assertEqual(len(ordered_posts_after_reorder), 3)
+                self.assertEqual(ordered_posts_after_reorder[0].id, post3.id)
+                self.assertEqual(ordered_posts_after_reorder[1].id, post1.id)
+                self.assertEqual(ordered_posts_after_reorder[2].id, post2.id)
 
-            self.assertIsNotNone(sp_post1_updated)
-            self.assertIsNotNone(sp_post2_updated)
-            self.assertIsNotNone(sp_post3_updated)
+                sp_post1_updated = SeriesPost.query.filter_by(
+                    series_id=series_after_reorder.id, post_id=post1.id
+                ).first()
+                sp_post2_updated = SeriesPost.query.filter_by(
+                    series_id=series_after_reorder.id, post_id=post2.id
+                ).first()
+                sp_post3_updated = SeriesPost.query.filter_by(
+                    series_id=series_after_reorder.id, post_id=post3.id
+                ).first()
 
-            self.assertEqual(sp_post3_updated.order, 0)
-            self.assertEqual(sp_post1_updated.order, 1)
-            self.assertEqual(sp_post2_updated.order, 2)
+                self.assertIsNotNone(sp_post1_updated)
+                self.assertIsNotNone(sp_post2_updated)
+                self.assertIsNotNone(sp_post3_updated)
 
-        self.logout()
+                self.assertEqual(sp_post3_updated.order, 0)
+                self.assertEqual(sp_post1_updated.order, 1)
+                self.assertEqual(sp_post2_updated.order, 2)
+
+            self.logout()

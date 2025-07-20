@@ -62,7 +62,7 @@ class TestChatModel(AppTestCase):
                 "room_id": room.id,
                 "user_id": user.id,
                 "username": user.username,
-                "message": msg_content,
+                "content": msg_content,
                 "timestamp": fetched_msg.timestamp.isoformat(),
             }
             self.assertDictEqual(fetched_msg.to_dict(), expected_dict)

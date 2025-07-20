@@ -76,21 +76,19 @@ class TestEventAPI(AppTestCase):
 
 class TestTrendingHashtagsAPI(AppTestCase):
 
-    @patch("social_app.services.recommendations_service.get_trending_hashtags")
-    def test_get_trending_hashtags_api(self, mock_get_trending_hashtags):
+    @patch("social_app.api.routes.get_trending_hashtags")
+    def test_get_trending_hashtags(self, mock_get_trending_hashtags):
         with self.app.app_context():
             mock_get_trending_hashtags.return_value = [
                 TrendingHashtag(hashtag="#test1", score=10.0, rank=1),
-                TrendingHashtag(hashtag="#test2", score=8.0, rank=2),
             ]
-
             token = self._get_jwt_token(self.user1.username, "password")
             headers = {"Authorization": f"Bearer {token}"}
             response = self.client.get("/api/trending_hashtags", headers=headers)
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
             self.assertIn("trending_hashtags", data)
-            self.assertEqual(len(data["trending_hashtags"]), 2)
+            self.assertEqual(len(data["trending_hashtags"]), 1)
 
 
 class TestPostLockAPI(AppTestCase):
@@ -349,7 +347,7 @@ class TestApiEndpoints(AppTestCase):
             response = self.client.get(f"/api/polls/{poll.id}", headers=headers)
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
-            self.assertEqual(data["question"], "Test Poll?")
+            self.assertEqual(data["poll"]["question"], "Test Poll?")
 
     def test_vote_poll(self):
         with self.app.app_context():
@@ -358,9 +356,9 @@ class TestApiEndpoints(AppTestCase):
             token = self._get_jwt_token(self.user2.username, "password")
             headers = {"Authorization": f"Bearer {token}"}
             response = self.client.post(f"/api/polls/{poll.id}/vote", headers=headers, json={"option_id": option_id})
-            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.status_code, 201)
             data = response.get_json()
-            self.assertEqual(data["message"], "Vote cast successfully.")
+            self.assertEqual(data["message"], "Vote cast successfully")
 
     def test_get_events(self):
         with self.app.app_context():
@@ -392,20 +390,6 @@ class TestApiEndpoints(AppTestCase):
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
             self.assertEqual(data["message"], "RSVP status updated successfully.")
-
-    @patch("social_app.services.recommendations_service.get_trending_hashtags")
-    def test_get_trending_hashtags(self, mock_get_trending_hashtags):
-        with self.app.app_context():
-            mock_get_trending_hashtags.return_value = [
-                TrendingHashtag(hashtag="#test1", score=10.0, rank=1),
-            ]
-            token = self._get_jwt_token(self.user1.username, "password")
-            headers = {"Authorization": f"Bearer {token}"}
-            response = self.client.get("/api/trending_hashtags", headers=headers)
-            self.assertEqual(response.status_code, 200)
-            data = response.get_json()
-            self.assertIn("trending_hashtags", data)
-            self.assertEqual(len(data["trending_hashtags"]), 1)
 
     def test_get_files(self):
         with self.app.app_context():

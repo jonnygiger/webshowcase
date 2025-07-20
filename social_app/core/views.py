@@ -3133,3 +3133,10 @@ def user_notification_stream():
                     del current_app.user_notification_queues[current_user_id_val]
 
     return Response(event_stream(), mimetype="text/event-stream")
+
+
+@core_bp.app_context_processor
+def inject_custom_url_for():
+    def custom_url_for_primary(endpoint, **values):
+        return url_for(endpoint, **values)
+    return dict(custom_url_for_primary=custom_url_for_primary)

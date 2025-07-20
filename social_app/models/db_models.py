@@ -759,6 +759,17 @@ class SharedFile(db.Model):
     def __repr__(self):
         return f"<SharedFile {self.id} from {self.sender_id} to {self.receiver_id} - {self.original_filename}>"
 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "sender_id": self.sender_id,
+            "receiver_id": self.receiver_id,
+            "original_filename": self.original_filename,
+            "upload_timestamp": self.upload_timestamp.isoformat(),
+            "is_read": self.is_read,
+            "message": self.message,
+        }
+
 
 class UserStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -925,6 +936,6 @@ class ChatMessage(db.Model):
             "room_id": self.room_id,
             "user_id": self.user_id,
             "username": self.user.username if self.user else "Unknown",
-            "content": self.message,
+            "message": self.message,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
         }

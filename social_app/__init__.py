@@ -75,11 +75,6 @@ def create_app(config_class=None):
     login_manager.init_app(app)
     login_manager.login_view = "core.login"
 
-    from .core.utils import custom_url_for_assets
-
-    # Register custom URL helpers as Jinja globals
-    app.add_template_global(custom_url_for_assets, name="custom_url_for_assets")
-
     app.sse_listeners = {}
     app.user_notification_queues = {}
     app.chat_room_listeners = {}
@@ -113,6 +108,9 @@ def create_app(config_class=None):
         ChatRoomListResource,
         ChatRoomMessagesResource,
         ApiLoginResource,
+        PostLikeResource,
+        EventRSVPResource,
+        SharedFileListResource,
     )
 
     app.register_blueprint(core_views.core_bp)
@@ -142,6 +140,9 @@ def create_app(config_class=None):
         ChatRoomMessagesResource, "/api/chat/rooms/<int:room_id>/messages"
     )
     fr_api.add_resource(ApiLoginResource, "/api/login")
+    fr_api.add_resource(PostLikeResource, "/api/posts/<int:post_id>/like")
+    fr_api.add_resource(EventRSVPResource, "/api/events/<int:event_id>/rsvp")
+    fr_api.add_resource(SharedFileListResource, "/api/files")
 
     from .models.db_models import User
 

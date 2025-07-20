@@ -468,7 +468,7 @@ class EventResource(Resource):
         event = db.session.get(Event, event_id)
         if not event:
             return {"message": "Event not found"}, 404
-        return {"event": event.to_dict()}, 200
+        return {"event": event.to_dict()}
 
 
 class RecommendationResource(Resource):

@@ -393,7 +393,7 @@ class TestApiEndpoints(AppTestCase):
             response = self.client.get(f"/api/events/{event.id}", headers=headers)
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
-            self.assertEqual(data["title"], "Test Event")
+            self.assertEqual(data["event"]["title"], "Test Event")
 
     def test_rsvp_event(self):
         with self.app.app_context():

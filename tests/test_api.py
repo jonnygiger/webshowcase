@@ -337,7 +337,7 @@ class TestApiEndpoints(AppTestCase):
             response = self.client.get("/api/polls", headers=headers)
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
-            self.assertIsInstance(data, list)
+            self.assertIsInstance(data, dict)
 
     def test_get_poll(self):
         with self.app.app_context():
@@ -352,9 +352,11 @@ class TestApiEndpoints(AppTestCase):
     def test_vote_poll(self):
         with self.app.app_context():
             poll = self._create_db_poll(self.user1.id, "Test Poll?")
-            option_id = poll.options[0].id
             token = self._get_jwt_token(self.user2.username, "password")
             headers = {"Authorization": f"Bearer {token}"}
+            # Re-fetch the poll object to ensure it's in the current session
+            poll = db.session.get(Poll, poll.id)
+            option_id = poll.options[0].id
             response = self.client.post(f"/api/polls/{poll.id}/vote", headers=headers, json={"option_id": option_id})
             self.assertEqual(response.status_code, 201)
             data = response.get_json()

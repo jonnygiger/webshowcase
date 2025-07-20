@@ -64,7 +64,7 @@ class TestChatAPI(AppTestCase):
             self.assertEqual(data_page1["per_page"], 10)
             self.assertEqual(data_page1["total_messages"], 25)
             self.assertEqual(data_page1["total_pages"], 3)
-            self.assertEqual(data_page1["messages"][0]["message"], "Message 24")
+            self.assertEqual(data_page1["messages"][0]["content"], "Message 24")
 
             response_page2 = self.client.get(
                 f"/api/chat/rooms/{self.test_room_id}/messages?page=2&per_page=10",
@@ -75,7 +75,7 @@ class TestChatAPI(AppTestCase):
 
             self.assertEqual(len(data_page2["messages"]), 10)
             self.assertEqual(data_page2["page"], 2)
-            self.assertEqual(data_page2["messages"][0]["message"], "Message 14")
+            self.assertEqual(data_page2["messages"][0]["content"], "Message 14")
 
             response_page3 = self.client.get(
                 f"/api/chat/rooms/{self.test_room_id}/messages?page=3&per_page=10",
@@ -86,7 +86,7 @@ class TestChatAPI(AppTestCase):
 
             self.assertEqual(len(data_page3["messages"]), 5)
             self.assertEqual(data_page3["page"], 3)
-            self.assertEqual(data_page3["messages"][0]["message"], "Message 4")
+            self.assertEqual(data_page3["messages"][0]["content"], "Message 4")
 
     def test_get_chat_room_messages_default_pagination(self):
         with self.app.app_context():

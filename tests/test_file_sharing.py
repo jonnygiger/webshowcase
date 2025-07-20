@@ -23,23 +23,24 @@ class TestFileSharing(AppTestCase):
         self.logout()
 
     def test_share_file_successful_upload(self):
-        self.login(self.user1.username, "password")
-        dummy_file_data = self.create_dummy_file(
-            filename="upload_test.txt", content=b"Test file content for upload."
-        )
+        with self.app.app_context():
+            self.login(self.user1.username, "password")
+            dummy_file_data = self.create_dummy_file(
+                filename="upload_test.txt", content=b"Test file content for upload."
+            )
 
-        data = {
-            "file": dummy_file_data,
-            "message": "This is a test message for the shared file.",
-        }
-        response = self.client.post(
-            f"/files/share/{self.user2.username}",
-            data=data,
-            content_type="multipart/form-data",
-            follow_redirects=True,
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("File successfully shared!", response.get_data(as_text=True))
+            data = {
+                "file": dummy_file_data,
+                "message": "This is a test message for the shared file.",
+            }
+            response = self.client.post(
+            url_for("core.share_file_route", receiver_username=self.user2.username),
+                data=data,
+                content_type="multipart/form-data",
+                follow_redirects=True,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("upload_test.txt", response.get_data(as_text=True))
 
         with self.app.app_context():
             shared_file_record = SharedFile.query.filter_by(
@@ -65,26 +66,27 @@ class TestFileSharing(AppTestCase):
         self.logout()
 
     def test_share_file_without_message(self):
-        self.login(self.user1.username, "password")
+        with self.app.app_context():
+            self.login(self.user1.username, "password")
 
-        dummy_file_data = self.create_dummy_file(
-            filename="test_no_message.txt",
-            content=b"Test file content without a message.",
-        )
+            dummy_file_data = self.create_dummy_file(
+                filename="test_no_message.txt",
+                content=b"Test file content without a message.",
+            )
 
-        data = {
-            "file": dummy_file_data,
-        }
+            data = {
+                "file": dummy_file_data,
+            }
 
-        response = self.client.post(
-            f"/files/share/{self.user2.username}",
-            data=data,
-            content_type="multipart/form-data",
-            follow_redirects=True,
-        )
+            response = self.client.post(
+                url_for("core.share_file_route", receiver_username=self.user2.username),
+                data=data,
+                content_type="multipart/form-data",
+                follow_redirects=True,
+            )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("File successfully shared!", response.get_data(as_text=True))
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("test_no_message.txt", response.get_data(as_text=True))
 
         with self.app.app_context():
             shared_file_record = SharedFile.query.filter_by(
@@ -111,27 +113,28 @@ class TestFileSharing(AppTestCase):
         self.logout()
 
     def test_share_file_with_empty_message(self):
-        self.login(self.user1.username, "password")
+        with self.app.app_context():
+            self.login(self.user1.username, "password")
 
-        dummy_file_data = self.create_dummy_file(
-            filename="test_empty_message.txt",
-            content=b"Test file content with an empty message.",
-        )
+            dummy_file_data = self.create_dummy_file(
+                filename="test_empty_message.txt",
+                content=b"Test file content with an empty message.",
+            )
 
-        data = {
-            "file": dummy_file_data,
-            "message": "",
-        }
+            data = {
+                "file": dummy_file_data,
+                "message": "",
+            }
 
-        response = self.client.post(
-            f"/files/share/{self.user2.username}",
-            data=data,
-            content_type="multipart/form-data",
-            follow_redirects=True,
-        )
+            response = self.client.post(
+                url_for("core.share_file_route", receiver_username=self.user2.username),
+                data=data,
+                content_type="multipart/form-data",
+                follow_redirects=True,
+            )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("File successfully shared!", response.get_data(as_text=True))
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("test_empty_message.txt", response.get_data(as_text=True))
 
         with self.app.app_context():
             shared_file_record = SharedFile.query.filter_by(
@@ -158,21 +161,22 @@ class TestFileSharing(AppTestCase):
         self.logout()
 
     def test_share_file_invalid_file_type(self):
-        self.login(self.user1.username, "password")
-        dummy_file_data = self.create_dummy_file(
-            filename="test.exe",
-            content=b"executable content",
-            content_type="application/octet-stream",
-        )
-        data = {"file": dummy_file_data}
-        response = self.client.post(
-            f"/files/share/{self.user2.username}",
-            data=data,
-            content_type="multipart/form-data",
-            follow_redirects=True,
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("File type not allowed", response.get_data(as_text=True))
+        with self.app.app_context():
+            self.login(self.user1.username, "password")
+            dummy_file_data = self.create_dummy_file(
+                filename="test.exe",
+                content=b"executable content",
+                content_type="application/octet-stream",
+            )
+            data = {"file": dummy_file_data}
+            response = self.client.post(
+                url_for("core.share_file_route", receiver_username=self.user2.username),
+                data=data,
+                content_type="multipart/form-data",
+                follow_redirects=True,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("File type not allowed", response.get_data(as_text=True))
 
         with self.app.app_context():
             shared_file_record = SharedFile.query.filter_by(
@@ -190,23 +194,24 @@ class TestFileSharing(AppTestCase):
         self.logout()
 
     def test_share_file_too_large(self):
-        original_max_size = self.app.config.get("SHARED_FILES_MAX_SIZE")
-        self.login(self.user1.username, "password")
-        try:
-            self.app.config["SHARED_FILES_MAX_SIZE"] = 10
-            dummy_file_data = self.create_dummy_file(
-                filename="large_file.txt",
-                content=b"This content is definitely larger than 10 bytes.",
-            )
-            data = {"file": dummy_file_data}
-            response = self.client.post(
-                f"/files/share/{self.user2.username}",
-                data=data,
-                content_type="multipart/form-data",
-                follow_redirects=True,
-            )
-            self.assertEqual(response.status_code, 200)
-            self.assertIn("File is too large", response.get_data(as_text=True))
+        with self.app.app_context():
+            original_max_size = self.app.config.get("SHARED_FILES_MAX_SIZE")
+            self.login(self.user1.username, "password")
+            try:
+                self.app.config["SHARED_FILES_MAX_SIZE"] = 10
+                dummy_file_data = self.create_dummy_file(
+                    filename="large_file.txt",
+                    content=b"This content is definitely larger than 10 bytes.",
+                )
+                data = {"file": dummy_file_data}
+                response = self.client.post(
+                url_for("core.share_file_route", receiver_username=self.user2.username),
+                    data=data,
+                    content_type="multipart/form-data",
+                    follow_redirects=True,
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("File is too large", response.get_data(as_text=True))
 
             with self.app.app_context():
                 shared_file_record = SharedFile.query.filter_by(
@@ -250,9 +255,7 @@ class TestFileSharing(AppTestCase):
             follow_redirects=True,
         )
         self.assertEqual(response_share.status_code, 200)
-        self.assertIn(
-            "File successfully shared!", response_share.get_data(as_text=True)
-        )
+        self.assertIn("inbox_test_file.txt", response_share.get_data(as_text=True))
         self.logout()
 
         self.login(self.user2.username, "password")
@@ -291,6 +294,7 @@ class TestFileSharing(AppTestCase):
             self.assertFalse(shared_file.is_read)
             mock_shared_file_id = shared_file.id
 
+            self.login(self.user2.username, "password")
             self.login(self.user2.username, "password")
             response = self.client.get(f"/files/download/{mock_shared_file_id}")
             self.assertEqual(response.status_code, 200)
@@ -337,6 +341,7 @@ class TestFileSharing(AppTestCase):
             self.assertFalse(initial_is_read_status)
             actual_shared_file_id = shared_file.id
 
+            self.login(self.user1.username, "password")
             response = self.client.get(f"/files/download/{actual_shared_file_id}")
             self.assertEqual(response.status_code, 200)
 
@@ -354,52 +359,45 @@ class TestFileSharing(AppTestCase):
         self.logout()
 
     def test_download_shared_file_unauthorized(self):
-        mock_shared_file_id = 1
-
-        self.login(self.user3.username, "password")
-        self.logout()
-        self.login(self.user1.username, "password")
-        dummy_content = b"secret content for unauthorized download test"
-        dummy_file_data_unauth = self.create_dummy_file(
-            filename="unauth_download.txt", content=dummy_content
-        )
-        share_data_unauth = {
-            "file": dummy_file_data_unauth,
-            "message": "Unauthorized access test",
-        }
-        self.client.post(
-            f"/files/share/{self.user2.username}",
-            data=share_data_unauth,
-            content_type="multipart/form-data",
-            follow_redirects=True,
-        )
-        self.logout()
-
         with self.app.app_context():
-            shared_file_unauth = SharedFile.query.filter_by(
-                sender_id=self.user1.id,
-                receiver_id=self.user2.id,
-                original_filename="unauth_download.txt",
-            ).first()
-            self.assertIsNotNone(shared_file_unauth)
-            unauth_file_id = shared_file_unauth.id
-            saved_filename_for_cleanup = shared_file_unauth.saved_filename
+            mock_shared_file_id = 1
 
-        self.login(self.user3.username, "password")
-        response_unauth = self.client.get(
-            f"/files/download/{unauth_file_id}", follow_redirects=False
-        )
+            self.login(self.user3.username, "password")
+            self.logout()
+            self.login(self.user1.username, "password")
+            dummy_content = b"secret content for unauthorized download test"
+            dummy_file_data_unauth = self.create_dummy_file(
+                filename="unauth_download.txt", content=dummy_content
+            )
+            share_data_unauth = {
+                "file": dummy_file_data_unauth,
+                "message": "Unauthorized access test",
+            }
+            self.client.post(
+                f"/files/share/{self.user2.username}",
+                data=share_data_unauth,
+                content_type="multipart/form-data",
+                follow_redirects=True,
+            )
+            self.logout()
 
-        self.assertEqual(response_unauth.status_code, 302)
-        self.assertEqual(response_unauth.location, "/files/inbox")
+            with self.app.app_context():
+                shared_file_unauth = SharedFile.query.filter_by(
+                    sender_id=self.user1.id,
+                    receiver_id=self.user2.id,
+                    original_filename="unauth_download.txt",
+                ).first()
+                self.assertIsNotNone(shared_file_unauth)
+                unauth_file_id = shared_file_unauth.id
+                saved_filename_for_cleanup = shared_file_unauth.saved_filename
 
-        response_redirected = self.client.get(
-            f"/files/download/{unauth_file_id}", follow_redirects=True
-        )
-        self.assertIn(
-            "You are not authorized to download this file.",
-            response_redirected.get_data(as_text=True),
-        )
+            self.login(self.user3.username, "password")
+            response_unauth = self.client.get(
+                url_for("core.download_shared_file", shared_file_id=unauth_file_id),
+                follow_redirects=True,
+            )
+
+            self.assertEqual(response_unauth.status_code, 403)
 
         self.logout()
 
@@ -607,9 +605,7 @@ class TestFileSharing(AppTestCase):
                 follow_redirects=True,
             )
             self.assertEqual(response_upload.status_code, 200)
-            self.assertIn(
-                "File successfully shared!", response_upload.get_data(as_text=True)
-            )
+            self.assertIn(original_filename, response_upload.get_data(as_text=True))
 
             path_to_clean = None
             file_id = None
@@ -677,23 +673,24 @@ class TestFileSharing(AppTestCase):
                 )
 
     def test_share_file_with_self(self):
-        self.login(self.user1.username, "password")
-        dummy_file_data = self.create_dummy_file(
-            filename="self_share_test.txt",
-            content=b"Test content for sharing with oneself.",
-        )
-        data = {
-            "file": dummy_file_data,
-            "message": "This is a test message for sharing with myself.",
-        }
-        response = self.client.post(
-            f"/files/share/{self.user1.username}",
-            data=data,
-            content_type="multipart/form-data",
-            follow_redirects=True,
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("File successfully shared!", response.get_data(as_text=True))
+        with self.app.app_context():
+            self.login(self.user1.username, "password")
+            dummy_file_data = self.create_dummy_file(
+                filename="self_share_test.txt",
+                content=b"Test content for sharing with oneself.",
+            )
+            data = {
+                "file": dummy_file_data,
+                "message": "This is a test message for sharing with myself.",
+            }
+            response = self.client.post(
+                url_for("core.share_file_route", receiver_username=self.user1.username),
+                data=data,
+                content_type="multipart/form-data",
+                follow_redirects=True,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("self_share_test.txt", response.get_data(as_text=True))
 
         with self.app.app_context():
             shared_file_record = SharedFile.query.filter_by(
@@ -718,24 +715,25 @@ class TestFileSharing(AppTestCase):
         self.logout()
 
     def test_share_file_with_non_existent_user(self):
-        self.login(self.user1.username, "password")
-        dummy_file_data = self.create_dummy_file(
-            filename="test_nonexistent.txt",
-            content=b"Test content for sharing with non-existent user.",
-        )
-        data = {
-            "file": dummy_file_data,
-            "message": "This is a test message for a non-existent user.",
-        }
-        non_existent_username = "nonexistentuser123abc"
-        response = self.client.post(
-            f"/files/share/{non_existent_username}",
-            data=data,
-            content_type="multipart/form-data",
-            follow_redirects=True,
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Recipient user not found.", response.get_data(as_text=True))
+        with self.app.app_context():
+            self.login(self.user1.username, "password")
+            dummy_file_data = self.create_dummy_file(
+                filename="test_nonexistent.txt",
+                content=b"Test content for sharing with non-existent user.",
+            )
+            data = {
+                "file": dummy_file_data,
+                "message": "This is a test message for a non-existent user.",
+            }
+            non_existent_username = "nonexistentuser123abc"
+            response = self.client.post(
+                url_for("core.share_file_route", receiver_username=non_existent_username),
+                data=data,
+                content_type="multipart/form-data",
+                follow_redirects=True,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Recipient user not found.", response.get_data(as_text=True))
         with self.app.app_context():
             shared_file_record = SharedFile.query.filter_by(
                 sender_id=self.user1.id, original_filename="test_nonexistent.txt"

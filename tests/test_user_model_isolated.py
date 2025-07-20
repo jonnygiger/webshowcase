@@ -135,7 +135,7 @@ class TestUserModelIsolated(AppTestCase):
             user_E = self._create_db_user(username="user_E_friends")
 
             self._create_db_friendship(user_C, user_D, "accepted")
-            self._create_db_.create_db_friendship(user_C, user_E, "pending")
+            self._create_db_friendship(user_C, user_E, "pending")
 
             friends_C = user_C.get_friends()
             self.assertEqual(len(friends_C), 1)

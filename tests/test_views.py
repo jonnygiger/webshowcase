@@ -297,7 +297,7 @@ class TestViewRoutesSimple(AppTestCase):
         with self.app.app_context():
             user = self._create_db_user("testuser", "password", "test@example.com")
             self.login(user.username, "password")
-            response = self.client.get("/edit_profile")
+            response = self.client.get(url_for("core.edit_profile"))
             self.assertEqual(response.status_code, 200)
 
     def test_blog_page(self):
@@ -308,14 +308,14 @@ class TestViewRoutesSimple(AppTestCase):
         with self.app.app_context():
             user = self._create_db_user("testuser", "password", "test@example.com")
             self.login(user.username, "password")
-            response = self.client.get("/create_post")
+            response = self.client.get(url_for("core.create_post"))
             self.assertEqual(response.status_code, 200)
 
     def test_view_post_page(self):
         with self.app.app_context():
             user = self._create_db_user("testuser", "password", "test@example.com")
             post = self._create_db_post(user.id, "Test Post", "Test Content")
-            response = self.client.get(f"/post/{post.id}")
+            response = self.client.get(url_for("core.view_post", post_id=post.id))
             self.assertEqual(response.status_code, 200)
 
     def test_edit_post_page(self):
@@ -323,14 +323,16 @@ class TestViewRoutesSimple(AppTestCase):
             user = self._create_db_user("testuser", "password", "test@example.com")
             post = self._create_db_post(user.id, "Test Post", "Test Content")
             self.login(user.username, "password")
-            response = self.client.get(f"/edit_post/{post.id}")
+            response = self.client.get(url_for("core.edit_post", post_id=post.id))
             self.assertEqual(response.status_code, 200)
 
     def test_friends_list_page(self):
         with self.app.app_context():
             user = self._create_db_user("testuser", "password", "test@example.com")
             self.login(user.username, "password")
-            response = self.client.get("/friends")
+            response = self.client.get(
+                url_for("core.view_friends_list", username=user.username)
+            )
             self.assertEqual(response.status_code, 200)
 
     def test_friend_requests_page(self):

@@ -187,6 +187,11 @@ def is_armstrong_number(n):
     """
     if not isinstance(n, int) or n < 0:
         return False
+    if n == 0:
+        return True
     s = str(n)
     num_digits = len(s)
-    return n == sum(int(digit) ** num_digits for digit in s)
+    total = 0
+    for digit in s:
+        total += int(digit) ** num_digits
+    return n == total

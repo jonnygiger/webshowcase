@@ -52,7 +52,11 @@ class TestViewRoutes(AppTestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn("Accept Friend Request", response.data.decode())
             self.assertIn(
-                url_for("core.accept_friend_request", request_id=fs_b_to_a.id),
+                url_for(
+                    "core.accept_friend_request",
+                    request_id=fs_b_to_a.id,
+                    _external=True,
+                ),
                 response.data.decode(),
             )
             self.logout()

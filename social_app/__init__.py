@@ -75,11 +75,10 @@ def create_app(config_class=None):
     login_manager.init_app(app)
     login_manager.login_view = "core.login"
 
-    from .core.utils import custom_url_for_assets, custom_url_for_primary
+    from .core.utils import custom_url_for_assets
 
     # Register custom URL helpers as Jinja globals
     app.add_template_global(custom_url_for_assets, name="custom_url_for_assets")
-    app.add_template_global(custom_url_for_primary, name="custom_url_for_primary")
 
     app.sse_listeners = {}
     app.user_notification_queues = {}

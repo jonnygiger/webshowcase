@@ -222,9 +222,7 @@ class TestLikeNotifications(AppTestCase):
                 ).first()
                 self.assertIsNone(notification)
 
-                mock_user_notification_queues.__contains__.assert_not_any_call(
-                    self.author1.id
-                )
+                mock_user_notification_queues.__contains__.assert_not_called()
                 mock_own_queue.put_nowait.assert_not_called()
 
             self.logout()

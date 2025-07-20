@@ -1,5 +1,7 @@
 import os
+import re
 from flask import Flask
+from markupsafe import Markup
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_restful import Api as FlaskRestfulApi
@@ -19,6 +21,11 @@ scheduler = BackgroundScheduler()
 def create_app(config_class=None):
     """Creates and configures the Flask application."""
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
+
+    @app.template_filter("nl2br")
+    def nl2br(s):
+        """Converts newlines to <br> tags."""
+        return Markup(re.sub(r"\n", "<br>\n", s))
 
     app.config.setdefault("SQLALCHEMY_DATABASE_URI", "sqlite:///site.db")
     app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)

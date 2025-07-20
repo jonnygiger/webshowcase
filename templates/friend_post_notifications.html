@@ -24,7 +24,7 @@
                             {% if not notification.is_read %}<strong>{% endif %}
                             <a href="{{ url_for('core.user_profile', username=notification.poster.username) }}" class="text-decoration-none">{{ notification.poster.username }}</a>
                             created a new post:
-                            <a href="{{ url_for('view_post', post_id=notification.post_id) }}" class="text-decoration-none">{{ notification.post.title | truncate(50, True) }}</a>
+                            <a href="{{ url_for('core.view_post', post_id=notification.post_id) }}" class="text-decoration-none">{{ notification.post.title | truncate(50, True) }}</a>
                             {% if not notification.is_read %}</strong>{% endif %}
                         </div>
                         <small class="text-muted flex-shrink-0 ms-3">{{ notification.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>

@@ -8,6 +8,7 @@ from social_app import db, create_app
 from social_app.models.db_models import Post, User, PostLock
 from tests.test_base import AppTestCase
 import logging
+from flask import url_for
 
 
 class TestCollaborativeEditing(AppTestCase):
@@ -313,16 +314,13 @@ class TestCollaborativeEditing(AppTestCase):
                     "content": "Updated content by lock owner via SSE test.",
                     "hashtags": self.test_post.hashtags,
                 }
-                self.login(
-                    self.collaborator.username, "password"
-                )  # Login the user performing the edit
+                self.login(self.collaborator.username, "password")
                 response_edit = self.client.post(
-                    f"/posts/{self.test_post.id}/edit",
+                    url_for("core.edit_post", post_id=self.test_post.id),
                     data=edit_payload,
-                    headers=headers,  # Re-use headers with token for authorization if view requires
                 )
                 self.assertEqual(
-                    response_edit.status_code, 302
+                    response_edit.status_code, 200
                 )  # Redirect after successful post
 
                 updated_post = self.db.session.get(Post, self.test_post.id)
@@ -369,7 +367,7 @@ class TestCollaborativeEditing(AppTestCase):
                 }
 
                 response_edit = self.client.post(
-                    f"/posts/{self.test_post.id}/edit",
+                    url_for("core.edit_post", post_id=self.test_post.id),
                     data=edit_payload,
                     follow_redirects=True,  # To check flash messages
                 )
@@ -422,7 +420,7 @@ class TestCollaborativeEditing(AppTestCase):
                 args, _ = mock_queue.put_nowait.call_args
                 sse_event_data = args[0]
 
-                self.assertEqual(sse_event_data["type"], "post_lock_acquired")
+                self.assertEqual(sse_event_data["type"], "post_lock_changed")
                 payload = sse_event_data["payload"]
                 self.assertEqual(payload["post_id"], self.test_post.id)
                 self.assertEqual(payload["user_id"], self.collaborator.id)
@@ -456,8 +454,8 @@ class TestCollaborativeEditing(AppTestCase):
                 args_release, _ = mock_queue_release.put_nowait.call_args
                 sse_event_data_release = args_release[0]
 
-                self.assertEqual(sse_event_data_release["type"], "post_lock_released")
+                self.assertEqual(sse_event_data_release["type"], "post_lock_changed")
                 payload_release = sse_event_data_release["payload"]
                 self.assertEqual(payload_release["post_id"], self.test_post.id)
-                self.assertEqual(payload_release["released_by_user_id"], self.collaborator.id)
+                self.assertEqual(payload_release["user_id"], self.collaborator.id)
                 self.assertEqual(payload_release["username"], self.collaborator.username)

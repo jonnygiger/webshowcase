@@ -188,13 +188,9 @@ class TestContentManagement(AppTestCase):
 
             response = self.client.post(
                 url_for(
-                    "core.edit_series",
+                    "core.add_post_to_series",
                     series_id=series_obj.id,
-                ),
-                data=dict(
-                    title=series_obj.title,
-                    description=series_obj.description,
-                    post_ids=[post_by_other.id]
+                    post_id=post_by_other.id,
                 ),
                 follow_redirects=True,
             )
@@ -236,7 +232,7 @@ class TestContentManagement(AppTestCase):
             time_before_edit = datetime.now(timezone.utc) - timedelta(seconds=1)
 
             response = self.client.post(
-                url_for("core.view_post", post_id=post_id),
+                url_for("core.edit_post", post_id=post_id),
                 data={
                     "title": new_title,
                     "content": new_content,

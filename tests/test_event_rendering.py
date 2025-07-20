@@ -2,7 +2,7 @@ import unittest
 from social_app import db
 from social_app.models.db_models import User, Event
 from tests.test_base import AppTestCase
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import url_for
 
 
@@ -36,12 +36,13 @@ class TestEventRendering(AppTestCase):
             db.session.commit()
             event_id = event.id
 
-        response = self.client.get(url_for("core.view_event", event_id=event_id))
+        with self.app.app_context():
+            response = self.client.get(url_for("core.view_event", event_id=event_id))
 
-        self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.status_code, 200)
 
-        response_data = response.get_data(as_text=True)
-        self.assertIn(event_description_with_br, response_data)
+            response_data = response.get_data(as_text=True)
+            self.assertIn(event_description_with_br, response_data)
 
 
 if __name__ == "__main__":

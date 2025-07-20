@@ -295,9 +295,7 @@ class TestFriendPostNotifications(AppTestCase):
                 self.assertIsNone(notification_for_self)
 
                 # Check that user1's queue was not accessed for putting a new_friend_post event
-                mock_user_notification_queues.__contains__.assert_not_any_call(
-                    self.user1_id
-                )
+                mock_user_notification_queues.__contains__.assert_not_called()
                 mock_own_queue.put_nowait.assert_not_called()
 
     def test_no_notification_for_post_before_friendship(self):
@@ -326,9 +324,7 @@ class TestFriendPostNotifications(AppTestCase):
                 ).first()
                 self.assertIsNone(notification_for_user2)
 
-                mock_user_notification_queues.__contains__.assert_not_any_call(
-                    self.user2_id
-                )
+                mock_user_notification_queues.__contains__.assert_not_called()
                 mock_friend_queue.put_nowait.assert_not_called()
 
     def test_no_notification_if_poster_is_blocked(self):
@@ -360,9 +356,7 @@ class TestFriendPostNotifications(AppTestCase):
                 ).first()
                 self.assertIsNone(notification_for_user2)
 
-                mock_user_notification_queues.__contains__.assert_not_any_call(
-                    self.user2_id
-                )
+                mock_user_notification_queues.__contains__.assert_not_called()
                 mock_friend_queue.put_nowait.assert_not_called()
 
     def test_notification_persists_after_unfriend(self):
@@ -439,6 +433,4 @@ class TestFriendPostNotifications(AppTestCase):
                     content="This should not notify user2.",
                 )
                 mock_friend_queue.put_nowait.assert_not_called()
-                mock_user_notification_queues.__contains__.assert_not_any_call(
-                    self.user2_id
-                )
+                mock_user_notification_queues.__contains__.assert_not_called()

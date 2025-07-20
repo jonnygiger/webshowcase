@@ -21,7 +21,7 @@
 
             <div class="card shadow-sm">
                 <div class="card-body p-4">
-                    <form method="POST">
+                    <form method="POST" action="{{ url_for('core.create_post') }}">
                         {# {{ form.hidden_tag() if form and form.hidden_tag }} #}
                         <div class="mb-3">
                             <label for="title" class="form-label">Title</label>

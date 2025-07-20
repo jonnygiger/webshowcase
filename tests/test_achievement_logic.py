@@ -59,7 +59,7 @@ def seed_test_achievements():
     return final_ach_ids
 
 
-class AchievementLogicTests(AppTestCase):
+class TestAchievementLogic(AppTestCase):
 
     def test_get_user_stat_num_posts(self):
         with self.app.app_context():

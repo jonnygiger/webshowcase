@@ -20,7 +20,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 
-class TestPollAPI(AppTestCase):
+class TestApi(AppTestCase):
 
     def test_create_poll_api_invalid_options_too_few(self):
         with self.app.app_context():
@@ -56,9 +56,6 @@ class TestPollAPI(AppTestCase):
             data = response.get_json()
             self.assertIn("Poll option text cannot be blank", data["message"])
 
-
-class TestEventAPI(AppTestCase):
-
     def test_get_event_list_api(self):
         with self.app.app_context():
             token = self._get_jwt_token(self.user1.username, "password")
@@ -73,9 +70,6 @@ class TestEventAPI(AppTestCase):
             self.assertIn("events", data)
             self.assertEqual(len(data["events"]), 2)
 
-
-class TestTrendingHashtagsAPI(AppTestCase):
-
     @patch("social_app.api.routes.get_trending_hashtags")
     def test_get_trending_hashtags(self, mock_get_trending_hashtags):
         with self.app.app_context():
@@ -89,9 +83,6 @@ class TestTrendingHashtagsAPI(AppTestCase):
             data = response.get_json()
             self.assertIn("trending_hashtags", data)
             self.assertEqual(len(data["trending_hashtags"]), 1)
-
-
-class TestPostLockAPI(AppTestCase):
 
     def test_lock_already_locked_post_by_another_user(self):
         with self.app.app_context():
@@ -117,16 +108,10 @@ class TestPostLockAPI(AppTestCase):
             self.assertIn("Post is currently locked by another user.", data["message"])
             self.assertEqual(data["locked_by_username"], self.user1.username)
 
-
-class TestUserFeedAPI(AppTestCase):
-
     def test_get_user_feed_unauthorized(self):
         with self.app.app_context():
             response = self.client.get(f"/api/users/{self.user1_id}/feed")
             self.assertEqual(response.status_code, 401)
-
-
-class TestChatRoomAPI(AppTestCase):
 
     def test_create_chat_room_duplicate_name(self):
         with self.app.app_context():
@@ -148,8 +133,6 @@ class TestChatRoomAPI(AppTestCase):
                 f"Chat room with name '{room_name}' already exists.", data["message"]
             )
 
-
-class TestCommentAPI(AppTestCase):
     def test_post_comment_to_non_existent_post(self):
         with self.app.app_context():
             token = self._get_jwt_token(self.user1.username, "password")
@@ -193,9 +176,6 @@ class TestCommentAPI(AppTestCase):
                 "You are blocked by the post author and cannot comment.",
                 data["message"],
             )
-
-
-class TestSharedFileAPI(AppTestCase):
 
     def setUp(self):
         super().setUp()
@@ -268,8 +248,6 @@ class TestSharedFileAPI(AppTestCase):
             data = response.get_json()
             self.assertEqual(data["original_filename"], "test_file.txt")
 
-
-class TestApiEndpoints(AppTestCase):
     def test_get_users(self):
         with self.app.app_context():
             token = self._get_jwt_token(self.user1.username, "password")

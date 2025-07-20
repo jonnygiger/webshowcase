@@ -1,7 +1,7 @@
 import unittest
 
 
-class TestMinimalSanityCheck(unittest.TestCase):
+class TestSanity(unittest.TestCase):
     def test_absolutely_nothing(self):
         import sys
 

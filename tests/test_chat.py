@@ -5,7 +5,7 @@ from flask_jwt_extended import create_access_token
 from datetime import datetime, timezone
 
 
-class ChatTestCase(AppTestCase):
+class TestChat(AppTestCase):
 
     def setUp(self):
         super().setUp()

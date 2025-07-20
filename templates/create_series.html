@@ -12,7 +12,7 @@
 
             <div class="card shadow-sm">
                 <div class="card-body p-4">
-                    <form method="POST" action="{{ url_for('create_series') }}">
+                    <form method="POST" action="{{ url_for('core.create_series') }}">
                         {# {{ form.hidden_tag() if form and form.hidden_tag }} #}
                         <div class="mb-3">
                             <label for="title" class="form-label">Series Title</label>
@@ -23,7 +23,7 @@
                             <textarea class="form-control" id="description" name="description" rows="5" placeholder="What is this series about?"></textarea>
                         </div>
                         <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
-                            <a href="{{ url_for('blog') }}" class="btn btn-outline-secondary me-md-2">Cancel</a>
+                            <a href="{{ url_for('core.blog') }}" class="btn btn-outline-secondary me-md-2">Cancel</a>
                             <button type="submit" class="btn btn-primary btn-lg">
                                 <i class="bi bi-collection-fill"></i> Create Series
                             </button>

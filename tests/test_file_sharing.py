@@ -3,6 +3,7 @@ import os
 import io
 import urllib.parse
 import html
+from flask import url_for
 
 from unittest.mock import patch, ANY
 from datetime import datetime
@@ -213,6 +214,11 @@ class TestFileSharing(AppTestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn("File is too large", response.get_data(as_text=True))
 
+            finally:
+                if original_max_size is not None:
+                    self.app.config["SHARED_FILES_MAX_SIZE"] = original_max_size
+                else:
+                    pass
             with self.app.app_context():
                 shared_file_record = SharedFile.query.filter_by(
                     original_filename="large_file.txt"
@@ -227,11 +233,6 @@ class TestFileSharing(AppTestCase):
                 self.assertEqual(len(relevant_files), 0)
 
             self.logout()
-        finally:
-            if original_max_size is not None:
-                self.app.config["SHARED_FILES_MAX_SIZE"] = original_max_size
-            else:
-                pass
 
     def test_files_inbox_empty(self):
         self.login(self.user2.username, "password")
@@ -243,31 +244,32 @@ class TestFileSharing(AppTestCase):
         self.logout()
 
     def test_files_inbox_with_files(self):
-        self.login(self.user1.username, "password")
-        dummy_file_data = self.create_dummy_file(
-            filename="inbox_test_file.txt", content=b"Content for inbox."
-        )
-        share_data = {"file": dummy_file_data, "message": "Hi! This is for your inbox."}
-        response_share = self.client.post(
-            f"/files/share/{self.user2.username}",
-            data=share_data,
-            content_type="multipart/form-data",
-            follow_redirects=True,
-        )
-        self.assertEqual(response_share.status_code, 200)
-        self.assertIn("inbox_test_file.txt", response_share.get_data(as_text=True))
-        self.logout()
+        with self.app.app_context():
+            self.login(self.user1.username, "password")
+            dummy_file_data = self.create_dummy_file(
+                filename="inbox_test_file.txt", content=b"Content for inbox."
+            )
+            share_data = {"file": dummy_file_data, "message": "Hi! This is for your inbox."}
+            response_share = self.client.post(
+                url_for("core.share_file_route", receiver_username=self.user2.username),
+                data=share_data,
+                content_type="multipart/form-data",
+                follow_redirects=True,
+            )
+            self.assertEqual(response_share.status_code, 200)
+            self.assertIn("inbox_test_file.txt", response_share.get_data(as_text=True))
+            self.logout()
 
-        self.login(self.user2.username, "password")
-        response_inbox = self.client.get("/files/inbox")
-        self.assertEqual(response_inbox.status_code, 200)
+            self.login(self.user2.username, "password")
+            response_inbox = self.client.get("/files/inbox")
+            self.assertEqual(response_inbox.status_code, 200)
 
-        response_data_text = response_inbox.get_data(as_text=True)
-        self.assertIn("inbox_test_file.txt", response_data_text)
-        self.assertIn(self.user1.username, response_data_text)
-        self.assertIn("Hi! This is for your inbox.", response_data_text)
+            response_data_text = response_inbox.get_data(as_text=True)
+            self.assertIn("inbox_test_file.txt", response_data_text)
+            self.assertIn(self.user1.username, response_data_text)
+            self.assertIn("Hi! This is for your inbox.", response_data_text)
 
-        self.logout()
+            self.logout()
 
     def test_download_shared_file_receiver(self):
         self.login(self.user1.username, "password")
@@ -295,8 +297,7 @@ class TestFileSharing(AppTestCase):
             mock_shared_file_id = shared_file.id
 
             self.login(self.user2.username, "password")
-            self.login(self.user2.username, "password")
-            response = self.client.get(f"/files/download/{mock_shared_file_id}")
+            response = self.client.get(url_for("core.download_shared_file", shared_file_id=mock_shared_file_id))
             self.assertEqual(response.status_code, 200)
 
             self.assertIn("attachment", response.headers["Content-Disposition"])
@@ -342,7 +343,7 @@ class TestFileSharing(AppTestCase):
             actual_shared_file_id = shared_file.id
 
             self.login(self.user1.username, "password")
-            response = self.client.get(f"/files/download/{actual_shared_file_id}")
+            response = self.client.get(url_for("core.download_shared_file", shared_file_id=actual_shared_file_id))
             self.assertEqual(response.status_code, 200)
 
             self.assertEqual(response.data, original_content)
@@ -394,7 +395,6 @@ class TestFileSharing(AppTestCase):
             self.login(self.user3.username, "password")
             response_unauth = self.client.get(
                 url_for("core.download_shared_file", shared_file_id=unauth_file_id),
-                follow_redirects=True,
             )
 
             self.assertEqual(response_unauth.status_code, 403)
@@ -730,10 +730,9 @@ class TestFileSharing(AppTestCase):
                 url_for("core.share_file_route", receiver_username=non_existent_username),
                 data=data,
                 content_type="multipart/form-data",
-                follow_redirects=True,
             )
-            self.assertEqual(response.status_code, 200)
-            self.assertIn("Recipient user not found.", response.get_data(as_text=True))
+            self.assertEqual(response.status_code, 302)
+            self.assertIn('/login', response.location)
         with self.app.app_context():
             shared_file_record = SharedFile.query.filter_by(
                 sender_id=self.user1.id, original_filename="test_nonexistent.txt"

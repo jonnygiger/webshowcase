@@ -13,7 +13,7 @@
             <ul class="list-group">
                 {% for post in posts %}
                     <li class="list-group-item">
-                        <h4><a href="{{ url_for('view_post', post_id=post.id) }}">{{ post.title }}</a></h4>
+                        <h4><a href="{{ url_for('core.view_post', post_id=post.id) }}">{{ post.title }}</a></h4>
                         <p class="post-timestamp"><small>Posted on: {{ post.timestamp.strftime('%Y-%m-%d %H:%M') }}</small></p>
                         <p class="post-content-snippet">
                             {{ post.content | truncate(150, True) }}
@@ -36,7 +36,7 @@
             <ul class="list-group">
                 {% for event in events %}
                     <li class="list-group-item">
-                        <h4><a href="{{ url_for('view_event', event_id=event.id) }}">{{ event.title }}</a></h4>
+                        <h4><a href="{{ url_for('core.view_event', event_id=event.id) }}">{{ event.title }}</a></h4>
                         <p class="event-date-time">
                             <small>
                                 Event Date: {{ event.date }}

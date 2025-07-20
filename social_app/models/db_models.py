@@ -334,6 +334,14 @@ class Post(db.Model):
                 return True
         return False
 
+    def is_locked_by_user(self, user_id):
+        """Checks if the post is currently locked by a specific user."""
+        return (
+            self.is_locked()
+            and self.lock_info
+            and self.lock_info.user_id == user_id
+        )
+
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)

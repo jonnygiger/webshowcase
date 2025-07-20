@@ -54,7 +54,7 @@
                     </div>
                 </form>
             {% else %}
-                <p><a href="{{ url_for('login', next=request.url) }}">Log in</a> to RSVP.</p>
+                <p><a href="{{ url_for('core.login', next=request.url) }}">Log in</a> to RSVP.</p>
             {% endif %}
         </div>
     </div>
@@ -71,7 +71,7 @@
     {% endif %}
 
     <div class="mt-3">
-        <a href="{{ url_for('events_list') }}" class="btn btn-outline-secondary">Back to Events List</a>
+        <a href="{{ url_for('core.events_list') }}" class="btn btn-outline-secondary">Back to Events List</a>
     </div>
 </div>
 {% endblock %}

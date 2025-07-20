@@ -46,28 +46,37 @@ class TestSuggestTrendingPosts(AppTestCase):
 
     def _create_like(self, user, post, timestamp):
         like = Like(user_id=user.id, post_id=post.id, timestamp=timestamp)
+        like.user = user
         db.session.add(like)
         db.session.commit()
         return like
 
     def _create_comment(self, user, post, timestamp, content="Test comment"):
         comment = Comment(
-            user_id=user.id, post_id=post.id, timestamp=timestamp, content=content
+            user_id=user.id,
+            post_id=post.id,
+            timestamp=timestamp,
+            content=content,
         )
+        comment.author = user
         db.session.add(comment)
         db.session.commit()
         return comment
 
     def _create_share(self, user, post, timestamp):
         share = SharedPost(
-            shared_by_user_id=user.id, original_post_id=post.id, shared_at=timestamp
+            shared_by_user_id=user.id,
+            original_post_id=post.id,
+            shared_at=timestamp,
         )
+        share.sharing_user = user
         db.session.add(share)
         db.session.commit()
         return share
 
     def _create_bookmark(self, user, post):
         bookmark = Bookmark(user_id=user.id, post_id=post.id)
+        bookmark.user = user
         db.session.add(bookmark)
         db.session.commit()
         return bookmark

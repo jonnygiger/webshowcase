@@ -14,7 +14,7 @@
         {% endif %}
     {% endwith %}
 
-    <form method="POST" action="{{ url_for('share_file_route', receiver_username=receiver_user.username) }}" enctype="multipart/form-data">
+    <form method="POST" action="{{ url_for('core.share_file_route', receiver_username=receiver_user.username) }}" enctype="multipart/form-data">
         <div class="mb-3">
             <label for="file" class="form-label">Select file:</label>
             <input type="file" name="file" id="file" class="form-control" required>

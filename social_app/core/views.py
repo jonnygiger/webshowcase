@@ -887,7 +887,7 @@ def view_post(post_id):
 @login_required
 def edit_post(post_id):
     post = Post.query.get_or_404(post_id)
-    if post.user_id != current_user.id:
+    if not (post.user_id == current_user.id or post.is_locked_by_user(current_user.id)):
         flash("You are not authorized to edit this post.", "danger")
         return redirect(url_for("core.view_post", post_id=post_id))
     if request.method == "POST":
@@ -909,7 +909,7 @@ def edit_post(post_id):
         if post.id in current_app.post_event_listeners:
             listeners = list(
                 current_app.post_event_listeners[post.id]
-            )  # Iterate over a copy
+            )
             current_app.logger.debug(
                 f"Dispatching post_content_updated from edit_post view to {len(listeners)} listeners for post {post.id}"
             )
@@ -920,7 +920,7 @@ def edit_post(post_id):
                         "payload": post_data_for_sse,
                     }
                     q_item.put_nowait(sse_data)
-                except Exception as e:  # queue.Full or other errors
+                except Exception as e:
                     current_app.logger.error(
                         f"Error putting post_content_updated to SSE queue from edit_post view for post {post.id}: {e}"
                     )
@@ -1041,7 +1041,7 @@ def add_comment(post_id):
         "timestamp": new_comment_db.timestamp.isoformat(),  # Use isoformat
     }
     # Dispatch to post-specific SSE stream (replaces old socketio.emit to post_X room)
-    if post_id in current_app.post_event_listeners:
+    if post_id in current_app.sse_listeners:
         comment_data_for_post_stream = {
             "id": new_comment_db.id,
             "author_username": new_comment_db.author.username,
@@ -1053,12 +1053,12 @@ def add_comment(post_id):
             "type": "new_comment",
             "payload": comment_data_for_post_stream,
         }
-        listeners = list(current_app.post_event_listeners[post_id])
+        listeners = list(current_app.sse_listeners[post_id])
         for q_item in listeners:
             try:
                 q_item.put_nowait(sse_event_for_post_stream)
                 current_app.logger.info(
-                    f"Dispatched new_comment (SSE) to post_event_listeners for post {post_id}"
+                    f"Dispatched new_comment (SSE) to sse_listeners for post {post_id}"
                 )
             except queue.Full:
                 current_app.logger.error(
@@ -1070,7 +1070,7 @@ def add_comment(post_id):
                 )
     else:
         current_app.logger.debug(
-            f"No active post_event_listeners for post {post_id} for new_comment event."
+            f"No active sse_listeners for post {post_id} for new_comment event."
         )
 
     if new_comment_db.user_id:
@@ -1307,16 +1307,16 @@ def post_event_stream(post_id):
     #     return Response(mimetype="text/event-stream", status=404)
 
     q_local = queue.Queue()
-    if post_id not in current_app.post_event_listeners:
-        current_app.post_event_listeners[post_id] = []
+    if post_id not in current_app.sse_listeners:
+        current_app.sse_listeners[post_id] = []
 
-    current_app.post_event_listeners[post_id].append(q_local)
+    current_app.sse_listeners[post_id].append(q_local)
     # Use a generic term like 'client' for logging if user is not authenticated for this stream
     client_id_for_log = (
         current_user.id if current_user.is_authenticated else request.remote_addr
     )
     current_app.logger.info(
-        f"Client {client_id_for_log} connected to post event stream for post {post_id}. Active listeners: {len(current_app.post_event_listeners[post_id])}"
+        f"Client {client_id_for_log} connected to post event stream for post {post_id}. Active listeners: {len(current_app.sse_listeners[post_id])}"
     )
 
     def event_generator():
@@ -1352,14 +1352,14 @@ def post_event_stream(post_id):
                 f"Cleaning up queue for post {post_id}, client {client_id_for_log}."
             )
             if (
-                post_id in current_app.post_event_listeners
-                and q_local in current_app.post_event_listeners[post_id]
+                post_id in current_app.sse_listeners
+                and q_local in current_app.sse_listeners[post_id]
             ):
-                current_app.post_event_listeners[post_id].remove(q_local)
-                if not current_app.post_event_listeners[post_id]:
-                    del current_app.post_event_listeners[post_id]
+                current_app.sse_listeners[post_id].remove(q_local)
+                if not current_app.sse_listeners[post_id]:
+                    del current_app.sse_listeners[post_id]
                     current_app.logger.info(
-                        f"Removed post {post_id} from post_event_listeners as it's empty."
+                        f"Removed post {post_id} from sse_listeners as it's empty."
                     )
 
     return Response(event_generator(), mimetype="text/event-stream")

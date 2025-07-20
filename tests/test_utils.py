@@ -13,6 +13,8 @@ class TestUtils(unittest.TestCase):
         self.assertFalse(is_armstrong_number(123))
         self.assertTrue(is_armstrong_number(1634))
         self.assertFalse(is_armstrong_number(2000))
+        self.assertTrue(is_armstrong_number(9474))
+        self.assertFalse(is_armstrong_number(9475))
 
 if __name__ == '__main__':
     unittest.main()

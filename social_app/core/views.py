@@ -2125,7 +2125,10 @@ def send_friend_request(target_user_id):
         blocker_id=target_user_id, blocked_id=current_user_id_val
     ).first()
     if is_blocked_by_current_user or is_blocked_by_target_user:
-        flash("Cannot send friend request due to a block.", "warning")
+        flash(
+            "You cannot send a friend request to this user as they have blocked you or you have blocked them.",
+            "warning",
+        )
         return redirect(url_for("core.user_profile", username=target_user.username))
 
     existing_friendship = Friendship.query.filter(

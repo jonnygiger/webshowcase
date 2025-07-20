@@ -14,7 +14,7 @@ class TestContentManagement(AppTestCase):
             author = self.user1
             self.login(author.username, "password")
 
-            series_obj = self._create_db_series(
+            series_obj = self._create_series(
                 user_id=author.id, title="My Test Series"
             )
 
@@ -78,7 +78,7 @@ class TestContentManagement(AppTestCase):
             author = self.user1
             self.login(author.username, "password")
 
-            series_obj = self._create_db_series(
+            series_obj = self._create_series(
                 user_id=author.id, title="Reorder Series"
             )
             post1 = self._create_db_post(user_id=author.id, title="First")
@@ -131,7 +131,7 @@ class TestContentManagement(AppTestCase):
             author = self.user1
             self.login(author.username, "password")
 
-            series_obj = self._create_db_series(
+            series_obj = self._create_series(
                 user_id=author.id, title="To Be Deleted Series"
             )
             post1 = self._create_db_post(
@@ -179,7 +179,7 @@ class TestContentManagement(AppTestCase):
             other_user = self.user2
             self.login(series_owner.username, "password")
 
-            series_obj = self._create_db_series(
+            series_obj = self._create_series(
                 user_id=series_owner.id, title="My Exclusive Series"
             )
             post_by_other = self._create_db_post(

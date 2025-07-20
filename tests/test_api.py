@@ -359,6 +359,7 @@ class TestApiEndpoints(AppTestCase):
             self.assertEqual(response.status_code, 201)
             data = response.get_json()
             self.assertEqual(data["message"], "Vote cast successfully")
+            db.session.refresh(poll)
 
     def test_get_events(self):
         with self.app.app_context():

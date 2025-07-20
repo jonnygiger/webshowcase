@@ -192,12 +192,12 @@ class User(UserMixin, db.Model):
 
     def to_dict(self):
         return {
-            "id": self.id,
-            "username": self.username,
-            "email": self.email,
-            "profile_picture": self.profile_picture,
-            "uploaded_images": self.uploaded_images,
-            "bio": self.bio,
+            'id': self.id,
+            'username': self.username,
+            'email': self.email,
+            'bio': self.bio,
+            'profile_picture': self.profile_picture,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
     def get_stats(self):
@@ -307,25 +307,16 @@ class Post(db.Model):
         return f"<Post {self.title}>"
 
     def to_dict(self):
-        snippet = ""
-        if self.content:
-            snippet = (
-                self.content[:100] + "..." if len(self.content) > 100 else self.content
-            )
-
         return {
-            "id": self.id,
-            "title": self.title,
-            "content_snippet": snippet,
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
-            "last_edited": self.last_edited.isoformat() if self.last_edited else None,
-            "user_id": self.user_id,
-            "author_username": (self.author.username if self.author else None),
-            "hashtags": self.hashtags,
-            "is_featured": self.is_featured,
-            "featured_at": self.featured_at.isoformat() if self.featured_at else None,
-            "image_url": self.image_url,
-            "group_id": self.group_id,
+            'id': self.id,
+            'title': self.title,
+            'content': self.content,
+            'author_id': self.user_id,
+            'group_id': self.group_id,
+            'is_featured': self.is_featured,
+            'featured_at': self.featured_at.isoformat() if self.featured_at else None,
+            'created_at': self.timestamp.isoformat(),
+            'last_edited': self.last_edited.isoformat() if self.last_edited else None,
         }
 
     def to_dict_simple(self):
@@ -355,6 +346,15 @@ class Comment(db.Model):
 
     def __repr__(self):
         return f"<Comment {self.id} by User {self.user_id} on Post {self.post_id}>"
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'content': self.content,
+            'post_id': self.post_id,
+            'author_id': self.user_id,
+            'created_at': self.timestamp.isoformat(),
+        }
 
 
 class Like(db.Model):
@@ -932,10 +932,9 @@ class ChatMessage(db.Model):
 
     def to_dict(self):
         return {
-            "id": self.id,
-            "room_id": self.room_id,
-            "user_id": self.user_id,
-            "username": self.user.username if self.user else "Unknown",
-            "message": self.message,
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            'id': self.id,
+            'content': self.message,
+            'room_id': self.room_id,
+            'author_id': self.user_id,
+            'timestamp': self.timestamp.isoformat(),
         }

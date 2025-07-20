@@ -319,7 +319,7 @@ class TestCollaborativeEditing(AppTestCase):
                 self.collaborator.username, "password"
             )  # Login the user performing the edit
             response_edit = self.client.post(
-                url_for("core.edit_post", post_id=self.test_post.id),
+                f"/posts/{self.test_post.id}/edit",
                 data=edit_payload,
                 headers=headers,  # Re-use headers with token for authorization if view requires
             )
@@ -371,7 +371,7 @@ class TestCollaborativeEditing(AppTestCase):
             }
 
             response_edit = self.client.post(
-                url_for("core.edit_post", post_id=self.test_post.id),
+                f"/posts/{self.test_post.id}/edit",
                 data=edit_payload,
                 follow_redirects=True,  # To check flash messages
             )
@@ -407,61 +407,63 @@ class TestCollaborativeEditing(AppTestCase):
     def test_sse_lock_acquired_broadcast_from_api(  # Renamed test
         self, mock_post_event_listeners
     ):
-        mock_queue = MagicMock()
-        mock_post_event_listeners.get.return_value = [mock_queue]
-        mock_post_event_listeners.__contains__.return_value = True
+        with self.app.app_context():
+            mock_queue = MagicMock()
+            mock_post_event_listeners.get.return_value = [mock_queue]
+            mock_post_event_listeners.__contains__.return_value = True
 
-        token = self._get_jwt_token(self.collaborator.username, "password")
-        headers = {"Authorization": f"Bearer {token}"}
+            token = self._get_jwt_token(self.collaborator.username, "password")
+            headers = {"Authorization": f"Bearer {token}"}
 
-        response = self.client.post(
-            f"/api/posts/{self.test_post.id}/lock", headers=headers
-        )
+            response = self.client.post(
+                f"/api/posts/{self.test_post.id}/lock", headers=headers
+            )
 
-        self.assertEqual(response.status_code, 200)
-        time.sleep(0.1)  # Allow time for SSE dispatch if async
+            self.assertEqual(response.status_code, 200)
+            time.sleep(0.1)  # Allow time for SSE dispatch if async
 
-        mock_queue.put_nowait.assert_called_once()
-        args, _ = mock_queue.put_nowait.call_args
-        sse_event_data = args[0]
+            mock_queue.put_nowait.assert_called_once()
+            args, _ = mock_queue.put_nowait.call_args
+            sse_event_data = args[0]
 
-        self.assertEqual(sse_event_data["type"], "post_lock_acquired")
-        payload = sse_event_data["payload"]
-        self.assertEqual(payload["post_id"], self.test_post.id)
-        self.assertEqual(payload["user_id"], self.collaborator.id)
-        self.assertEqual(payload["username"], self.collaborator.username)
-        self.assertIn("expires_at", payload)
+            self.assertEqual(sse_event_data["type"], "post_lock_acquired")
+            payload = sse_event_data["payload"]
+            self.assertEqual(payload["post_id"], self.test_post.id)
+            self.assertEqual(payload["user_id"], self.collaborator.id)
+            self.assertEqual(payload["username"], self.collaborator.username)
+            self.assertIn("expires_at", payload)
 
     @patch("social_app.core.views.current_app.post_event_listeners")  # Patched to SSE
     def test_sse_lock_released_broadcast_from_api(  # Renamed test
         self, mock_post_event_listeners_release
     ):
-        mock_queue_release = MagicMock()
-        mock_post_event_listeners_release.get.return_value = [mock_queue_release]
-        mock_post_event_listeners_release.__contains__.return_value = True
+        with self.app.app_context():
+            mock_queue_release = MagicMock()
+            mock_post_event_listeners_release.get.return_value = [mock_queue_release]
+            mock_post_event_listeners_release.__contains__.return_value = True
 
-        token_collaborator = self._get_jwt_token(self.collaborator.username, "password")
-        headers_collaborator = {"Authorization": f"Bearer {token_collaborator}"}
-        response_acquire = self.client.post(
-            f"/api/posts/{self.test_post.id}/lock", headers=headers_collaborator
-        )
-        self.assertEqual(response_acquire.status_code, 200)
+            token_collaborator = self._get_jwt_token(self.collaborator.username, "password")
+            headers_collaborator = {"Authorization": f"Bearer {token_collaborator}"}
+            response_acquire = self.client.post(
+                f"/api/posts/{self.test_post.id}/lock", headers=headers_collaborator
+            )
+            self.assertEqual(response_acquire.status_code, 200)
 
-        # Reset mock for the release part if the same mock is used or ensure fresh mock
-        mock_queue_release.reset_mock()  # Reset the specific queue mock
+            # Reset mock for the release part if the same mock is used or ensure fresh mock
+            mock_queue_release.reset_mock()  # Reset the specific queue mock
 
-        response_release = self.client.delete(
-            f"/api/posts/{self.test_post.id}/lock", headers=headers_collaborator
-        )
-        self.assertEqual(response_release.status_code, 200)
-        time.sleep(0.1)  # Allow time for SSE dispatch
+            response_release = self.client.delete(
+                f"/api/posts/{self.test_post.id}/lock", headers=headers_collaborator
+            )
+            self.assertEqual(response_release.status_code, 200)
+            time.sleep(0.1)  # Allow time for SSE dispatch
 
-        mock_queue_release.put_nowait.assert_called_once()
-        args_release, _ = mock_queue_release.put_nowait.call_args
-        sse_event_data_release = args_release[0]
+            mock_queue_release.put_nowait.assert_called_once()
+            args_release, _ = mock_queue_release.put_nowait.call_args
+            sse_event_data_release = args_release[0]
 
-        self.assertEqual(sse_event_data_release["type"], "post_lock_released")
-        payload_release = sse_event_data_release["payload"]
-        self.assertEqual(payload_release["post_id"], self.test_post.id)
-        self.assertEqual(payload_release["released_by_user_id"], self.collaborator.id)
-        self.assertEqual(payload_release["username"], self.collaborator.username)
+            self.assertEqual(sse_event_data_release["type"], "post_lock_released")
+            payload_release = sse_event_data_release["payload"]
+            self.assertEqual(payload_release["post_id"], self.test_post.id)
+            self.assertEqual(payload_release["released_by_user_id"], self.collaborator.id)
+            self.assertEqual(payload_release["username"], self.collaborator.username)

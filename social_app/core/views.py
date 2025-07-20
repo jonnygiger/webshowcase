@@ -620,7 +620,7 @@ def inject_user_into_templates():
 @login_required
 def discover_feed():
     user_id = current_user.id
-    final_posts_with_reasons = get_personalized_feed_posts(user_id, limit=15)
+    final_posts_with_reasons = get_personalized_feed_posts(user_id=user_id, limit=15)
     recommended_groups_raw = suggest_groups_to_join(user_id, limit=5)
     recommended_events_raw = suggest_events_to_attend(user_id, limit=5)
     groups_with_reasons = [
@@ -2896,7 +2896,11 @@ def mark_all_friend_post_notifications_as_read():
 @core_bp.route("/files/share/<receiver_username>", methods=["GET", "POST"])
 @login_required
 def share_file_route(receiver_username):
-    receiver_user = User.query.filter_by(username=receiver_username).first_or_404()
+    receiver_user = User.query.filter_by(username=receiver_username).first()
+    if not receiver_user:
+        flash("User not found.", "danger")
+        return redirect(url_for("core.hello_world"))
+
     if request.method == "POST":
         if "file" not in request.files:
             flash("No file part.", "danger")
@@ -2917,28 +2921,16 @@ def share_file_route(receiver_username):
             return redirect(request.url)
 
         if file and allowed_shared_file(file.filename):
-            true_original_filename = file.filename
-            secured_filename_for_ext = secure_filename(file.filename)
+            original_filename = secure_filename(file.filename)
             extension = (
-                secured_filename_for_ext.rsplit(".", 1)[1].lower()
-                if "." in secured_filename_for_ext
+                original_filename.rsplit(".", 1)[1].lower()
+                if "." in original_filename
                 else ""
             )
-            if not extension and "." in true_original_filename:
-                _original_ext_candidate = true_original_filename.rsplit(".", 1)[
-                    1
-                ].lower()
-                if (
-                    _original_ext_candidate
-                    in current_app.config["SHARED_FILES_ALLOWED_EXTENSIONS"]
-                ):
-                    extension = _original_ext_candidate
-
             saved_filename_on_disk = (
-                f"{uuid.uuid4().hex}.{extension}"
-                if extension
-                else f"{uuid.uuid4().hex}"
+                f"{uuid.uuid4().hex}.{extension}" if extension else uuid.uuid4().hex
             )
+
             file_path = os.path.join(
                 current_app.config["SHARED_FILES_UPLOAD_FOLDER"], saved_filename_on_disk
             )
@@ -2948,7 +2940,7 @@ def share_file_route(receiver_username):
                 new_shared_file = SharedFile(
                     sender_id=current_user.id,
                     receiver_id=receiver_user.id,
-                    original_filename=true_original_filename,
+                    original_filename=original_filename,
                     saved_filename=saved_filename_on_disk,
                     message=message_text,
                 )
@@ -2986,14 +2978,17 @@ def files_inbox():
 @core_bp.route("/files/download/<int:shared_file_id>", methods=["GET"])
 @login_required
 def download_shared_file(shared_file_id):
-    shared_file = SharedFile.query.get_or_404(shared_file_id)
+    shared_file = db.session.get(SharedFile, shared_file_id)
+    if not shared_file:
+        return "File not found.", 404
+
     current_user_id_val = current_user.id
     if (
         shared_file.receiver_id != current_user_id_val
         and shared_file.sender_id != current_user_id_val
     ):
-        flash("Not authorized to download this file.", "danger")
-        return redirect(url_for("core.files_inbox"))
+        return "Not authorized to download this file.", 403
+
     try:
         if shared_file.receiver_id == current_user_id_val and not shared_file.is_read:
             shared_file.is_read = True

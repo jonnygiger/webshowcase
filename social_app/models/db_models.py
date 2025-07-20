@@ -933,8 +933,9 @@ class ChatMessage(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'content': self.message,
+            'message': self.message,
             'room_id': self.room_id,
-            'author_id': self.user_id,
+            'user_id': self.user_id,
+            'username': self.user.username if self.user else None,
             'timestamp': self.timestamp.isoformat(),
         }

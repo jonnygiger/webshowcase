@@ -26,8 +26,10 @@ from ..models.db_models import (
 
 
 class UserListResource(Resource):
+    @jwt_required()
     def get(self):
-        return {"message": "User list resource placeholder"}, 200
+        users = User.query.all()
+        return [user.to_dict() for user in users], 200
 
 
 class UserResource(Resource):
@@ -36,6 +38,11 @@ class UserResource(Resource):
 
 
 class PostListResource(Resource):
+    @jwt_required()
+    def get(self):
+        posts = Post.query.all()
+        return [post.to_dict() for post in posts], 200
+
     @jwt_required()
     def post(self):
         current_user_id = int(get_jwt_identity())
@@ -60,6 +67,14 @@ class PostListResource(Resource):
 
 
 class CommentListResource(Resource):
+    @jwt_required()
+    def get(self, post_id):
+        post = db.session.get(Post, post_id)
+        if not post:
+            return {"message": "Post not found"}, 404
+        comments = Comment.query.filter_by(post_id=post_id).all()
+        return [comment.to_dict() for comment in comments], 200
+
     @jwt_required()
     def post(self, post_id):
         current_user_id = int(get_jwt_identity())
@@ -137,7 +152,7 @@ class PollListResource(Resource):
     @jwt_required()
     def get(self):
         polls = Poll.query.all()
-        return {"polls": [poll.to_dict() for poll in polls]}, 200
+        return [poll.to_dict() for poll in polls], 200
 
     @jwt_required()
     def post(self):
@@ -461,6 +476,32 @@ class EventListResource(Resource):
     def get(self):
         events = Event.query.all()
         return {"events": [event.to_dict() for event in events]}, 200
+
+
+class EventRSVPResource(Resource):
+    @jwt_required()
+    def post(self, event_id):
+        current_user_id = int(get_jwt_identity())
+        user = db.session.get(User, current_user_id)
+        if not user:
+            return {"message": "User not found"}, 404
+
+        event = db.session.get(Event, event_id)
+        if not event:
+            return {"message": "Event not found"}, 404
+
+        parser = reqparse.RequestParser()
+        parser.add_argument("status", required=True, help="Status cannot be blank")
+        data = parser.parse_args()
+
+        rsvp = EventRSVP.query.filter_by(user_id=user.id, event_id=event.id).first()
+        if rsvp:
+            rsvp.status = data["status"]
+        else:
+            rsvp = EventRSVP(user_id=user.id, event_id=event.id, status=data["status"])
+            db.session.add(rsvp)
+        db.session.commit()
+        return {"message": "RSVP status updated successfully."}, 200
 
 
 class EventResource(Resource):
@@ -836,6 +877,28 @@ class TrendingHashtagsResource(Resource):
 from ..services.recommendations_service import get_on_this_day_content
 
 
+class PostLikeResource(Resource):
+    @jwt_required()
+    def post(self, post_id):
+        current_user_id = int(get_jwt_identity())
+        user = db.session.get(User, current_user_id)
+        if not user:
+            return {"message": "User not found"}, 404
+
+        post = db.session.get(Post, post_id)
+        if not post:
+            return {"message": "Post not found"}, 404
+
+        like = Like.query.filter_by(user_id=user.id, post_id=post.id).first()
+        if like:
+            return {"message": "Post already liked"}, 400
+
+        new_like = Like(user_id=user.id, post_id=post.id)
+        db.session.add(new_like)
+        db.session.commit()
+        return {"message": "Post liked successfully."}, 200
+
+
 class OnThisDayResource(Resource):
     @jwt_required()
     def get(self):
@@ -896,6 +959,15 @@ class SeriesResource(Resource):
         return {
             "message": f"Series resource placeholder for series_id {series_id}"
         }, 200
+
+
+from social_app.models.db_models import SharedFile
+class SharedFileListResource(Resource):
+    @jwt_required()
+    def get(self):
+        current_user_id = int(get_jwt_identity())
+        files = SharedFile.query.filter_by(receiver_id=current_user_id).all()
+        return [file.to_dict() for file in files], 200
 
 
 class SharedFileResource(Resource):

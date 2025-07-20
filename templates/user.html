@@ -36,7 +36,7 @@
         {% if user.profile_picture %}
             <img src="{{ user.profile_picture }}" alt="{{ username }}'s Profile Picture" class="img-thumbnail" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover;">
         {% else %}
-            <img src="{{ custom_url_for_assets('static', filename='profile_pics/default.png') }}" alt="Default Profile Picture" class="img-thumbnail" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover;">
+            <img src="{{ url_for('static', filename='profile_pics/default.png') }}" alt="Default Profile Picture" class="img-thumbnail" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover;">
             {# Consider adding a default profile picture, e.g., static/profile_pics/default.png #}
         {% endif %}
     </div>
@@ -165,7 +165,7 @@
             <div class="gallery-grid">
                 {% for image_filename in user_gallery_images %}
                     <div class="gallery-item">
-                        <img src="{{ custom_url_for_assets('core.uploaded_file', filename=image_filename) }}" alt="User Gallery Image {{ image_filename }}" style="max-width: 200px; max-height: 200px; margin: 5px;">
+                        <img src="{{ url_for('core.uploaded_file', filename=image_filename) }}" alt="User Gallery Image {{ image_filename }}" style="max-width: 200px; max-height: 200px; margin: 5px;">
                     </div>
                 {% endfor %}
             </div>

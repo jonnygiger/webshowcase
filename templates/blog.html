@@ -15,10 +15,10 @@
               {% for post_item in posts %}
                 <div class="card mb-4 shadow-sm">
                     <div class="card-body">
-                        <h4 class="card-title"><a href="{{ custom_url_for_primary('view_post', post_id=post_item.id) }}" class="text-decoration-none">{{ post_item.title }}</a></h4>
+                        <h4 class="card-title"><a href="{{ url_for('view_post', post_id=post_item.id) }}" class="text-decoration-none">{{ post_item.title }}</a></h4>
                         <p class="card-subtitle mb-2 text-muted">
                             <small>
-                                By <a href="{{ custom_url_for_primary('core.user_profile', username=post_item.author.username) }}" class="text-decoration-none">{{ post_item.author.username }}</a>
+                                By <a href="{{ url_for('core.user_profile', username=post_item.author.username) }}" class="text-decoration-none">{{ post_item.author.username }}</a>
                                 on {{ post_item.timestamp.strftime('%Y-%m-%d %H:%M') }}
                                 {% if post_item.last_edited %}
                                     (Edited: {{ post_item.last_edited.strftime('%Y-%m-%d %H:%M') }})
@@ -36,34 +36,34 @@
                                 {% endif %}
                             </small>
                         </p>
-                        <p class="card-text">{{ post_item.content[:250] }}{% if post_item.content|length > 250 %}... <a href="{{ custom_url_for_primary('view_post', post_id=post_item.id) }}">Read more</a>{% endif %}</p>
+                        <p class="card-text">{{ post_item.content[:250] }}{% if post_item.content|length > 250 %}... <a href="{{ url_for('view_post', post_id=post_item.id) }}">Read more</a>{% endif %}</p>
                         {% if post_item.hashtags %}
                             <div class="mb-2">
                                 {% for tag in post_item.hashtags.split(',') %}
                                     {% set cleaned_tag = tag.strip() %}
                                     {% if cleaned_tag %}
-                                        <a href="{{ custom_url_for_primary('view_hashtag_posts', tag=cleaned_tag) }}" class="badge bg-secondary text-decoration-none me-1">#{{ cleaned_tag }}</a>
+                                        <a href="{{ url_for('view_hashtag_posts', tag=cleaned_tag) }}" class="badge bg-secondary text-decoration-none me-1">#{{ cleaned_tag }}</a>
                                     {% endif %}
                                 {% endfor %}
                             </div>
                         {% endif %}
                         <div class="mt-2">
-                            <a href="{{ custom_url_for_primary('view_post', post_id=post_item.id) }}" class="btn btn-primary btn-sm">
+                            <a href="{{ url_for('view_post', post_id=post_item.id) }}" class="btn btn-primary btn-sm">
                                 <i class="bi bi-book-fill"></i> Read More
                             </a>
                             {% if current_user and current_user.id == post_item.user_id %}
-                              <a href="{{ custom_url_for_primary('edit_post', post_id=post_item.id) }}" class="btn btn-sm btn-outline-secondary ms-2">
+                              <a href="{{ url_for('edit_post', post_id=post_item.id) }}" class="btn btn-sm btn-outline-secondary ms-2">
                                   <i class="bi bi-pencil-square"></i> Edit
                               </a>
                             {% endif %}
                             {% if current_user %}
-                              <form action="{{ custom_url_for_primary('bookmark_post', post_id=post_item.id) }}" method="POST" class="d-inline ms-2">
+                              <form action="{{ url_for('bookmark_post', post_id=post_item.id) }}" method="POST" class="d-inline ms-2">
                                   <button type="submit" class="btn btn-sm {% if post_item.id in bookmarked_post_ids %}btn-info{% else %}btn-outline-info{% endif %}">
                                       <i class="bi bi-bookmark-star{{ '-fill' if post_item.id in bookmarked_post_ids else '' }}"></i>
                                       {{ 'Unbookmark' if post_item.id in bookmarked_post_ids else 'Bookmark' }}
                                   </button>
                               </form>
-                              <form action="{{ custom_url_for_primary('share_post', post_id=post_item.id) }}" method="POST" class="d-inline ms-2">
+                              <form action="{{ url_for('share_post', post_id=post_item.id) }}" method="POST" class="d-inline ms-2">
                                   <button type="submit" class="btn btn-sm btn-outline-success">
                                       <i class="bi bi-share-fill"></i> Share
                                   </button>
@@ -75,7 +75,7 @@
               {% endfor %}
             {% else %}
               <div class="alert alert-info" role="alert">
-                No blog posts yet. <a href="{{ custom_url_for_primary('create_post') }}" class="alert-link">Be the first to create one!</a>
+                No blog posts yet. <a href="{{ url_for('create_post') }}" class="alert-link">Be the first to create one!</a>
               </div>
             {% endif %}
         </div>
@@ -89,13 +89,13 @@
                         <h5 class="card-title">Suggested Users</h5>
                         <div class="list-group list-group-flush">
                             {% for user_suggestion in suggested_users_snippet %}
-                            <a href="{{ custom_url_for_primary('core.user_profile', username=user_suggestion.username) }}" class="list-group-item list-group-item-action d-flex align-items-center">
-                                <img src="{{ user_suggestion.profile_picture or custom_url_for_assets('static', filename='profile_pics/default.png') }}" alt="{{ user_suggestion.username }}'s profile picture" class="rounded-circle me-2" style="width: 30px; height: 30px; object-fit: cover;">
+                            <a href="{{ url_for('core.user_profile', username=user_suggestion.username) }}" class="list-group-item list-group-item-action d-flex align-items-center">
+                                <img src="{{ user_suggestion.profile_picture or url_for('static', filename='profile_pics/default.png') }}" alt="{{ user_suggestion.username }}'s profile picture" class="rounded-circle me-2" style="width: 30px; height: 30px; object-fit: cover;">
                                 <span class="text-truncate">{{ user_suggestion.username }}</span>
                             </a>
                             {% endfor %}
                         </div>
-                        <a href="{{ custom_url_for_primary('recommendations_view') }}" class="btn btn-sm btn-outline-primary mt-2 w-100">See More Recommendations</a>
+                        <a href="{{ url_for('recommendations_view') }}" class="btn btn-sm btn-outline-primary mt-2 w-100">See More Recommendations</a>
                     </div>
                 </div>
                 {% endif %}

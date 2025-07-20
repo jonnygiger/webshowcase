@@ -170,16 +170,6 @@ def generate_activity_summary():
     current_app.last_activity_check_time = current_check_time
 
 
-def custom_url_for_assets(endpoint, **values):
-    """Custom URL helper for assets. Currently a passthrough to flask.url_for."""
-    return url_for(endpoint, **values)
-
-
-def custom_url_for_primary(endpoint, **values):
-    """Custom URL helper for primary application links. Currently a passthrough to flask.url_for."""
-    return url_for(endpoint, **values)
-
-
 def is_armstrong_number(n):
     """
     Checks if a number is an Armstrong number.

@@ -1,0 +1,7 @@
+<form action="{{ url_for('core.set_status') }}" method="POST" class="mt-3">
+    <div class="input-group">
+        <input type="text" name="status_text" class="form-control" placeholder="What's on your mind?">
+        <input type="text" name="emoji" class="form-control" placeholder="🎉">
+        <button type="submit" class="btn btn-primary">Set Status</button>
+    </div>
+</form>

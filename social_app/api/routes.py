@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import os
 
 from ..services.notifications_service import broadcast_new_post
+from ..core.views import dispatch_sse_event
 from ..models.db_models import (
     User,
     Post,
@@ -311,22 +312,7 @@ class PostLockResource(Resource):
             "username": user.username,
             "expires_at": new_lock.expires_at.isoformat(),
         }
-        if new_lock.post_id in current_app.post_event_listeners:
-            listeners = list(current_app.post_event_listeners[new_lock.post_id])
-            current_app.logger.debug(
-                f"Dispatching post_lock_changed (acquired) to {len(listeners)} listeners for post {new_lock.post_id}"
-            )
-            for q_item in listeners:
-                try:
-                    sse_data = {
-                        "event": "post_lock_changed",
-                        "data": lock_payload_for_sse,
-                    }
-                    q_item.put_nowait(sse_data)
-                except Exception as e:
-                    current_app.logger.error(
-                        f"Error putting post_lock_changed (acquired) to SSE queue for post {new_lock.post_id}: {e}"
-                    )
+        dispatch_sse_event(new_lock.post_id, "post_lock_changed", lock_payload_for_sse)
 
         return {
             "message": "Post locked successfully.",
@@ -384,22 +370,7 @@ class PostLockResource(Resource):
             "user_id": current_user_id,
             "username": user.username,
         }
-        if post_id in current_app.post_event_listeners:
-            listeners = list(current_app.post_event_listeners[post_id])
-            current_app.logger.debug(
-                f"Dispatching post_lock_changed (released) to {len(listeners)} listeners for post {post_id}"
-            )
-            for q_item in listeners:
-                try:
-                    sse_data = {
-                        "event": "post_lock_changed",
-                        "data": release_payload_for_sse,
-                    }
-                    q_item.put_nowait(sse_data)
-                except Exception as e:
-                    current_app.logger.error(
-                        f"Error putting post_lock_changed (released) to SSE queue for post {post_id}: {e}"
-                    )
+        dispatch_sse_event(post_id, "post_lock_changed", release_payload_for_sse)
 
         return {"message": "Post unlocked successfully."}, 200
 

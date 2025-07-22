@@ -90,6 +90,15 @@ class AppTestCase(unittest.TestCase):
             self._clean_tables_for_setup()
             self._setup_base_users()
 
+        # Ensure test-specific folders exist
+        test_folders = [
+            self.app.config.get("SHARED_FILES_TEST_FOLDER"),
+            self.app.config.get("PROFILE_PICS_TEST_FOLDER")
+        ]
+        for folder in test_folders:
+            if folder and not os.path.exists(folder):
+                os.makedirs(folder)
+
     def _clean_tables_for_setup(self):
         self.db.session.remove()
         for table in reversed(self.db.metadata.sorted_tables):
@@ -109,17 +118,23 @@ class AppTestCase(unittest.TestCase):
             self.db.session.rollback()  # Rollback any uncommitted transactions
             self.db.session.remove()
 
-        shared_files_folder = self.app.config.get("SHARED_FILES_UPLOAD_FOLDER")
-        if shared_files_folder and os.path.exists(shared_files_folder):
-            for filename in os.listdir(shared_files_folder):
-                file_path = os.path.join(shared_files_folder, filename)
-                try:
-                    if os.path.isfile(file_path) or os.path.islink(file_path):
-                        os.unlink(file_path)
-                except Exception as e:
-                    self.app.logger.error(
-                        f"Failed to delete {file_path} in tearDown. Reason: {e}"
-                    )
+        # Use a list of folders to clean up
+        folders_to_clean = [
+            self.app.config.get("SHARED_FILES_UPLOAD_FOLDER"),
+            self.app.config.get("SHARED_FILES_TEST_FOLDER")
+        ]
+
+        for folder in folders_to_clean:
+            if folder and os.path.exists(folder):
+                for filename in os.listdir(folder):
+                    file_path = os.path.join(folder, filename)
+                    try:
+                        if os.path.isfile(file_path) or os.path.islink(file_path):
+                            os.unlink(file_path)
+                    except Exception as e:
+                        self.app.logger.error(
+                            f"Failed to delete {file_path} in tearDown. Reason: {e}"
+                        )
 
     def _setup_base_users(self):
         self.user1 = User(

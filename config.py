@@ -47,4 +47,6 @@ class TestingConfig(Config):
     # SQLALCHEMY_TRACK_MODIFICATIONS is already False in Config
     UPLOAD_FOLDER = "test_uploads"
     PROFILE_PICS_FOLDER = "test_profile_pics"
+    PROFILE_PICS_TEST_FOLDER = "test_profile_pics"
     SHARED_FILES_UPLOAD_FOLDER = "shared_files_test_folder"
+    SHARED_FILES_TEST_FOLDER = "shared_files_test_folder"

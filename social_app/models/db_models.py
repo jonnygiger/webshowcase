@@ -233,6 +233,12 @@ class User(UserMixin, db.Model):
         """Returns the user's most recent status, or None if none exist."""
         return self.statuses.first()
 
+    def is_blocking(self, other_user):
+        return self.blocked_users.filter_by(blocked_id=other_user.id).count() > 0
+
+    def is_blocked_by(self, other_user):
+        return self.blocked_by_users.filter_by(blocker_id=other_user.id).count() > 0
+
 
 class UserActivity(db.Model):
     id = db.Column(db.Integer, primary_key=True)

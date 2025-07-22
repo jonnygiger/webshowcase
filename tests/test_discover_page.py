@@ -6,7 +6,7 @@ from tests.test_base import AppTestCase
 
 
 class TestDiscoverPageViews(AppTestCase):
-    @patch("social_app.services.recommendations_service.get_personalized_feed_posts")
+    @patch("social_app.core.views.get_personalized_feed_posts")
     def test_discover_page_shows_recommendation_reasons(
         self, mock_get_personalized_feed_posts
     ):
@@ -47,7 +47,7 @@ class TestDiscoverPageViews(AppTestCase):
 
         self.logout()
 
-    @patch("social_app.services.recommendations_service.get_personalized_feed_posts")
+    @patch("social_app.core.views.get_personalized_feed_posts")
     def test_discover_page_handles_post_with_image(
         self, mock_get_personalized_feed_posts
     ):
@@ -90,7 +90,7 @@ class TestDiscoverPageViews(AppTestCase):
 
         self.logout()
 
-    @patch("social_app.services.recommendations_service.get_personalized_feed_posts")
+    @patch("social_app.core.views.get_personalized_feed_posts")
     def test_discover_page_handles_special_characters_in_posts(
         self, mock_get_personalized_feed_posts
     ):
@@ -137,7 +137,7 @@ class TestDiscoverPageViews(AppTestCase):
 
         self.logout()
 
-    @patch("social_app.services.recommendations_service.get_personalized_feed_posts")
+    @patch("social_app.core.views.get_personalized_feed_posts")
     def test_discover_page_handles_posts_without_optional_data(
         self, mock_get_personalized_feed_posts
     ):
@@ -181,7 +181,7 @@ class TestDiscoverPageViews(AppTestCase):
 
         self.logout()
 
-    @patch("social_app.services.recommendations_service.get_personalized_feed_posts")
+    @patch("social_app.core.views.get_personalized_feed_posts")
     def test_discover_page_empty_state(self, mock_get_personalized_feed_posts):
         self.login(self.user1.username, "password")
 

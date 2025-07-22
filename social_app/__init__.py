@@ -60,19 +60,11 @@ def create_app(config_class=None):
     )
     app.config.setdefault("SHARED_FILES_MAX_SIZE", 16 * 1024 * 1024)
 
-    if isinstance(config_class, str):
-        if config_class == "default":
-            app.config.from_object(DefaultConfig)
-        elif config_class == "testing":
-            app.config.from_object(TestingConfig)
-        # If it's another string, it might be an error or a future config name
-        # For now, we'll let it pass through and potentially be caught by from_object if it's not a valid path/module
-        # or rely on setdefault if it's not handled.
-        # A more robust way would be to raise an error for unknown string keys.
-        # However, the prompt implies config_class could be an actual class object.
-    elif config_class is not None:  # It's an actual class object
+    if config_class == "testing":
+        app.config.from_object(TestingConfig)
+    elif config_class:
         app.config.from_object(config_class)
-    else:  # config_class is None, so load default
+    else:
         app.config.from_object(DefaultConfig)
 
     db.init_app(app)

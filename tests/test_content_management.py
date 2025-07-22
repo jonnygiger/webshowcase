@@ -196,7 +196,7 @@ class TestContentManagement(AppTestCase):
             )
             self.assertEqual(response.status_code, 200)
             self.assertIn(
-                b"You can only add your own posts to your series.", response.data
+                "You can only add your own posts to your series.", response.get_data(as_text=True)
             )
 
             series_reloaded = db.session.get(Series, series_obj.id)

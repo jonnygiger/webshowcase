@@ -112,7 +112,7 @@ class TestViews(AppTestCase):
             self.assertIn(user_y, user_x.get_friends())
 
             response = self.client.post(
-                f"/remove_friend/{user_y.id}",
+                url_for("core.remove_friend", username=user_y.username),
                 follow_redirects=True,
             )
             self.assertEqual(response.status_code, 200)
@@ -167,7 +167,8 @@ class TestViews(AppTestCase):
 
             self.login(receiver.username, "pass_receive")
             response_receiver = self.client.get(
-                url_for("core.download_shared_file", shared_file_id=shared_file.id)
+                url_for("core.download_shared_file", shared_file_id=shared_file.id),
+                follow_redirects=True,
             )
             self.assertEqual(response_receiver.status_code, 200)
             self.assertIn(
@@ -197,6 +198,8 @@ class TestViews(AppTestCase):
 
             if os.path.exists(dummy_file_path):
                 os.remove(dummy_file_path)
+            db.session.delete(shared_file)
+            db.session.commit()
 
     def test_edit_series_add_post_not_owned_by_series_author(self):
         with self.app.app_context():

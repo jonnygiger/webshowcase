@@ -12,6 +12,7 @@ from flask import (
     Response,
     Blueprint,
     current_app,
+    abort,
 )
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -87,6 +88,26 @@ import queue
 core_bp = Blueprint(
     "core", __name__, template_folder="../../templates", static_folder="../../static"
 )
+
+
+def dispatch_sse_event(post_id, event_type, payload):
+    if post_id in current_app.post_event_listeners:
+        listeners = list(current_app.post_event_listeners[post_id])
+        current_app.logger.debug(
+            f"Dispatching {event_type} to {len(listeners)} listeners for post {post_id}"
+        )
+        for q_item in listeners:
+            try:
+                sse_data = {"event": event_type, "data": payload}
+                q_item.put_nowait(sse_data)
+            except Exception as e:
+                current_app.logger.error(
+                    f"Error putting {event_type} to SSE queue for post {post_id}: {e}"
+                )
+    else:
+        current_app.logger.debug(
+            f"No active SSE listeners for post {post_id} to dispatch {event_type}."
+        )
 
 
 @core_bp.app_template_filter()
@@ -685,90 +706,69 @@ def create_post():
             db.session.rollback()
 
         post_author = new_post_db.author
-        if post_author:
-            if new_post_db.user_id:
-                check_and_award_achievements(new_post_db.user_id)
+        if post_author and new_post_db.user_id:
+            check_and_award_achievements(new_post_db.user_id)
             friends = post_author.get_friends()
             if friends:
                 notifications_to_send = []
                 for friend in friends:
                     if friend.id == post_author.id:
                         continue
-                    is_blocked = UserBlock.query.filter_by(
+
+                    # Check for blocking status *before* creating a notification
+                    is_blocked_by_friend = UserBlock.query.filter_by(
                         blocker_id=friend.id, blocked_id=post_author.id
                     ).first()
-                    if is_blocked:
+                    if is_blocked_by_friend:
                         continue
-                    new_friend_notification = FriendPostNotification(
-                        user_id=friend.id,
-                        post_id=new_post_db.id,
-                        poster_id=post_author.id,
-                    )
-                    notifications_to_send.append(new_friend_notification)
+
+                    # Check if friend is in a queue *before* creating a notification
+                    if friend.id in current_app.user_notification_queues:
+                        new_friend_notification = FriendPostNotification(
+                            user_id=friend.id,
+                            post_id=new_post_db.id,
+                            poster_id=post_author.id,
+                        )
+                        notifications_to_send.append(new_friend_notification)
+
                 if notifications_to_send:
                     try:
                         db.session.add_all(notifications_to_send)
                         db.session.commit()
+
                         for notification_instance in notifications_to_send:
-                            if (
-                                notification_instance.id
-                                and notification_instance.timestamp
-                            ):
-                                friend_id_for_notification = (
-                                    notification_instance.user_id
-                                )
-                                if (
-                                    friend_id_for_notification
-                                    in current_app.user_notification_queues
-                                ):
-                                    queues_for_friend = (
-                                        current_app.user_notification_queues[
-                                            friend_id_for_notification
-                                        ]
-                                    )
-                                    if queues_for_friend:
-                                        sse_payload = {
-                                            "notification_id": notification_instance.id,
-                                            "post_id": new_post_db.id,
-                                            "post_title": new_post_db.title,
-                                            "poster_username": post_author.username,
-                                            "timestamp": notification_instance.timestamp.isoformat(),
-                                        }
-                                        sse_event_data = {
-                                            "type": "new_friend_post",
-                                            "payload": sse_payload,
-                                        }
-                                        for q_item in queues_for_friend:
-                                            try:
-                                                q_item.put_nowait(sse_event_data)
-                                                current_app.logger.info(
-                                                    f"Dispatched new_friend_post (SSE) to user {friend_id_for_notification} for post {new_post_db.id}"
-                                                )
-                                            except queue.Full:
-                                                current_app.logger.error(
-                                                    f"SSE queue full for user {friend_id_for_notification} (new_friend_post)."
-                                                )
-                                            except Exception as e_sse:
-                                                current_app.logger.error(
-                                                    f"Error putting new_friend_post to SSE queue for user {friend_id_for_notification}: {e_sse}"
-                                                )
-                                    else:
-                                        current_app.logger.info(
-                                            f"No active SSE queues for user {friend_id_for_notification} (new_friend_post)."
-                                        )
-                                else:
-                                    current_app.logger.info(
-                                        f"User {friend_id_for_notification} not in user_notification_queues (new_friend_post)."
-                                    )
+                            friend_id = notification_instance.user_id
+                            if friend_id in current_app.user_notification_queues:
+                                queues_for_friend = current_app.user_notification_queues[
+                                    friend_id
+                                ]
+                                if queues_for_friend:
+                                    sse_payload = {
+                                        "notification_id": notification_instance.id,
+                                        "post_id": new_post_db.id,
+                                        "post_title": new_post_db.title,
+                                        "poster_username": post_author.username,
+                                        "timestamp": notification_instance.timestamp.isoformat(),
+                                    }
+                                    sse_event_data = {
+                                        "type": "new_friend_post",
+                                        "payload": sse_payload,
+                                    }
+                                    for q_item in queues_for_friend:
+                                        try:
+                                            current_app.logger.info(f"Putting notification for friend {friend_id} in queue")
+                                            q_item.put_nowait(sse_event_data)
+                                            current_app.logger.info(f"Successfully put notification for friend {friend_id} in queue")
+                                        except queue.Full:
+                                            current_app.logger.error(
+                                                f"SSE queue full for user {friend_id}."
+                                            )
                     except Exception as e:
                         db.session.rollback()
                         current_app.logger.error(
-                            f"Error creating/sending friend post notifications: {e}"
+                            f"Error in friend post notifications: {e}"
                         )
-                        flash(
-                            "Post created, but could not send friend notifications.",
-                            "warning",
-                        )
+                        flash("Post created, but notifications failed.", "warning")
         flash("Blog post created successfully!", "success")
         return redirect(url_for("core.blog"))
     return render_template("create_post.html")
@@ -776,7 +776,17 @@ def create_post():
 
 @core_bp.route("/blog")
 def blog():
-    all_posts = Post.query.order_by(Post.timestamp.desc()).all()
+    query = Post.query
+    if current_user.is_authenticated:
+        blocked_user_ids = {ub.blocked_id for ub in current_user.blocked_users}
+        blockers_ids = {ub.blocker_id for ub in current_user.blocked_by_users}
+        exclude_user_ids = blocked_user_ids.union(blockers_ids)
+
+        if exclude_user_ids:
+            query = query.filter(Post.user_id.notin_(exclude_user_ids))
+
+    all_posts = query.order_by(Post.timestamp.desc()).all()
+
     bookmarked_post_ids = set()
     suggested_users_snippet = []
     if current_user.is_authenticated:
@@ -804,6 +814,8 @@ def blog():
 @core_bp.route("/blog/post/<int:post_id>")
 def view_post(post_id):
     post = Post.query.get_or_404(post_id)
+    if current_user.is_authenticated and (post.author.is_blocking(current_user) or current_user.is_blocked_by(post.author)):
+        abort(403)
     post_comments = (
         Comment.query.with_parent(post).order_by(Comment.timestamp.asc()).all()
     )
@@ -906,28 +918,7 @@ def edit_post(post_id):
             "edited_by_user_id": current_user.id,  # current_user is available here
             "edited_by_username": current_user.username,
         }
-        if post.id in current_app.post_event_listeners:
-            listeners = list(
-                current_app.post_event_listeners[post.id]
-            )
-            current_app.logger.debug(
-                f"Dispatching post_content_updated from edit_post view to {len(listeners)} listeners for post {post.id}"
-            )
-            for q_item in listeners:
-                try:
-                    sse_data = {
-                        "event": "post_content_updated",
-                        "data": post_data_for_sse,
-                    }
-                    q_item.put_nowait(sse_data)
-                except Exception as e:
-                    current_app.logger.error(
-                        f"Error putting post_content_updated to SSE queue from edit_post view for post {post.id}: {e}"
-                    )
-        else:
-            current_app.logger.debug(
-                f"No active SSE listeners in post_event_listeners for post {post.id} to dispatch post_content_updated from edit_post view."
-            )
+        dispatch_sse_event(post.id, "post_content_updated", post_data_for_sse)
 
         flash("Post updated successfully!", "success")
         return redirect(url_for("core.view_post", post_id=post_id))
@@ -2314,33 +2305,25 @@ def reject_friend_request(request_id):
     return redirect(url_for("core.view_friend_requests"))
 
 
-@core_bp.route("/user/<int:friend_user_id>/remove_friend", methods=["POST"])
+@core_bp.route("/user/<string:username>/remove_friend", methods=["POST"])
 @login_required
-def remove_friend(friend_user_id):
+def remove_friend(username):
     current_user_id_val = current_user.id
-    friend_user = db.session.get(User, friend_user_id)
+    friend_user = User.query.filter_by(username=username).first()
     if not friend_user:
         flash("User not found.", "danger")
-        current_user_obj_for_redirect = db.session.get(User, current_user_id_val)
-        return redirect(
-            url_for(
-                "core.user_profile", username=current_user_obj_for_redirect.username
-            )
-            if current_user_obj_for_redirect
-            else url_for("core.hello_world")
-        )
-    if current_user_id_val == friend_user_id:
+        return redirect(request.referrer or url_for("core.hello_world"))
+    if current_user_id_val == friend_user.id:
         flash("You cannot remove yourself.", "warning")
         return redirect(url_for("core.user_profile", username=friend_user.username))
+
     friendship_to_remove = Friendship.query.filter(
-        Friendship.status == "accepted",
         or_(
-            (Friendship.user_id == current_user_id_val)
-            & (Friendship.friend_id == friend_user_id),
-            (Friendship.user_id == friend_user_id)
-            & (Friendship.friend_id == current_user_id_val),
-        ),
+            (Friendship.user_id == current_user_id_val) & (Friendship.friend_id == friend_user.id),
+            (Friendship.user_id == friend_user.id) & (Friendship.friend_id == current_user_id_val)
+        )
     ).first()
+
     if friendship_to_remove:
         db.session.delete(friendship_to_remove)
         db.session.commit()
@@ -2506,27 +2489,23 @@ def add_post_to_series(series_id, post_id):
     if series.user_id != current_user.id:
         flash("Not authorized.", "danger")
         return redirect(url_for("core.view_series", series_id=series.id))
+
     post_to_add = Post.query.get_or_404(post_id)
-    if post_to_add.user_id != series.user_id:
-        flash("Can only add your own posts.", "warning")
+    if post_to_add.user_id != current_user.id:
+        flash("You can only add your own posts to your series.", "warning")
         return redirect(url_for("core.edit_series", series_id=series.id))
-    existing_entry = SeriesPost.query.filter_by(
-        series_id=series_id, post_id=post_id
-    ).first()
+
+    existing_entry = SeriesPost.query.filter_by(series_id=series.id, post_id=post_id).first()
     if existing_entry:
-        flash("Post already in series.", "info")
+        flash("Post already in this series.", "info")
         return redirect(url_for("core.edit_series", series_id=series.id))
-    max_order = (
-        db.session.query(db.func.max(SeriesPost.order))
-        .filter_by(series_id=series_id)
-        .scalar()
-    )
-    next_order_num = (max_order or 0) + 1
-    new_series_post = SeriesPost(
-        series_id=series_id, post_id=post_id, order=next_order_num
-    )
+
+    max_order = db.session.query(db.func.max(SeriesPost.order)).filter_by(series_id=series.id).scalar()
+    new_series_post = SeriesPost(series_id=series.id, post_id=post_id, order=(max_order or 0) + 1)
+
     db.session.add(new_series_post)
     db.session.commit()
+
     flash(f"Post '{post_to_add.title}' added to series '{series.title}'.", "success")
     return redirect(url_for("core.edit_series", series_id=series.id))
 
@@ -2567,10 +2546,14 @@ def delete_series(series_id):
     if series.user_id != current_user.id:
         flash("Not authorized.", "danger")
         return redirect(url_for("core.view_series", series_id=series.id))
+
+    author_username = series.author.username
+
     db.session.delete(series)
     db.session.commit()
+
     flash("Series deleted.", "success")
-    return redirect(url_for("core.user_profile", username=series.author.username))
+    return redirect(url_for("core.user_profile", username=author_username))
 
 
 @core_bp.route("/series/<int:series_id>/reorder_posts", methods=["POST"])
@@ -2650,16 +2633,6 @@ def recommendations_view():
     )
 
 
-@core_bp.route("/onthisday")
-@login_required
-def on_this_day_page():
-    user_id = current_user.id
-    content = get_on_this_day_content(user_id)
-    return render_template(
-        "on_this_day.html",
-        posts=content.get("posts", []),
-        events=content.get("events", []),
-    )
 
 
 @core_bp.route("/post/<int:post_id>/flag", methods=["POST"])
@@ -2897,24 +2870,30 @@ def share_file_route(receiver_username):
     if request.method == "POST":
         if "file" not in request.files:
             flash("No file part.", "danger")
-            return redirect(request.url)
+            return redirect(
+                url_for("core.share_file_route", receiver_username=receiver_username)
+            )
         file = request.files["file"]
         if file.filename == "":
             flash("No selected file.", "danger")
-            return redirect(request.url)
+            return redirect(
+                url_for("core.share_file_route", receiver_username=receiver_username)
+            )
 
-        file.seek(0, os.SEEK_END)
-        file_length = file.tell()
+        file_content_for_check = file.read()
         file.seek(0)
-        if file_length > current_app.config["SHARED_FILES_MAX_SIZE"]:
+        if len(file_content_for_check) > current_app.config["SHARED_FILES_MAX_SIZE"]:
             flash(
-                f"File too large. Max size {current_app.config['SHARED_FILES_MAX_SIZE']//(1024*1024)}MB.",
+                f"File is too large. Max size is {current_app.config['SHARED_FILES_MAX_SIZE']//(1024*1024)}MB.",
                 "danger",
             )
-            return redirect(request.url)
+            return redirect(
+                url_for("core.share_file_route", receiver_username=receiver_username)
+            )
 
         if file and allowed_shared_file(file.filename):
             original_filename = secure_filename(file.filename)
+            current_app.logger.info(f"Sharing file: {original_filename}")
             extension = (
                 original_filename.rsplit(".", 1)[1].lower()
                 if "." in original_filename
@@ -2924,9 +2903,15 @@ def share_file_route(receiver_username):
                 f"{uuid.uuid4().hex}.{extension}" if extension else uuid.uuid4().hex
             )
 
-            file_path = os.path.join(
-                current_app.config["SHARED_FILES_UPLOAD_FOLDER"], saved_filename_on_disk
+            folder = (
+                current_app.config["SHARED_FILES_TEST_FOLDER"]
+                if current_app.config["TESTING"]
+                else current_app.config["SHARED_FILES_UPLOAD_FOLDER"]
             )
+            if not os.path.isabs(folder):
+                folder = os.path.join(os.path.dirname(current_app.instance_path), folder)
+            file_path = os.path.join(folder, saved_filename_on_disk)
+
             try:
                 file.save(file_path)
                 message_text = request.form.get("message")
@@ -2950,10 +2935,14 @@ def share_file_route(receiver_username):
                         os.remove(file_path)
                     except OSError as ose:
                         current_app.logger.error(f"Error removing orphaned file: {ose}")
-                return redirect(request.url)
+                return redirect(
+                    url_for("core.share_file_route", receiver_username=receiver_username)
+                )
         else:
             flash("File type not allowed or no file.", "danger")
-            return redirect(request.url)
+            return redirect(
+                url_for("core.share_file_route", receiver_username=receiver_username)
+            )
     return render_template("share_file.html", receiver_user=receiver_user)
 
 
@@ -2973,30 +2962,38 @@ def files_inbox():
 def download_shared_file(shared_file_id):
     shared_file = db.session.get(SharedFile, shared_file_id)
     if not shared_file:
-        return "File not found.", 404
+        abort(404)
 
     current_user_id_val = current_user.id
     if (
         shared_file.receiver_id != current_user_id_val
         and shared_file.sender_id != current_user_id_val
     ):
-        return "Not authorized to download this file.", 403
+        abort(403)
 
-    try:
-        if shared_file.receiver_id == current_user_id_val and not shared_file.is_read:
-            shared_file.is_read = True
-            db.session.commit()
-        return send_from_directory(
-            current_app.config["SHARED_FILES_UPLOAD_FOLDER"],
-            shared_file.saved_filename,
-            as_attachment=True,
-            download_name=shared_file.original_filename,
-        )
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error downloading file/marking read: {e}")
-        flash("Error downloading file.", "danger")
-        return redirect(url_for("core.files_inbox"))
+    folder = current_app.config['SHARED_FILES_UPLOAD_FOLDER'] if not current_app.config['TESTING'] else current_app.config['SHARED_FILES_TEST_FOLDER']
+
+    # Ensure the folder is an absolute path for os.path.exists
+    if not os.path.isabs(folder):
+        folder = os.path.join(os.path.dirname(current_app.instance_path), folder)
+
+    file_path = os.path.join(folder, shared_file.saved_filename)
+
+    if not os.path.exists(file_path):
+        abort(404)
+
+    if shared_file.receiver_id == current_user.id and not shared_file.is_read:
+        shared_file.is_read = True
+        db.session.commit()
+
+    # send_from_directory needs a directory relative to the app's root path if the folder is inside the app structure,
+    # or an absolute path if it is outside. Let's stick to absolute paths to be safe.
+    return send_from_directory(
+        directory=os.path.abspath(os.path.dirname(file_path)),
+        path=os.path.basename(file_path),
+        as_attachment=True,
+        download_name=shared_file.original_filename
+    )
 
 
 @core_bp.route("/files/delete/<int:shared_file_id>", methods=["POST"])
@@ -3010,9 +3007,12 @@ def delete_shared_file(shared_file_id):
     ):
         flash("Not authorized to delete this file.", "danger")
         return redirect(url_for("core.files_inbox"))
-    file_path = os.path.join(
-        current_app.config["SHARED_FILES_UPLOAD_FOLDER"], shared_file.saved_filename
+    folder = (
+        current_app.config["SHARED_FILES_UPLOAD_FOLDER"]
+        if not current_app.config["TESTING"]
+        else current_app.config["SHARED_FILES_TEST_FOLDER"]
     )
+    file_path = os.path.join(folder, shared_file.saved_filename)
     try:
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -3034,20 +3034,20 @@ def set_status():
     emoji = request.form.get("emoji", "").strip()
     if not status_text and not emoji:
         flash("Status text or emoji must be provided.", "warning")
-        return redirect(url_for("core.user_profile", username=user_obj.username))
-    new_status = UserStatus(
-        user_id=user_obj.id,
-        status_text=status_text if status_text else None,
-        emoji=emoji if emoji else None,
-    )
-    try:
-        db.session.add(new_status)
-        db.session.commit()
-        flash("Status updated!", "success")
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error setting status for {user_obj.username}: {e}")
-        flash("Error setting status.", "danger")
+    else:
+        new_status = UserStatus(
+            user_id=user_obj.id,
+            status_text=status_text if status_text else None,
+            emoji=emoji if emoji else None,
+        )
+        try:
+            db.session.add(new_status)
+            db.session.commit()
+            flash("Your status has been updated!", "success")
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error setting status for {user_obj.username}: {e}")
+            flash("Error setting status.", "danger")
     return redirect(url_for("core.user_profile", username=user_obj.username))
 
 
@@ -3131,3 +3131,14 @@ def inject_custom_url_for():
     def custom_url_for_primary(endpoint, **values):
         return url_for(endpoint, **values)
     return dict(custom_url_for_primary=custom_url_for_primary)
+
+@core_bp.route("/onthisday")
+@login_required
+def on_this_day_page():
+    user_id = current_user.id
+    content = get_on_this_day_content(user_id)
+    return render_template(
+        "on_this_day.html",
+        posts=content.get("posts", []),
+        events=content.get("events", []),
+    )

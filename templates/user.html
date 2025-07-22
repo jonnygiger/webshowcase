@@ -41,6 +41,10 @@
         {% endif %}
     </div>
 
+    {% if is_viewing_own_profile %}
+        {% include 'set_status_form.html' %}
+    {% endif %}
+
     {% if session['logged_in'] and session['username'] == username %}
     <div class="mb-3 text-center profile-actions">
         <a href="{{ url_for('core.upload_profile_picture') }}" class="btn btn-secondary btn-sm">Change Profile Picture</a>
@@ -66,8 +70,8 @@
         {% if current_user and current_user.id != user.id %}
             {# Current user is logged in and viewing someone else's profile #}
             {% if friendship_status == 'friends' %}
-                <form action="{{ url_for('core.remove_friend', friend_user_id=user.id) }}" method="POST" style="display: inline;">
-                    <button type="submit" class="btn btn-danger btn-sm">Remove Friend</button>
+                <form action="{{ url_for('core.remove_friend', username=user.username) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-danger btn-sm">Friends</button>
                 </form>
             {% elif friendship_status == 'pending_sent' %}
                 <span class="text-muted">Friend request pending</span>

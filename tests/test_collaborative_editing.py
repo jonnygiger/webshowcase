@@ -332,7 +332,7 @@ class TestCollaborativeEditing(AppTestCase):
 
                 payload = args[2]
                 self.assertEqual(payload["post_id"], self.test_post.id)
-                self.assertEqual(payload["new_content"], edit_payload["content"])
+                self.assertEqual(payload["content"], edit_payload["content"])
                 self.assertEqual(payload["edited_by_user_id"], self.collaborator.id)
                 self.assertEqual(payload["edited_by_username"], self.collaborator.username)
                 self.assertIn("last_edited", payload)

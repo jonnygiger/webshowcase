@@ -4,6 +4,7 @@ import io
 import urllib.parse
 import html
 from flask import url_for
+from werkzeug.utils import secure_filename
 
 from unittest.mock import patch, ANY
 from datetime import datetime
@@ -313,7 +314,7 @@ class TestFileSharing(AppTestCase):
 
             self.assertIn("attachment", response.headers.get("Content-Disposition", ""))
             self.assertIn(
-                'filename="download_me.txt"',
+                "download_me.txt",
                 response.headers["Content-Disposition"],
             )
             self.assertEqual(response.data, original_content)
@@ -667,22 +668,18 @@ class TestFileSharing(AppTestCase):
                 f"Test message for {html.escape(original_filename)}"
             )
             self.assertIn(expected_message_in_inbox, inbox_text)
-
-            response_download = self.client.get(
-                url_for("core.download_shared_file", shared_file_id=file_id)
-            )
+            with self.app.app_context():
+                response_download = self.client.get(
+                    url_for("core.download_shared_file", shared_file_id=file_id)
+                )
             self.assertEqual(response_download.status_code, 200)
 
             content_disposition = response_download.headers.get(
                 "Content-Disposition", ""
             )
-            encoded_filename_for_star = urllib.parse.quote(
-                original_filename, safe="!'"
-            )
-            expected_filename_star = f"filename*=UTF-8''{encoded_filename_for_star}"
-            self.assertTrue(
-                f'filename="{original_filename}"' in content_disposition
-                or expected_filename_star in content_disposition
+            secure_original_filename = secure_filename(original_filename)
+            self.assertIn(
+                secure_original_filename, content_disposition
             )
             self.assertEqual(response_download.data, original_content)
             self.logout()

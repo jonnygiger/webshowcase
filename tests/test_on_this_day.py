@@ -63,7 +63,9 @@ class TestOnThisDay(AppTestCase):
                 url_for("core.on_this_day_page"), follow_redirects=False
             )
             self.assertEqual(response.status_code, 302)
-            self.assertTrue(response.location.endswith(url_for("core.login")))
+            print(f"response.location: {response.location}")
+            print(f"url_for('core.login'): {url_for('core.login')}")
+            self.assertTrue(response.location.startswith(url_for("core.login")))
 
     def test_on_this_day_page_no_content(self):
         with self.app.app_context():

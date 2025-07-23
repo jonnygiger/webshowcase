@@ -663,6 +663,7 @@ class TestFileSharing(AppTestCase):
             response_inbox = self.client.get("/files/inbox")
             self.assertEqual(response_inbox.status_code, 200)
             inbox_text = response_inbox.get_data(as_text=True)
+            secure_original_filename = secure_filename(original_filename)
             self.assertIn(html.escape(original_filename), inbox_text)
             expected_message_in_inbox = (
                 f"Test message for {html.escape(original_filename)}"
@@ -677,9 +678,9 @@ class TestFileSharing(AppTestCase):
             content_disposition = response_download.headers.get(
                 "Content-Disposition", ""
             )
-            secure_original_filename = secure_filename(original_filename)
+            decoded_content_disposition = urllib.parse.unquote(content_disposition)
             self.assertIn(
-                secure_original_filename, content_disposition
+                original_filename, decoded_content_disposition
             )
             self.assertEqual(response_download.data, original_content)
             self.logout()

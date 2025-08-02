@@ -27,20 +27,11 @@ class TestFriendPostNotifications(AppTestCase):
 
     def test_notification_creation_and_sse_dispatch(self):
         with self.app.app_context():
-            with patch(
-                "social_app.core.views.current_app.user_notification_queues"
-            ) as mock_user_notification_queues:
-                mock_friend_queue = MagicMock()
-                mock_user_notification_queues.get.return_value = [mock_friend_queue]
-
-                # Define the behavior of the mocked __contains__
-                def contains_side_effect(user_id):
-                    return user_id == self.user2_id
-
-                mock_user_notification_queues.__contains__.side_effect = (
-                    contains_side_effect
-                )
-
+            mock_friend_queue = MagicMock()
+            with patch.dict(
+                "social_app.core.views.current_app.user_notification_queues",
+                {self.user2_id: [mock_friend_queue]},
+            ):
                 self._create_db_friendship(self.user1, self.user2, status="accepted")
 
                 post_title = "User A's Exciting Post"
@@ -377,7 +368,6 @@ class TestFriendPostNotifications(AppTestCase):
 
                 mock_friend_queue.put_nowait.assert_called_once()
                 mock_friend_queue.reset_mock()
-                mock_user_notification_queues.reset_mock()
 
                 friendship_record = Friendship.query.filter(
                     (Friendship.user_id == self.user1_id)
@@ -389,7 +379,6 @@ class TestFriendPostNotifications(AppTestCase):
                 self.db.session.delete(friendship_record)
                 self.db.session.commit()
 
-                mock_user_notification_queues.__contains__.return_value = False
                 self._make_post_via_route(
                     self.user1.username,
                     "password",

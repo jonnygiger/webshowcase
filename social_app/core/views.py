@@ -2892,11 +2892,12 @@ def share_file_route(receiver_username):
             )
 
         if file and allowed_shared_file(file.filename):
-            original_filename = secure_filename(file.filename)
+            original_filename = file.filename
+            sanitized_filename = secure_filename(file.filename)
             current_app.logger.info(f"Sharing file: {original_filename}")
             extension = (
-                original_filename.rsplit(".", 1)[1].lower()
-                if "." in original_filename
+                sanitized_filename.rsplit(".", 1)[1].lower()
+                if "." in sanitized_filename
                 else ""
             )
             saved_filename_on_disk = (

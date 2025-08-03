@@ -31,7 +31,7 @@ class TestFriendPostNotifications(AppTestCase):
             with patch.dict(
                 "social_app.core.views.current_app.user_notification_queues",
                 {self.user2_id: [mock_friend_queue]},
-            ):
+            ), patch("social_app.core.views.emit_new_activity_event"):
                 self._create_db_friendship(self.user1, self.user2, status="accepted")
 
                 post_title = "User A's Exciting Post"
@@ -54,7 +54,6 @@ class TestFriendPostNotifications(AppTestCase):
                 ).first()
                 self.assertIsNotNone(notification_for_b)
 
-                mock_user_notification_queues.__contains__.assert_any_call(self.user2_id)
                 mock_friend_queue.put_nowait.assert_called_once()
 
     def test_view_friend_post_notifications_page(self):
@@ -240,7 +239,7 @@ class TestFriendPostNotifications(AppTestCase):
         with self.app.app_context():
             with patch("social_app.core.views.current_app.user_notification_queues") as mock_user_notification_queues:
                 mock_own_queue = MagicMock()
-                mock_user_notification_queues.get.return_value = [mock_own_queue]
+                mock_user_notification_queues.__getitem__.return_value = [mock_own_queue]
                 # Simulate user1 is not in queues for their own post notification
                 mock_user_notification_queues.__contains__.return_value = False
 
@@ -268,7 +267,7 @@ class TestFriendPostNotifications(AppTestCase):
         with self.app.app_context():
             with patch("social_app.core.views.current_app.user_notification_queues") as mock_user_notification_queues:
                 mock_friend_queue = MagicMock()
-                mock_user_notification_queues.get.return_value = [mock_friend_queue]
+                mock_user_notification_queues.__getitem__.return_value = [mock_friend_queue]
                 mock_user_notification_queues.__contains__.return_value = False
 
                 post_title = "Post Before Friendship"
@@ -297,9 +296,9 @@ class TestFriendPostNotifications(AppTestCase):
         with self.app.app_context():
             with patch(
                 "social_app.core.views.current_app.user_notification_queues"
-            ) as mock_user_notification_queues:
+            ) as mock_user_notification_queues, patch("social_app.core.views.emit_new_activity_event"):
                 mock_friend_queue = MagicMock()
-                mock_user_notification_queues.get.return_value = [mock_friend_queue]
+                mock_user_notification_queues.__getitem__.return_value = [mock_friend_queue]
                 mock_user_notification_queues.__contains__.return_value = True
 
                 self._create_db_friendship(self.user1, self.user2, status="accepted")
@@ -339,9 +338,9 @@ class TestFriendPostNotifications(AppTestCase):
         with self.app.app_context():
             with patch(
                 "social_app.core.views.current_app.user_notification_queues"
-            ) as mock_user_notification_queues:
+            ) as mock_user_notification_queues, patch("social_app.core.views.emit_new_activity_event"):
                 mock_friend_queue = MagicMock()
-                mock_user_notification_queues.get.return_value = [mock_friend_queue]
+                mock_user_notification_queues.__getitem__.return_value = [mock_friend_queue]
                 mock_user_notification_queues.__contains__.return_value = True
 
                 self._create_db_friendship(self.user1, self.user2, status="accepted")

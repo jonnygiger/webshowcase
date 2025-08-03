@@ -43,25 +43,9 @@
 
     {% if is_viewing_own_profile %}
         {% include 'set_status_form.html' %}
-    {% endif %}
-
-    {% if session['logged_in'] and session['username'] == username %}
     <div class="mb-3 text-center profile-actions">
         <a href="{{ url_for('core.upload_profile_picture') }}" class="btn btn-secondary btn-sm">Change Profile Picture</a>
         <a href="{{ url_for('core.edit_profile') }}" class="btn btn-primary btn-sm ms-2">Edit Profile</a>
-    </div>
-
-    {# Set Status Form - only for own profile #}
-    <div class="mt-3 mb-3 text-center">
-        <form action="{{ url_for('core.set_status') }}" method="POST" class="form-inline justify-content-center">
-            <div class="form-group mx-sm-3 mb-2">
-                <input type="text" name="status_text" class="form-control" placeholder="What's on your mind?" style="width: 300px;">
-            </div>
-            <div class="form-group mx-sm-3 mb-2">
-                <input type="text" name="emoji" class="form-control" placeholder="😊" style="width: 70px;">
-            </div>
-            <button type="submit" class="btn btn-info mb-2">Set Status</button>
-        </form>
     </div>
     {% endif %}
 

@@ -42,6 +42,7 @@ class TestSeriesFeature(AppTestCase):
                 user_id=user.id, title=series_title, description=series_description
             )
             db.session.add(original_series_obj)
+            db.session.commit()
             series_id = original_series_obj.id
             self.assertIsNotNone(series_id)
             series = self.db.session.get(Series, series_id)
@@ -54,6 +55,7 @@ class TestSeriesFeature(AppTestCase):
                 user_id=user.id, title=post1_title
             )
             db.session.add(original_post1_obj)
+            db.session.commit()
             post1_id = original_post1_obj.id
             self.assertIsNotNone(post1_id)
             post1 = self.db.session.get(Post, post1_id)
@@ -63,6 +65,7 @@ class TestSeriesFeature(AppTestCase):
                 user_id=user.id, title=post2_title
             )
             db.session.add(original_post2_obj)
+            db.session.commit()
             post2_id = original_post2_obj.id
             self.assertIsNotNone(post2_id)
             post2 = self.db.session.get(Post, post2_id)
@@ -87,15 +90,15 @@ class TestSeriesFeature(AppTestCase):
             self.assertIsNotNone(series_obj_reloaded)
             author_username = series_obj_reloaded.author.username
 
+            self.login(author_username, "password")
             response = self.client.post(
                 url_for("core.delete_series", series_id=series_id),
                 follow_redirects=True,
             )
             self.assertEqual(response.status_code, 200)
-            self.assertIsNone(
-                response.request.path.endswith(
-                    f"/user/{series_obj_reloaded.author.username}"
-                )
+            self.assertIn(
+                f"/user/{author_username}",
+                response.request.path
             )
 
             deleted_series = self.db.session.get(Series, series_id)
@@ -125,7 +128,7 @@ class TestSeriesFeature(AppTestCase):
                 url_for("core.create_series"), follow_redirects=False
             )
             self.assertEqual(response.status_code, 302)
-            self.assertIn(url_for("core.login"), response.location)
+            self.assertIn(url_for("core.login", _external=False), response.location)
 
             response_post = self.client.post(
                 url_for("core.create_series"),
@@ -133,7 +136,7 @@ class TestSeriesFeature(AppTestCase):
                 follow_redirects=False,
             )
             self.assertEqual(response_post.status_code, 302)
-            self.assertIn(url_for("core.login"), response_post.location)
+            self.assertIn(url_for("core.login", _external=False), response_post.location)
 
     @unittest.skip("Placeholder test")
     def test_create_series_post_success(self):

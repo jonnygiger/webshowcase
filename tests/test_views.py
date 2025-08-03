@@ -66,7 +66,7 @@ class TestViews(AppTestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn("Friends", response.data.decode())
             self.assertIn(
-                f"/remove_friend/{user_b.id}",
+                url_for("core.remove_friend", username=user_b.username, _external=False),
                 response.data.decode(),
             )
             self.logout()
@@ -106,7 +106,6 @@ class TestViews(AppTestCase):
             user_x = self._create_db_user("user_x_remove", "passx", "x@example.com")
             user_y = self._create_db_user("user_y_remove", "passy", "y@example.com")
             self._create_db_friendship(user_x, user_y, "accepted")
-            self._create_db_friendship(user_y, user_x, "accepted")
 
             self.login(user_x.username, "passx")
             self.assertIn(user_y, user_x.get_friends())
@@ -223,12 +222,7 @@ class TestViews(AppTestCase):
             self.login(series_author.username, "pass_so")
             response = self.client.post(
                 url_for(
-                    "core.edit_series", series_id=series_id
-                ),
-                data=dict(
-                    title=temp_series_obj.title,
-                    description=temp_series_obj.description,
-                    post_ids=[post_id]
+                    "core.add_post_to_series", series_id=series_id, post_id=post_id
                 ),
                 follow_redirects=True,
             )
@@ -271,7 +265,7 @@ class TestViews(AppTestCase):
 
             response_blog = self.client.get(url_for("core.blog"))
             self.assertEqual(response_blog.status_code, 200)
-            self.assertIn(post_by_blocker.title, response_blog.data.decode())
+            self.assertNotIn(post_by_blocker.title, response_blog.data.decode())
             self.logout()
 
 

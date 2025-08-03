@@ -30,7 +30,7 @@ class TestLikeNotifications(AppTestCase):
             ) as mock_user_notification_queues:
                 mock_author_queue = MagicMock()
                 mock_user_notification_queues.__contains__.return_value = True
-                mock_user_notification_queues.get.return_value = [mock_author_queue]
+                mock_user_notification_queues.__getitem__.return_value = [mock_author_queue]
 
                 post_by_author = self._create_db_post(
                     user_id=self.author1.id, title="Author's Likable Post"
@@ -65,7 +65,7 @@ class TestLikeNotifications(AppTestCase):
                         return [mock_author1_queue]
                     return []
 
-                mock_user_notification_queues.get.side_effect = get_side_effect
+                mock_user_notification_queues.__getitem__.side_effect = get_side_effect
                 mock_user_notification_queues.__contains__.side_effect = (
                     lambda user_id: user_id == self.author1.id
                 )
@@ -102,7 +102,7 @@ class TestLikeNotifications(AppTestCase):
                 "social_app.core.views.current_app.user_notification_queues"
             ) as mock_user_notification_queues:
                 mock_author_queue = MagicMock()
-                mock_user_notification_queues.get.return_value = [mock_author_queue]
+                mock_user_notification_queues.__getitem__.return_value = [mock_author_queue]
                 mock_user_notification_queues.__contains__.return_value = True
 
                 post_by_author = self._create_db_post(
@@ -136,7 +136,7 @@ class TestLikeNotifications(AppTestCase):
         with self.app.app_context():
             with patch("social_app.core.views.current_app.user_notification_queues") as mock_user_notification_queues:
                 mock_own_queue = MagicMock()
-                mock_user_notification_queues.get.return_value = [mock_own_queue]
+                mock_user_notification_queues.__getitem__.return_value = [mock_own_queue]
                 mock_user_notification_queues.__contains__.return_value = (
                     False  # Should not find queue for self
                 )
@@ -169,7 +169,7 @@ class TestLikeNotifications(AppTestCase):
         with self.app.app_context():
             with patch("social_app.core.views.current_app.user_notification_queues") as mock_user_notification_queues:
                 mock_author_queue = MagicMock()
-                mock_user_notification_queues.get.return_value = [mock_author_queue]
+                mock_user_notification_queues.__getitem__.return_value = [mock_author_queue]
                 mock_user_notification_queues.__contains__.return_value = False
 
                 post_by_author = self._create_db_post(
@@ -198,7 +198,7 @@ class TestLikeNotifications(AppTestCase):
         with self.app.app_context():
             with patch("social_app.core.views.current_app.user_notification_queues") as mock_user_notification_queues:
                 mock_any_queue = MagicMock()
-                mock_user_notification_queues.get.return_value = [mock_any_queue]
+                mock_user_notification_queues.__getitem__.return_value = [mock_any_queue]
                 mock_user_notification_queues.__contains__.return_value = False
 
                 self.login(self.liker.username, "password")

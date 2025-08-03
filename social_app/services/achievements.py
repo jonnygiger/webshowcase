@@ -79,15 +79,11 @@ def check_and_award_achievements(user_id):
     if awarded_new_achievements:
         try:
             db.session.commit()
-            print(
-                f"User {user.username} awarded achievements: {', '.join(awarded_new_achievements)}"
-            )
             return {
                 "message": f"Awarded achievements: {', '.join(awarded_new_achievements)}"
             }, 200
         except Exception as e:
             db.session.rollback()
-            print(f"Error awarding achievements for user {user.username}: {e}")
             return {"error": f"Error awarding achievements: {str(e)}"}, 500
 
     return {"message": "No new achievements awarded."}, 200

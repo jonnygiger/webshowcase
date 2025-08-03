@@ -3,7 +3,6 @@ from flask import Flask
 from social_app import create_app, db
 from tests.test_base import AppTestCase
 
-print("Executing tests/test_app.py")
 
 class TestApp(AppTestCase):
     def test_app_creation(self):

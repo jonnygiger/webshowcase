@@ -55,9 +55,9 @@ class AppTestCase(unittest.TestCase):
 
         import logging
 
-        cls.app.logger.setLevel(logging.DEBUG)
+        cls.app.logger.setLevel(logging.WARNING)
         handler = logging.StreamHandler(sys.stderr)
-        handler.setLevel(logging.DEBUG)
+        handler.setLevel(logging.WARNING)
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )

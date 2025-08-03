@@ -16,13 +16,13 @@ class TestCollaborativeEditing(AppTestCase):
     def setUp(self):
         super().setUp()
 
-        self.app.logger.setLevel(logging.DEBUG)
+        self.app.logger.setLevel(logging.WARNING)
         if not any(
             isinstance(handler, logging.StreamHandler)
             for handler in self.app.logger.handlers
         ):
             stream_handler = logging.StreamHandler()
-            stream_handler.setLevel(logging.DEBUG)
+            stream_handler.setLevel(logging.WARNING)
             self.app.logger.addHandler(stream_handler)
 
         self.post_author = self.user1
